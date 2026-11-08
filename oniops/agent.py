@@ -116,6 +116,16 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+def _host_of(raw: str) -> str:
+    """Extract a bare host/IP from whatever the model passed (it often supplies
+    a full URL like http://10.0.0.5:8080/path)."""
+    raw = str(raw).strip()
+    raw = re.sub(r"^[a-zA-Z]+://", "", raw)   # strip scheme
+    raw = raw.split("/")[0]                    # strip path
+    raw = raw.rsplit(":", 1)[0] if raw.count(":") == 1 else raw  # strip :port (keep IPv6-ish alone)
+    return raw.strip()
+
+
 # ───────────────────────── the loop ─────────────────────────
 def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
               emit: Callable[[str, str, str], None] | None = None,
@@ -138,6 +148,7 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
             "Begin. Respond with one JSON action.")
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     transcript: list[dict] = []
+    seen: set[str] = set()
     bound = llm.for_role("planner")
 
     emit("AGENT_START", "busy", f"Autonomous agent: {objective[:80]}")
@@ -161,9 +172,14 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
         targs = act.get("args") or {}
         thought = act.get("thought", "")
 
+        call_key = f"{tool}:{json.dumps(targs, sort_keys=True)}"
         if tool not in TOOLS:
             obs = f"Unknown tool '{tool}'. Available: {', '.join(TOOLS)}."
+        elif call_key in seen:
+            obs = ("You already ran this exact call and it did not advance the assessment. "
+                   "Choose a DIFFERENT tool or arguments, or return a final summary now.")
         else:
+            seen.add(call_key)
             spec = TOOLS[tool]
             try:
                 if spec["needs_target"]:
@@ -171,7 +187,7 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
                     if not raw:
                         obs = "No target provided and no default target set."
                     else:
-                        ip = scope.resolve(str(raw)).ip
+                        ip = scope.resolve(_host_of(raw)).ip
                         emit("AGENT_STEP", "busy", f"[{step}] {tool} on {ip}")
                         obs = spec["fn"](runner, ip, targs)
                 else:
