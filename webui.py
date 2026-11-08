@@ -23,6 +23,7 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from oniops import __version__
 from oniops.agent import run_agent
+from oniops.aisec import run_aisec
 from oniops.auth import init_auth
 from oniops.config import apply_updates, get_config
 from oniops.graph import build_graph
@@ -653,6 +654,27 @@ def api_agent_start():
                          runner=active_runner(), emit=emit_event, max_steps=steps)
 
     job_id = jobs.submit("agent", {"objective": objective[:80], "target": target or "(auto)"}, _job)
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/aisec/start", methods=["POST"])
+def api_aisec_start():
+    """Run an AI-security + GRC assessment against an LLM/AI chat endpoint."""
+    data = request.get_json(silent=True) or {}
+    base_url = (data.get("base_url") or "").strip()
+    model = (data.get("model") or "").strip()
+    api_type = (data.get("api_type") or "ollama").strip()
+    if not re.match(r"^https?://", base_url):
+        return jsonify({"error": "Provide an http(s) AI endpoint base_url."}), 400
+    if not model or len(model) > 80:
+        return jsonify({"error": "Provide a model name."}), 400
+    if api_type not in ("ollama", "openai"):
+        api_type = "ollama"
+
+    def _job():
+        return run_aisec(base_url, model, api_type, emit=emit_event, judge=llm.for_role("reporter"))
+
+    job_id = jobs.submit("aisec", {"model": model, "target": base_url}, _job)
     return jsonify({"job_id": job_id})
 
 

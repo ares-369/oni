@@ -888,6 +888,10 @@
           <span class="nav-item-left"><i class="mdi mdi-bug-outline"></i><span class="nav-label">Exploit &amp; CVE Intel</span></span>
           <span class="nav-badge" id="navCveBadge">0</span>
         </button>
+        <button class="nav-item" data-view="aisec" title="AI Security &amp; GRC">
+          <span class="nav-item-left"><i class="mdi mdi-brain"></i><span class="nav-label">AI Security &amp; GRC</span></span>
+          <span class="nav-badge">LLM</span>
+        </button>
         <button class="nav-item" data-view="reports" title="Assessment Reports">
           <span class="nav-item-left"><i class="mdi mdi-file-document-outline"></i><span class="nav-label">Assessment Reports</span></span>
         </button>
@@ -1294,6 +1298,49 @@
           </div>
         </div>
       </section>
+      <!-- VIEW: AI SECURITY & GRC -->
+      <section class="view-section" id="view-aisec">
+        <div class="page-header">
+          <div>
+            <div class="page-title"><i class="mdi mdi-brain" style="color: var(--primary);"></i> AI Security &amp; GRC</div>
+            <div class="page-subtitle">Probe an LLM/AI endpoint for OWASP LLM Top 10 risks; map results to OWASP, MITRE ATLAS, NIST AI RMF, and Google SAIF / ISO 42001.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-target"></i> AI Target</div></div>
+          <div class="panel-body">
+            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+              <div style="flex:1; min-width:220px;">
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">ENDPOINT BASE URL</label>
+                <input id="aisecUrl" class="input" style="width:100%;" placeholder="http://host:11434 (Ollama) or https://api.example.com (OpenAI)" />
+              </div>
+              <div>
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">MODEL</label>
+                <input id="aisecModel" class="input" placeholder="e.g. qwen2.5-coder:7b" />
+              </div>
+              <div>
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">API</label>
+                <select id="aisecApi" class="select"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option></select>
+              </div>
+              <button class="btn btn-primary" id="aisecRunBtn" onclick="runAiSec()"><i class="mdi mdi-play"></i> Run Assessment</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-shield-search"></i> Posture</div><span class="badge badge-neutral" id="aisecStatus">idle</span></div>
+          <div class="panel-body">
+            <div id="aisecPosture" style="color:var(--text-muted);">No run yet. Enter an AI endpoint and run the assessment.</div>
+            <div class="table-wrap" style="margin-top:12px;">
+              <table><thead><tr><th>Probe</th><th>Result</th><th>OWASP LLM</th><th>MITRE ATLAS</th></tr></thead><tbody id="aisecTable"></tbody></table>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div></div>
+          <div class="panel-body"><div id="aisecReport" style="color:var(--text-muted);">&mdash;</div></div>
+        </div>
+      </section>
+
       <!-- VIEW: AUTONOMOUS AI AGENT -->
       <section class="view-section" id="view-agent">
         <div class="page-header">
@@ -1819,6 +1866,40 @@
       } finally {
         btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Agent';
       }
+    }
+
+    async function runAiSec() {
+      const base_url = document.getElementById('aisecUrl').value.trim();
+      const model = document.getElementById('aisecModel').value.trim();
+      const api_type = document.getElementById('aisecApi').value;
+      if (!base_url || !model) { document.getElementById('aisecPosture').textContent = 'Enter an endpoint URL and a model.'; return; }
+      const btn = document.getElementById('aisecRunBtn'); btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
+      document.getElementById('aisecStatus').textContent = 'starting';
+      document.getElementById('aisecTable').innerHTML = '';
+      document.getElementById('aisecPosture').textContent = 'Probing the AI endpoint...';
+      document.getElementById('aisecReport').innerHTML = 'Working...';
+      try {
+        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type})})).json();
+        if (r.error) { document.getElementById('aisecPosture').textContent = 'ERROR: ' + r.error; return; }
+        const jid = r.job_id; let data = null;
+        for (let i = 0; i < 120; i++) {
+          await sleep(2000);
+          const j = await (await fetch('/api/job/' + jid)).json();
+          document.getElementById('aisecStatus').textContent = j.status;
+          if (j.status === 'done') { data = j.result; break; }
+          if (j.status === 'error') { document.getElementById('aisecPosture').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
+        }
+        if (!data) { document.getElementById('aisecPosture').textContent = 'timed out'; return; }
+        const p = data.posture;
+        const col = p.rating === 'Strong' ? 'var(--success)' : p.rating === 'Moderate' ? 'var(--warning)' : 'var(--danger)';
+        document.getElementById('aisecPosture').innerHTML = `<span style="font-size:24px; font-weight:800; color:${col};">${p.score}/100</span> <span style="color:${col}; font-weight:600;">${p.rating}</span> <span style="color:var(--text-muted);">— ${p.failed}/${p.total} controls failed</span>`;
+        document.getElementById('aisecTable').innerHTML = (data.results || []).map(x => {
+          const v = x.error ? '<span class="badge badge-neutral">ERROR</span>' : x.vulnerable ? '<span class="badge badge-red">VULNERABLE</span>' : '<span class="badge badge-green">PASS</span>';
+          return `<tr><td>${x.name}</td><td>${v}</td><td style="font-size:11.5px;">${x.owasp}</td><td class="mono" style="font-size:11.5px;">${x.atlas}</td></tr>`;
+        }).join('');
+        document.getElementById('aisecReport').innerHTML = renderMarkdown(data.report || '');
+      } catch (e) { document.getElementById('aisecPosture').textContent = 'Request failed: ' + e; }
+      finally { btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment'; }
     }
 
     function launchTargetInWorkbench(ip) {
