@@ -145,10 +145,28 @@ def init_auth(app, cfg) -> None:
     def auth_callback():
         if mode != "oidc":
             return redirect("/")
-        token = oauth.oniops_sso.authorize_access_token()
-        info = token.get("userinfo") or {}
+        def _fail(msg: str):
+            return Response(
+                f"<!doctype html><meta charset=utf-8><title>ONIOPS sign-in</title>"
+                f"<body style='background:#090b10;color:#f1f5f9;font-family:Inter,sans-serif;"
+                f"display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center'>"
+                f"<div><h2 style='color:#ef4444'>Sign-in failed</h2><p style='color:#94a3b8'>{msg}</p>"
+                f"<a href='/login' style='color:#ef4444'>Try again</a></div></body>", 400,
+                {"Content-Type": "text/html; charset=utf-8"})
+
+        err = request.args.get("error")
+        if err:
+            desc = request.args.get("error_description", err)
+            log.warning("OIDC provider returned an error: %s (%s)", err, desc)
+            return _fail(desc)
+        try:
+            token = oauth.oniops_sso.authorize_access_token()
+            info = token.get("userinfo") or {}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("OIDC callback exchange failed: %s", exc)
+            return _fail("Could not complete sign-in. Please try again.")
         claim = cfg.auth.oidc.get("username_claim", "email")
-        user = info.get(claim) or info.get("email") or info.get("sub")
+        user = info.get(claim) or info.get("email") or info.get("preferred_username") or info.get("sub")
         if not user or not _user_allowed(cfg, user):
             return Response("Forbidden: your account is not permitted.", 403)
         session["user"] = user
