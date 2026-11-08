@@ -7,8 +7,10 @@ scope-guarded before it leaves the controller.
 
 from __future__ import annotations
 
+import os
 import shlex
 from dataclasses import dataclass
+from pathlib import Path
 
 import paramiko
 
@@ -31,9 +33,35 @@ class KaliRunner:
         self.cfg = cfg or get_config()
         self.scope = scope or Scope(self.cfg)
 
+    def _host_policy(self, client: paramiko.SSHClient):
+        """Configure host-key verification per config.kali.verify_host_key.
+
+        tofu   - trust on first use: load a saved known_hosts, accept+persist a
+                 new key, but a CHANGED key is rejected (MITM protection).
+        strict - only hosts already in known_hosts are allowed.
+        insecure - accept any key (not recommended).
+        """
+        mode = (self.cfg.kali.verify_host_key or "tofu").lower()
+        kh = Path(self.cfg.kali.known_hosts)
+        if mode == "insecure":
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            return
+        if kh.exists():
+            try:
+                client.load_host_keys(str(kh))
+            except Exception:
+                pass
+        if mode == "strict":
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        else:  # tofu
+            kh.parent.mkdir(parents=True, exist_ok=True)
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self._persist_kh = str(kh)
+
     def _client(self) -> paramiko.SSHClient:
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self._persist_kh = None
+        self._host_policy(client)
         client.connect(
             hostname=self.cfg.kali.host,
             username=self.cfg.kali.user,
@@ -59,6 +87,14 @@ class KaliRunner:
             client = self._client()
         except Exception as exc:  # noqa: BLE001 - surface any SSH/connect error
             return CmdResult(rc=1, out=f"SSH connection error: {exc}")
+
+        # TOFU: persist newly-accepted host keys so a later change is caught.
+        if getattr(self, "_persist_kh", None):
+            try:
+                client.save_host_keys(self._persist_kh)
+                os.chmod(self._persist_kh, 0o600)
+            except Exception:
+                pass
 
         try:
             _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
