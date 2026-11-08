@@ -24,7 +24,7 @@ from flask import Flask, Response, jsonify, render_template, request
 from oniops import __version__
 from oniops.agent import run_agent
 from oniops.auth import init_auth
-from oniops.config import get_config
+from oniops.config import apply_updates, get_config
 from oniops.graph import build_graph
 from oniops.jobs import JobManager
 from oniops.kali import KaliRunner
@@ -266,6 +266,46 @@ def api_settings():
             "caldera": bool((cfg.integrations.get("caldera") or {}).get("enabled")),
         },
     })
+
+
+def _reload_config():
+    global cfg, scope, HOST_RUNNERS, ACTIVE_HOST, llm
+    cfg = get_config(reload=True)
+    scope = Scope(cfg)
+    HOST_RUNNERS = {h.name: KaliRunner(h, scope, cfg) for h in cfg.hosts}
+    ACTIVE_HOST = cfg.kali.name
+    llm = get_llm(reload=True)
+
+
+@app.route("/api/config")
+def api_get_config():
+    """Editable configuration (no secrets)."""
+    return jsonify({
+        "instance_name": cfg.instance_name,
+        "external_url": cfg.external_url,
+        "scope": {"allowed_cidrs": cfg.scope.allowed_cidrs, "exclude": cfg.scope.exclude,
+                  "mode": cfg.scope.mode, "non_destructive": cfg.scope.non_destructive,
+                  "rate_limit_per_min": cfg.scope.rate_limit_per_min},
+        "attack_hosts": [{"name": h.name, "label": h.label, "host": h.host, "user": h.user,
+                          "ssh_key": h.ssh_key, "default": h.name == cfg.kali.name} for h in cfg.hosts],
+        "llm": {"roles": {r: cfg.role_cfg(r) for r in ("planner", "reporter", "reason")},
+                "providers": list((cfg.llm.get("providers") or {}).keys())},
+        "integrations": {k: {"enabled": bool((cfg.integrations.get(k) or {}).get("enabled")),
+                             "host": (cfg.integrations.get(k) or {}).get("host", "")}
+                         for k in ("misp", "caldera")},
+    })
+
+
+@app.route("/api/config", methods=["POST"])
+def api_save_config():
+    updates = request.get_json(silent=True) or {}
+    try:
+        apply_updates(updates)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Rejected: {exc}"}), 400
+    _reload_config()
+    emit_event("CONFIG", "ok", "Configuration updated from the UI")
+    return jsonify({"ok": True})
 
 
 @app.route("/api/host", methods=["POST"])
