@@ -22,6 +22,7 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request
 
 from oniops import __version__
+from oniops.agent import run_agent
 from oniops.auth import init_auth
 from oniops.config import get_config
 from oniops.graph import build_graph
@@ -589,6 +590,29 @@ def api_assess_start():
     ip, label = rt.ip, rt.label
     job_id = jobs.submit("assessment", {"target": label, "ip": ip, "profile": profile},
                          lambda: _run_assessment(ip, label, profile))
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/agent/start", methods=["POST"])
+def api_agent_start():
+    """Launch the autonomous tool-calling agent as a background job."""
+    data = request.get_json(silent=True) or {}
+    objective = (data.get("objective") or "").strip()
+    if not objective or len(objective) > 500:
+        return jsonify({"error": "Provide an objective (1-500 chars)."}), 400
+    target = (data.get("target") or "").strip()
+    if target:
+        try:
+            target = scope.resolve(target).ip
+        except ScopeViolation as exc:
+            return jsonify({"error": str(exc)}), 400
+    steps = max(2, min(int(data.get("max_steps", 8) or 8), 12))
+
+    def _job():
+        return run_agent(objective, target, llm=llm, scope=scope,
+                         runner=active_runner(), emit=emit_event, max_steps=steps)
+
+    job_id = jobs.submit("agent", {"objective": objective[:80], "target": target or "(auto)"}, _job)
     return jsonify({"job_id": job_id})
 
 
