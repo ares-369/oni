@@ -39,13 +39,33 @@ kali:
   known_hosts: "./secrets/known_hosts"
 
 # ---------------------------------------------------------------------
-#  Authentication for the ONIOPS web UI. STRONGLY recommended whenever the
-#  UI is reachable beyond localhost — it can drive the attack host.
-#  Password comes from .env (ONIOPS_AUTH_PASSWORD), never from this file.
+#  Authentication for the ONIOPS web UI. OFF by default. STRONGLY recommended
+#  whenever the UI is reachable beyond localhost — it can drive the attack
+#  host. For production, running ONIOPS behind a TLS reverse proxy (nginx /
+#  Caddy / Traefik / NPM) is recommended; use mode "proxy" with forward-auth
+#  (e.g. Authentik), or "oidc" to let ONIOPS do SSO itself.
+#
+#  mode: none | basic | local | oidc | proxy
+#    none   - no login (default)
+#    basic  - HTTP Basic (single operator)
+#    local  - built-in login page + session (set password_hash, or
+#             ONIOPS_AUTH_PASSWORD in .env; and ONIOPS_SECRET_KEY in .env)
+#    oidc   - SSO via ANY OpenID Connect provider (Authentik, Keycloak,
+#             Google, Azure AD, Okta...). Needs: pip install 'oniops[oidc]'
+#    proxy  - trust a reverse-proxy forward-auth header
 # ---------------------------------------------------------------------
 auth:
-  enabled: false
+  mode: "none"
   username: "oniops"
+  # password_hash: "pbkdf2_sha256$..."   # generate: python -c "from oniops.auth import hash_password;print(hash_password('yourpw'))"
+  proxy_header: "X-Forwarded-User"        # for mode: proxy
+  allowed_users: []                        # optional allowlist (oidc/proxy); empty = any authenticated
+  oidc:                                    # for mode: oidc
+    issuer: ""                             # e.g. https://auth.example.com/application/o/oniops/
+    client_id: ""
+    # client_secret comes from .env OIDC_CLIENT_SECRET
+    scopes: "openid email profile"
+    username_claim: "email"
 
 # ---------------------------------------------------------------------
 #  LLM providers. Mix and match freely — any provider can fill any role.

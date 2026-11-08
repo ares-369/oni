@@ -65,9 +65,19 @@ class KaliConfig:
 
 @dataclass
 class AuthConfig:
-    enabled: bool = False
+    # none | basic | local | oidc | proxy
+    mode: str = "none"
     username: str = "oniops"
-    password: str = ""   # sourced from .env ONIOPS_AUTH_PASSWORD
+    password: str = ""          # basic/local; from .env ONIOPS_AUTH_PASSWORD
+    password_hash: str = ""     # optional pbkdf2 hash (preferred over password)
+    secret_key: str = ""        # session signing; from .env ONIOPS_SECRET_KEY
+    proxy_header: str = "X-Forwarded-User"   # reverse-proxy forward-auth header
+    allowed_users: list = field(default_factory=list)  # allowlist (oidc/proxy); empty = any authenticated
+    oidc: dict = field(default_factory=dict)  # issuer, client_id, client_secret, scopes, username_claim
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode != "none"
 
 
 @dataclass
@@ -134,10 +144,27 @@ def load_config() -> Config:
     )
 
     auth_raw = data.get("auth", {}) or {}
+    # Back-compat: old `enabled: true` maps to basic auth.
+    mode = auth_raw.get("mode")
+    if mode is None:
+        mode = "basic" if auth_raw.get("enabled") else "none"
+    oidc_raw = auth_raw.get("oidc", {}) or {}
+    oidc = {
+        "issuer": str(oidc_raw.get("issuer", "")),
+        "client_id": str(oidc_raw.get("client_id", "")),
+        "client_secret": os.getenv("OIDC_CLIENT_SECRET", oidc_raw.get("client_secret", "")) or "",
+        "scopes": str(oidc_raw.get("scopes", "openid email profile")),
+        "username_claim": str(oidc_raw.get("username_claim", "email")),
+    }
     auth = AuthConfig(
-        enabled=bool(auth_raw.get("enabled", False)),
+        mode=str(mode),
         username=str(auth_raw.get("username", "oniops")),
         password=os.getenv("ONIOPS_AUTH_PASSWORD", auth_raw.get("password", "")) or "",
+        password_hash=str(auth_raw.get("password_hash", "")),
+        secret_key=os.getenv("ONIOPS_SECRET_KEY", auth_raw.get("secret_key", "")) or "",
+        proxy_header=str(auth_raw.get("proxy_header", "X-Forwarded-User")),
+        allowed_users=list(auth_raw.get("allowed_users", []) or []),
+        oidc=oidc,
     )
 
     return Config(

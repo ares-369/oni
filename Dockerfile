@@ -12,8 +12,8 @@ RUN apt-get update \
 
 COPY requirements.txt pyproject.toml ./
 RUN pip install -r requirements.txt \
-    # Install the cloud SDKs too so the image supports every provider.
-    && pip install "anthropic>=0.40" "google-genai>=0.3" "openai>=1.40"
+    # Install cloud SDKs + OIDC so the image supports every provider and SSO.
+    && pip install "anthropic>=0.40" "google-genai>=0.3" "openai>=1.40" "authlib>=1.3"
 
 COPY oniops/ ./oniops/
 COPY webui.py ./

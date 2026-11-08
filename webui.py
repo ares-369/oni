@@ -21,6 +21,7 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from oniops.auth import init_auth
 from oniops.config import get_config
 from oniops.graph import build_graph
 from oniops.jobs import JobManager
@@ -142,22 +143,8 @@ def parse_nmap_ports(nmap_out: str) -> list[dict]:
 # ═══════════════════════════════════════════════════════
 ALLOWED_PROFILES = {"fast_recon", "deep_service", "web_tls_audit", "web_app_pt", "autonomous_ai"}
 
-
-@app.before_request
-def _require_auth():
-    if not cfg.auth.enabled:
-        return None
-    a = request.authorization
-    ok = (
-        a is not None
-        and cfg.auth.password
-        and hmac.compare_digest(a.username or "", cfg.auth.username)
-        and hmac.compare_digest(a.password or "", cfg.auth.password)
-    )
-    if ok:
-        return None
-    return Response("ONIOPS authentication required", 401,
-                    {"WWW-Authenticate": 'Basic realm="ONIOPS"'})
+# Authentication: none | basic | local | oidc | proxy (configured in oniops.auth).
+init_auth(app, cfg)
 
 
 @app.after_request
