@@ -21,6 +21,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 from oniops.config import get_config
+from oniops.jobs import JobManager
 from oniops.kali import KaliRunner
 from oniops.providers import get_llm
 from oniops.scope import Scope, ScopeViolation
@@ -85,6 +86,7 @@ def init_db():
 
 
 init_db()
+jobs = JobManager(DB_PATH)
 
 
 def now_iso() -> str:
@@ -283,18 +285,7 @@ def _run(cmd: list[str], timeout: int) -> str:
     return kali.run(cmd, timeout=timeout).out
 
 
-@app.route("/api/assess", methods=["POST"])
-def api_assess():
-    data = request.get_json(silent=True) or {}
-    raw_target = data.get("target", "")
-    profile = data.get("profile", "fast_recon")
-
-    try:
-        rt = scope.resolve(raw_target)
-    except ScopeViolation as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    target_ip, hostname = rt.ip, rt.label
+def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) via Kali")
 
     commands_run, raw_sections, discovered_ports = [], [], []
@@ -333,6 +324,51 @@ def api_assess():
         out = _run(cmd, 90)
         raw_sections.append(f"=== Web & TLS Posture Audit ===\n$ {' '.join(cmd)}\n{out}")
         discovered_ports = parse_nmap_ports(out)
+
+    elif profile == "web_app_pt":  # WAPT — OWASP Web Top 10 oriented
+        emit_event("WAPT", "busy", f"Web App PT on {hostname} ({target_ip})")
+        web_ports = "80,443,3000,5000,8000,8080,8081,8443,8888,9000"
+        cmd = ["nmap", "-p", web_ports, "--open", "-sV", target_ip]
+        commands_run.append(" ".join(cmd))
+        out = _run(cmd, 60)
+        raw_sections.append(f"=== WAPT: Web Service Discovery ===\n$ {' '.join(cmd)}\n{out}")
+        discovered_ports = parse_nmap_ports(out)
+        for p in discovered_ports[:3]:
+            pn = p["port"]
+            scheme = "https" if pn in (443, 8443) else "http"
+            url = f"{scheme}://{target_ip}:{pn}"
+
+            emit_event("WAPT_FP", "busy", f"[WAPT] Fingerprint {url}")
+            commands_run.append(f"whatweb {url}")
+            raw_sections.append(f"=== WAPT: WhatWeb ({url}) ===\n{_run(['whatweb', '--color=never', '-a', '1', url], 30)[:1000]}")
+
+            emit_event("WAPT_CRAWL", "busy", f"[WAPT] Crawl {url}")
+            commands_run.append(f"katana {url}")
+            kt = _run(["katana", "-u", url, "-depth", "2", "-silent"], 35)
+            endpoints = [l.strip() for l in kt.splitlines() if l.startswith("http")][:15]
+            if endpoints:
+                raw_sections.append(f"=== WAPT: Endpoints ({url}) ===\n" + "\n".join(endpoints))
+
+            emit_event("WAPT_DIR", "busy", f"[WAPT] Content discovery {url}")
+            commands_run.append(f"ffuf {url}/FUZZ")
+            ff = _run(["ffuf", "-u", f"{url}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt",
+                       "-mc", "200,204,301,302,307,401,403", "-t", "40", "-s"], 60)
+            if ff.strip():
+                finding_count += len([l for l in ff.splitlines() if l.strip()])
+                raw_sections.append(f"=== WAPT: Discovered Paths ({url}) ===\n{ff[:1000]}")
+
+            emit_event("WAPT_VULN", "busy", f"[WAPT] OWASP checks {url}")
+            commands_run.append(f"nuclei {url} (web)")
+            nc = _run(["nuclei", "-target", url, "-tags", "cve,misconfig,exposure,xss,sqli,lfi,ssrf,rce",
+                       "-silent", "-severity", "low,medium,high,critical"], 70)
+            if nc.strip():
+                finding_count += len([l for l in nc.splitlines() if l.strip()])
+                raw_sections.append(f"=== WAPT: OWASP/Nuclei Findings ({url}) ===\n{nc[:1500]}")
+
+            commands_run.append(f"nikto {url}")
+            nk = _run(["nikto", "-h", url, "-Tuning", "1,2,3,b", "-maxtime", "60s"], 75)
+            if nk.strip():
+                raw_sections.append(f"=== WAPT: Nikto ({url}) ===\n{nk[:1200]}")
 
     else:  # autonomous_ai — Pentesting Task Tree
         emit_event("PTT_INIT", "busy", f"Pentesting Task Tree for {hostname} ({target_ip})")
@@ -433,12 +469,51 @@ def api_assess():
         conn.commit()
 
     emit_event("COMPLETE", "ok", f"[{profile}] on {hostname}: {n} ports, {finding_count} findings")
-    return jsonify({
+    return {
         "id": aid, "timestamp": ts, "target_ip": target_ip, "target_name": hostname,
         "profile": profile, "severity": severity, "open_ports": port_summary,
         "ports_list": discovered_ports, "finding_count": finding_count,
         "commands_run": commands_run, "raw_output": full_raw, "ai_report": ai_report,
-    })
+    }
+
+
+@app.route("/api/assess", methods=["POST"])
+def api_assess():
+    """Synchronous assessment (blocks until done). Kept for CLI / compatibility."""
+    data = request.get_json(silent=True) or {}
+    try:
+        rt = scope.resolve(data.get("target", ""))
+    except ScopeViolation as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(_run_assessment(rt.ip, rt.label, data.get("profile", "fast_recon")))
+
+
+@app.route("/api/assess/start", methods=["POST"])
+def api_assess_start():
+    """Enqueue an assessment as a background job; returns a job_id to poll."""
+    data = request.get_json(silent=True) or {}
+    profile = data.get("profile", "fast_recon")
+    try:
+        rt = scope.resolve(data.get("target", ""))
+    except ScopeViolation as exc:
+        return jsonify({"error": str(exc)}), 400
+    ip, label = rt.ip, rt.label
+    job_id = jobs.submit("assessment", {"target": label, "ip": ip, "profile": profile},
+                         lambda: _run_assessment(ip, label, profile))
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/job/<job_id>")
+def api_job(job_id):
+    j = jobs.get(job_id)
+    if not j:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify(j)
+
+
+@app.route("/api/jobs")
+def api_jobs():
+    return jsonify({"jobs": jobs.list()})
 
 
 @app.route("/api/intel")
