@@ -1,0 +1,17 @@
+services:
+  oniops:
+    build: .
+    image: oniops:latest
+    container_name: oniops
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # Your environment-specific files (kept out of the image / git):
+      - ./config.yaml:/app/config.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./secrets:/app/secrets:ro
+      - ./data:/app/data
+    # ONIOPS reaches your Kali host and LLMs over the network; if those live on
+    # the Docker host's LAN, host networking is often simplest:
+    # network_mode: host

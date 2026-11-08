@@ -1,0 +1,15 @@
+# --- Core (always required) ---
+flask>=3.0
+waitress>=3.0          # cross-platform WSGI server (Windows/Linux/macOS)
+paramiko>=3.4          # pure-Python SSH to the Kali host (no OpenSSH binary needed)
+requests>=2.31
+PyYAML>=6.0
+python-dotenv>=1.0
+urllib3>=2.0
+
+# --- LLM providers (optional; imported lazily) ---
+# Ollama needs no SDK (plain HTTP). Install only the clouds you use:
+#   pip install "oniops[anthropic]"  / [gemini] / [openai]
+# anthropic>=0.40
+# google-genai>=0.3
+# openai>=1.40

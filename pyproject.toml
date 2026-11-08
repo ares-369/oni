@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oniops"
+version = "0.1.0"
+description = "ONIOPS — Offensive Neural Intelligence: a provider-agnostic autonomous red-team framework"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "The ONIOPS Authors" }]
+keywords = ["security", "red-team", "pentest", "offensive-security", "ai-agent", "llm"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "flask>=3.0",
+    "waitress>=3.0",
+    "paramiko>=3.4",
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+    "urllib3>=2.0",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+gemini = ["google-genai>=0.3"]
+openai = ["openai>=1.40"]
+all = ["anthropic>=0.40", "google-genai>=0.3", "openai>=1.40"]
+
+[project.scripts]
+oniops = "oniops.server:main"
+
+[project.urls]
+Homepage = "https://github.com/oniops/oniops"
+
+[tool.setuptools.packages.find]
+include = ["oniops*"]

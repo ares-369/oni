@@ -1,0 +1,32 @@
+# Secrets & local config — NEVER commit
+.env
+config.yaml
+secrets/
+*.key
+*_id_rsa
+*_id_ed25519
+id_rsa
+id_ed25519
+
+# Runtime data
+data/
+*.sqlite
+*.sqlite3
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
