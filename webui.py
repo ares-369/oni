@@ -22,6 +22,7 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request
 
 from oniops.config import get_config
+from oniops.graph import build_graph
 from oniops.jobs import JobManager
 from oniops.kali import KaliRunner
 from oniops.providers import get_llm
@@ -573,6 +574,12 @@ def api_intel():
     # fleet_cves kept as an (empty) key for frontend compatibility; offensive CVE
     # enrichment via MISP/Vulners lands in a later phase.
     return jsonify({"query": q, "exploits": exploits, "fleet_cves": []})
+
+
+@app.route("/api/graph")
+def api_graph():
+    """Attack-surface knowledge graph (hosts -> services, with finding rollups)."""
+    return jsonify(build_graph(DB_PATH, scope.cidrs))
 
 
 @app.route("/api/telemetry")
