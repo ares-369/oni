@@ -45,6 +45,22 @@ Other install paths (Proxmox LXC, Windows, bare Linux, and more) are in
 Everything environment-specific lives in `config.yaml` (layout) and `.env`
 (secrets). Nothing is committed. See [`config.example.yaml`](config.example.yaml).
 
+## Authentication & SSO
+
+ONIOPS ships with **no login by default** (`auth.mode: none`). Because the UI can
+drive the attack host, enable auth whenever it is reachable beyond localhost:
+
+- `basic` — HTTP Basic, single operator
+- `local` — built-in login page + session (`ONIOPS_AUTH_PASSWORD` or a
+  `password_hash`, plus `ONIOPS_SECRET_KEY`)
+- `oidc` — **SSO with any OpenID Connect provider** (Authentik, Keycloak,
+  Google, Azure AD, Okta, Auth0…); `pip install 'oniops[oidc]'`
+- `proxy` — trust a reverse-proxy forward-auth header (e.g. Authentik)
+
+**Reverse proxy:** recommended for production — terminate TLS and (optionally)
+do SSO at nginx/Caddy/Traefik/NPM. ONIOPS does not require one; it can do TLS-less
+HTTP behind the proxy, or run standalone with `local`/`oidc` auth.
+
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE).

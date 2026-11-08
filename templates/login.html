@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ONIOPS // Sign in</title>
+  <link rel="stylesheet" href="/static/mdi/css/materialdesignicons.min.css" />
+  <style>
+    :root {
+      --bg: #090b10; --card: #11161f; --border: #1f2735; --text: #f1f5f9;
+      --muted: #94a3b8; --primary: #ef4444; --input: #0a0d13;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      font-family: Inter, system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
+    .card { width: 360px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 32px; box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .brand i { color: var(--primary); font-size: 28px; }
+    .brand h1 { font-size: 22px; margin: 0; letter-spacing: 1px; }
+    .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 22px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+    input { width: 100%; padding: 11px 12px; background: var(--input); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 14px; }
+    input:focus { outline: none; border-color: var(--primary); }
+    button { width: 100%; margin-top: 22px; padding: 12px; background: var(--primary); color: #fff;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #f87171; }
+    .err { background: rgba(239,68,68,.12); border: 1px solid var(--primary); color: #fecaca;
+      padding: 9px 12px; border-radius: 8px; font-size: 12.5px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <form class="card" method="POST" action="/login">
+    <div class="brand"><i class="mdi mdi-shield-half-full"></i><h1>{{ instance or 'ONIOPS' }}</h1></div>
+    <p class="sub">Offensive Neural Intelligence</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autofocus />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" />
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>

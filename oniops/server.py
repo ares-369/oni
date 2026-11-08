@@ -36,13 +36,15 @@ def main() -> None:
     # Security posture warning: an unauthenticated UI bound to a non-loopback
     # address lets anyone on the network drive the attack host.
     loopback = cfg.bind_host in ("127.0.0.1", "localhost", "::1")
-    if not cfg.auth.enabled and not loopback:
+    print(f"[ONIOPS] auth mode: {cfg.auth.mode}", flush=True)
+    if cfg.auth.mode == "none" and not loopback:
         print("[ONIOPS][WARNING] Web UI is exposed on a non-loopback address with NO "
-              "authentication. Set auth.enabled + ONIOPS_AUTH_PASSWORD, bind to 127.0.0.1, "
-              "or front ONIOPS with an authenticating reverse proxy.", flush=True)
-    if cfg.auth.enabled and not cfg.auth.password:
-        print("[ONIOPS][WARNING] auth.enabled is true but ONIOPS_AUTH_PASSWORD is empty; "
-              "authentication will reject all requests until a password is set.", flush=True)
+              "authentication (auth.mode=none). Set auth.mode (basic/local/oidc/proxy), "
+              "bind to 127.0.0.1, or front ONIOPS with an authenticating reverse proxy.", flush=True)
+    if cfg.auth.mode in ("basic", "local") and not (cfg.auth.password or cfg.auth.password_hash):
+        print(f"[ONIOPS][WARNING] auth.mode={cfg.auth.mode} but no password/password_hash set; "
+              "login will reject everyone until you set ONIOPS_AUTH_PASSWORD or auth.password_hash.",
+              flush=True)
 
     serve(app, host=cfg.bind_host, port=cfg.bind_port, threads=8)
 
