@@ -748,6 +748,11 @@
 
     /* ---------------- Mobile / phone layout ---------------- */
     .mobile-backdrop { display: none; }
+    .set-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 9px 0; border-bottom: 1px solid var(--border-subtle); font-size: 12.5px; }
+    .set-row:last-child { border-bottom: none; }
+    .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 980px) { .set-grid { grid-template-columns: 1fr; } }
     @media (max-width: 860px) {
       .app-shell, .app-shell.sidebar-collapsed {
         grid-template-columns: 1fr;
@@ -830,7 +835,7 @@
       <div class="header-center">
         <div class="status-pill" title="Kali Attack Host (SSH)">
           <span class="status-dot" id="kaliDot"></span>
-          <span>Kali: <strong id="kaliStatusText" class="mono">Checking...</strong></span>
+          <span>Host: <strong id="kaliStatusText" class="mono">Checking...</strong></span>
         </div>
         <div class="status-pill" title="Active LLM Provider">
           <span class="status-dot" id="ollamaDot"></span>
@@ -867,8 +872,8 @@
         <button class="nav-item" data-view="graph" title="Attack Surface Graph">
           <span class="nav-item-left"><i class="mdi mdi-graph-outline"></i><span class="nav-label">Attack Graph</span></span>
         </button>
-        <button class="nav-item" data-view="arsenal" title="Kali Arsenal &amp; Package Installer">
-          <span class="nav-item-left"><i class="mdi mdi-package-variant-closed"></i><span class="nav-label">Kali Arsenal &amp; Tools</span></span>
+        <button class="nav-item" data-view="arsenal" title="Attack Host Tools &amp; Installer">
+          <span class="nav-item-left"><i class="mdi mdi-package-variant-closed"></i><span class="nav-label">Tooling Arsenal</span></span>
           <span class="nav-badge" id="navArsenalBadge">SSH</span>
         </button>
 
@@ -880,14 +885,19 @@
         <button class="nav-item" data-view="reports" title="Assessment Reports">
           <span class="nav-item-left"><i class="mdi mdi-file-document-outline"></i><span class="nav-label">Assessment Reports</span></span>
         </button>
+
+        <div class="nav-group-label" style="margin-top:10px;">System</div>
+        <button class="nav-item" data-view="settings" title="Settings">
+          <span class="nav-item-left"><i class="mdi mdi-cog-outline"></i><span class="nav-label">Settings</span></span>
+        </button>
       </div>
 
       <div class="sidebar-footer-card">
         <div class="sidebar-footer-title">
-          <i class="mdi mdi-console-network" style="color: var(--primary);"></i> Kali VM Connected
+          <i class="mdi mdi-console-network" style="color: var(--primary);"></i> Attack Host Connected
         </div>
         <div style="color: var(--text-muted); line-height: 1.4;">
-          Direct SSH execution &amp; tool installer on your Kali attack host, scoped to your authorized range.
+          Scope-locked SSH execution on your attack host. Add more hosts in Settings.
         </div>
       </div>
     </aside>
@@ -1278,6 +1288,42 @@
           </div>
         </div>
       </section>
+      <!-- VIEW: SETTINGS -->
+      <section class="view-section" id="view-settings">
+        <div class="page-header">
+          <div>
+            <div class="page-title"><i class="mdi mdi-cog-outline" style="color: var(--primary);"></i> Settings</div>
+            <div class="page-subtitle">Connections, AI providers, scope, and security for this ONIOPS instance.</div>
+          </div>
+          <button class="btn" onclick="loadSettings()"><i class="mdi mdi-refresh"></i> Refresh</button>
+        </div>
+        <div class="set-grid">
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title"><i class="mdi mdi-server-network"></i> Attack Hosts</div></div>
+            <div class="panel-body" id="setHosts"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title"><i class="mdi mdi-brain"></i> AI Providers &amp; Models</div></div>
+            <div class="panel-body" id="setLLM"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title"><i class="mdi mdi-crosshairs-gps"></i> Scope &amp; Rules of Engagement</div></div>
+            <div class="panel-body" id="setScope"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title"><i class="mdi mdi-shield-key-outline"></i> Security</div></div>
+            <div class="panel-body" id="setSecurity"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title"><i class="mdi mdi-connection"></i> Integrations</div></div>
+            <div class="panel-body" id="setIntegrations"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div class="panel-title"><i class="mdi mdi-information-outline"></i> About</div></div>
+            <div class="panel-body" id="setAbout"></div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Collapsible Right-Side AI Red-Team Operator Drawer -->
@@ -1325,6 +1371,7 @@
       if (viewName === 'graph') loadGraph();
       if (viewName === 'reports') loadScansHistory();
       if (viewName === 'arsenal') loadKaliTools();
+      if (viewName === 'settings') loadSettings();
     }
 
     const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
@@ -1534,6 +1581,65 @@
         svg += '</svg>';
         document.getElementById('graphCanvas').innerHTML = svg;
       }).catch(e => { document.getElementById('graphCanvas').innerHTML = `<div style="color:var(--danger); padding:20px;">Graph error: ${e}</div>`; });
+    }
+
+    async function loadSettings() {
+      try {
+        const s = await (await fetch('/api/settings')).json();
+        const dot = ok => `<span class="status-dot ${ok ? 'online' : 'warn'}" style="display:inline-block;"></span>`;
+        document.getElementById('setHosts').innerHTML =
+          s.hosts.map(h => `
+            <div class="set-row">
+              <div><strong>${h.label}</strong> <span class="mono" style="color:var(--text-muted); font-size:11.5px;">${h.user}@${h.host}</span>
+                ${h.active ? '<span class="badge badge-green">active</span>' : ''}</div>
+              <div style="display:flex; gap:6px;">
+                ${h.active ? '' : `<button class="btn btn-sm btn-primary" onclick="useHost('${h.name}')">Use</button>`}
+                <button class="btn btn-sm" onclick="testHost('${h.name}', this)">Test</button>
+              </div>
+            </div>`).join('') +
+          `<div style="color:var(--text-dim); font-size:11.5px; margin-top:10px;">ONIOPS drives any SSH-reachable tooled Linux — Kali, Parrot, BlackArch, or your own box. Add more under <code class="mono">attack_hosts</code> in config.yaml.</div>`;
+
+        const roles = s.llm.roles || {};
+        document.getElementById('setLLM').innerHTML =
+          Object.keys(roles).map(r => `<div class="set-row"><span style="text-transform:capitalize;">${r}</span><span class="mono">${roles[r].provider} · ${roles[r].model || '(default)'}</span></div>`).join('') +
+          `<div class="set-row"><span>Active report model</span><select class="select" onchange="setModel(this.value)">${(s.llm.models || []).map(m => `<option ${m === s.llm.current_model ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
+          `<div style="margin-top:10px; display:flex; gap:14px; flex-wrap:wrap; font-size:12px;">${(s.llm.providers || []).map(p => `<span>${dot(s.llm.provider_health[p])} ${p}</span>`).join('')}</div>`;
+
+        document.getElementById('setScope').innerHTML =
+          `<div class="set-row"><span>Allowed CIDRs</span><span class="mono">${(s.scope.cidrs || []).join(', ')}</span></div>` +
+          `<div class="set-row"><span>Mode</span><span class="badge badge-neutral">${s.scope.mode}</span></div>` +
+          `<div class="set-row"><span>Excluded</span><span class="mono">${(s.scope.exclude || []).join(', ') || '—'}</span></div>` +
+          `<div class="set-row"><span>Non-destructive guard</span><span class="badge ${s.scope.non_destructive ? 'badge-green' : 'badge-red'}">${s.scope.non_destructive ? 'on' : 'off'}</span></div>`;
+
+        document.getElementById('setSecurity').innerHTML =
+          `<div class="set-row"><span>Auth mode</span><span class="badge badge-neutral">${s.auth.mode}</span></div>` +
+          `<div style="color:var(--text-dim); font-size:11.5px; margin-top:6px;">Set in config.yaml: none · basic · local · oidc · proxy.</div>`;
+
+        document.getElementById('setIntegrations').innerHTML =
+          `<div class="set-row"><span>MISP (threat intel)</span><span class="badge ${s.integrations.misp ? 'badge-green' : 'badge-neutral'}">${s.integrations.misp ? 'enabled' : 'off'}</span></div>` +
+          `<div class="set-row"><span>Caldera (adversary emulation)</span><span class="badge ${s.integrations.caldera ? 'badge-green' : 'badge-neutral'}">${s.integrations.caldera ? 'enabled' : 'off'}</span></div>`;
+
+        document.getElementById('setAbout').innerHTML =
+          `<div class="set-row"><span>Instance</span><span>${s.instance}</span></div>` +
+          `<div class="set-row"><span>Version</span><span class="mono">ONIOPS ${s.version}</span></div>` +
+          `<div class="set-row"><span>License</span><span class="mono">Apache-2.0</span></div>`;
+      } catch (e) {
+        document.getElementById('setHosts').innerHTML = `<div style="color:var(--danger);">Settings error: ${e}</div>`;
+      }
+    }
+    async function useHost(n) {
+      await fetch('/api/host', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:n})});
+      loadSettings(); loadStatus();
+    }
+    async function testHost(n, btn) {
+      const old = btn.textContent; btn.textContent = '…'; btn.disabled = true;
+      try { const r = await (await fetch('/api/host/test?name=' + encodeURIComponent(n))).json(); btn.textContent = r.online ? 'OK' : 'FAIL'; }
+      catch { btn.textContent = 'FAIL'; }
+      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 2500);
+    }
+    async function setModel(m) {
+      await fetch('/api/model', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model:m})});
+      loadStatus();
     }
 
     function launchTargetInWorkbench(ip) {

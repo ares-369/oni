@@ -52,8 +52,12 @@ class ScopeConfig:
 
 
 @dataclass
-class KaliConfig:
+class HostConfig:
+    """An attack host ONIOPS drives over SSH. Kali is one option; any tooled Linux
+    (Parrot, BlackArch, a custom box, or localhost) works."""
     host: str
+    name: str = "kali"
+    label: str = ""              # human label, e.g. "Kali (lab)"
     user: str = "root"
     ssh_key: str = "./secrets/kali_id_rsa"
     connect_timeout: int = 6
@@ -61,6 +65,10 @@ class KaliConfig:
     # insecure = auto-accept any key (not recommended).
     verify_host_key: str = "tofu"
     known_hosts: str = "./secrets/known_hosts"
+
+
+# Back-compat alias (older code / imports referenced KaliConfig).
+KaliConfig = HostConfig
 
 
 @dataclass
@@ -88,7 +96,8 @@ class Config:
     bind_host: str
     bind_port: int
     scope: ScopeConfig
-    kali: KaliConfig
+    kali: HostConfig          # the active/default attack host (back-compat name)
+    hosts: list               # all configured attack hosts (HostConfig)
     auth: AuthConfig
     llm: dict[str, Any]
     integrations: dict[str, Any]
@@ -135,14 +144,29 @@ def load_config() -> Config:
         active_window=scope_raw.get("active_window"),
     )
 
-    kali = KaliConfig(
-        host=str(kali_raw.get("host", "")),
-        user=str(kali_raw.get("user", "root")),
-        ssh_key=os.getenv("ONIOPS_KALI_SSH_KEY", kali_raw.get("ssh_key", "./secrets/kali_id_rsa")),
-        connect_timeout=int(kali_raw.get("connect_timeout", 6)),
-        verify_host_key=str(kali_raw.get("verify_host_key", "tofu")),
-        known_hosts=str(kali_raw.get("known_hosts", "./secrets/known_hosts")),
-    )
+    def _mk_host(h: dict, default_name: str) -> HostConfig:
+        return HostConfig(
+            host=str(h.get("host", "")),
+            name=str(h.get("name", default_name)),
+            label=str(h.get("label", "")),
+            user=str(h.get("user", "root")),
+            ssh_key=str(h.get("ssh_key", "./secrets/kali_id_rsa")),
+            connect_timeout=int(h.get("connect_timeout", 6)),
+            verify_host_key=str(h.get("verify_host_key", "tofu")),
+            known_hosts=str(h.get("known_hosts", "./secrets/known_hosts")),
+        )
+
+    # One or many attack hosts. Back-compat: a single `kali:` block = one host.
+    attack_raw = data.get("attack_hosts") or data.get("hosts")
+    if attack_raw:
+        hosts = [_mk_host(h, f"host{i + 1}") for i, h in enumerate(attack_raw)]
+        default_name = next((str(h.get("name")) for h in attack_raw if h.get("default")), None) or hosts[0].name
+    else:
+        single = _mk_host(kali_raw, "kali")
+        single.ssh_key = os.getenv("ONIOPS_KALI_SSH_KEY", single.ssh_key)
+        hosts = [single]
+        default_name = single.name
+    active_host = next((h for h in hosts if h.name == default_name), hosts[0])
 
     auth_raw = data.get("auth", {}) or {}
     # Back-compat: old `enabled: true` maps to basic auth.
@@ -175,7 +199,8 @@ def load_config() -> Config:
         bind_host=str(oniops.get("bind_host", "0.0.0.0")),
         bind_port=int(oniops.get("bind_port", 8501)),
         scope=scope,
-        kali=kali,
+        kali=active_host,
+        hosts=hosts,
         auth=auth,
         llm=data.get("llm", {}) or {},
         integrations=data.get("integrations", {}) or {},
