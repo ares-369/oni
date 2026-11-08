@@ -58,7 +58,9 @@ auth:
   mode: "none"
   username: "oniops"
   # password_hash: "pbkdf2_sha256$..."   # generate: python -c "from oniops.auth import hash_password;print(hash_password('yourpw'))"
-  proxy_header: "X-Forwarded-User"        # for mode: proxy
+  proxy_header: "X-Forwarded-User"        # for mode: proxy (e.g. X-authentik-username)
+  proxy_trusted_ips: []                    # for mode: proxy — only these source IPs may assert the header
+                                           # (anti-forgery; set to your reverse proxy's IP, e.g. ["10.0.0.151"])
   allowed_users: []                        # optional allowlist (oidc/proxy); empty = any authenticated
   oidc:                                    # for mode: oidc
     issuer: ""                             # e.g. https://auth.example.com/application/o/oniops/
