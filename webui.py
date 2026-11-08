@@ -379,9 +379,16 @@ def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
             commands_run.append(f"ffuf {url}/FUZZ")
             ff = _run(["ffuf", "-u", f"{url}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt",
                        "-mc", "200,204,301,302,307,401,403", "-t", "40", "-s"], 60)
-            if ff.strip():
-                finding_count += len([l for l in ff.splitlines() if l.strip()])
-                raw_sections.append(f"=== WAPT: Discovered Paths ({url}) ===\n{ff[:1000]}")
+            paths = [l for l in ff.splitlines() if l.strip()]
+            if paths:
+                # Content-discovery paths are informational context, NOT findings.
+                # (A catch-all app can return thousands; counting them as vulns
+                # would wildly inflate severity.)
+                note = " (catch-all? treating as informational)" if len(paths) > 100 else ""
+                raw_sections.append(
+                    f"=== WAPT: Discovered Paths ({url}) — {len(paths)}{note} ===\n"
+                    + "\n".join(paths[:40])
+                )
 
             emit_event("WAPT_VULN", "busy", f"[WAPT] OWASP checks {url}")
             commands_run.append(f"nuclei {url} (web)")
