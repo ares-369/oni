@@ -44,6 +44,10 @@ def active_runner() -> KaliRunner:
     return HOST_RUNNERS.get(ACTIVE_HOST) or next(iter(HOST_RUNNERS.values()))
 
 app = Flask(__name__)
+# ONIOPS typically runs behind a TLS-terminating reverse proxy; honor its
+# X-Forwarded-* headers so generated URLs (e.g. the OIDC redirect_uri) use https.
+from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 log = logging.getLogger("oniops.webui")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [ONIOPS] %(message)s")
 

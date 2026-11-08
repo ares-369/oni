@@ -8,6 +8,8 @@ oniops:
   instance_name: "ONIOPS"
   bind_host: "0.0.0.0"        # listen address for the web UI
   bind_port: 8501
+  # Public base URL when behind a reverse proxy (used for OIDC redirect URIs).
+  # external_url: "https://oniops.example.com"
 
 # ---------------------------------------------------------------------
 #  Rules of Engagement (scope). REQUIRED.
