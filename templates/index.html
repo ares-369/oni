@@ -1627,59 +1627,158 @@
       }).catch(e => { document.getElementById('graphCanvas').innerHTML = `<div style="color:var(--danger); padding:20px;">Graph error: ${e}</div>`; });
     }
 
+    function toast(msg, bad) {
+      let t = document.getElementById('oniToast');
+      if (!t) { t = document.createElement('div'); t.id = 'oniToast';
+        t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--bg-elevated);color:var(--text-main);padding:10px 16px;border-radius:8px;z-index:200;font-size:13px;box-shadow:0 10px 28px rgba(0,0,0,.55);transition:opacity .2s;';
+        document.body.appendChild(t); }
+      t.style.border = '1px solid ' + (bad ? 'var(--danger)' : 'var(--success)');
+      t.textContent = msg; t.style.opacity = '1';
+      clearTimeout(window._tt); window._tt = setTimeout(() => { t.style.opacity = '0'; }, 2600);
+    }
+    async function saveConfig(updates) {
+      try {
+        const r = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)})).json();
+        if (r.error) { toast(r.error, true); return false; }
+        toast('Saved'); loadSettings(); loadStatus(); loadTargets(); return true;
+      } catch (e) { toast('Save failed: ' + e, true); return false; }
+    }
+
     async function loadSettings() {
       try {
-        const s = await (await fetch('/api/settings')).json();
+        const [s, cfg] = await Promise.all([
+          (await fetch('/api/settings')).json(),
+          (await fetch('/api/config')).json()
+        ]);
         const dot = ok => `<span class="status-dot ${ok ? 'online' : 'warn'}" style="display:inline-block;"></span>`;
+        const esc = v => String(v == null ? '' : v).replace(/"/g, '&quot;');
+
+        // Attack hosts (editable)
+        const hostRow = (h) => `
+          <div class="set-host-row" style="display:grid; grid-template-columns: 1fr 1.3fr .7fr auto; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-subtle);">
+            <input class="input" data-f="label" value="${esc(h.label || h.name)}" placeholder="label" style="font-size:12px;"/>
+            <input class="input" data-f="host" value="${esc(h.host)}" placeholder="host / ip" style="font-size:12px;"/>
+            <input class="input" data-f="user" value="${esc(h.user || 'root')}" placeholder="user" style="font-size:12px;"/>
+            <div style="display:flex; gap:5px; align-items:center;">
+              <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="radio" name="defhost" data-f="default" ${h.default ? 'checked' : ''}/>def</label>
+              <button class="btn btn-sm" onclick="testHostRow(this)">Test</button>
+              <button class="btn btn-sm" onclick="this.closest('.set-host-row').remove()">Del</button>
+            </div>
+            <input type="hidden" data-f="name" value="${esc(h.name)}"/>
+            <input type="hidden" data-f="ssh_key" value="${esc(h.ssh_key || './secrets/kali_id_rsa')}"/>
+          </div>`;
         document.getElementById('setHosts').innerHTML =
-          s.hosts.map(h => `
-            <div class="set-row">
-              <div><strong>${h.label}</strong> <span class="mono" style="color:var(--text-muted); font-size:11.5px;">${h.user}@${h.host}</span>
-                ${h.active ? '<span class="badge badge-green">active</span>' : ''}</div>
-              <div style="display:flex; gap:6px;">
-                ${h.active ? '' : `<button class="btn btn-sm btn-primary" onclick="useHost('${h.name}')">Use</button>`}
-                <button class="btn btn-sm" onclick="testHost('${h.name}', this)">Test</button>
-              </div>
-            </div>`).join('') +
-          `<div style="color:var(--text-dim); font-size:11.5px; margin-top:10px;">ONIOPS drives any SSH-reachable tooled Linux — Kali, Parrot, BlackArch, or your own box. Add more under <code class="mono">attack_hosts</code> in config.yaml.</div>`;
+          `<div id="setHostsRows">${(cfg.attack_hosts || []).map(hostRow).join('')}</div>
+           <div style="display:flex; gap:8px; margin-top:10px;">
+             <button class="btn btn-sm" onclick="addHostRow()">+ Add host</button>
+             <button class="btn btn-sm btn-primary" onclick="saveHosts()">Save hosts</button>
+           </div>
+           <div style="color:var(--text-dim); font-size:11px; margin-top:6px;">Any SSH tooled Linux (Kali/Parrot/BlackArch/your box). SSH key path is per-host; keys live in secrets/.</div>`;
+        window._hostTemplate = hostRow;
 
-        const roles = s.llm.roles || {};
+        // LLM roles (editable) + runtime model + health
+        const roles = cfg.llm.roles || {};
         document.getElementById('setLLM').innerHTML =
-          Object.keys(roles).map(r => `<div class="set-row"><span style="text-transform:capitalize;">${r}</span><span class="mono">${roles[r].provider} · ${roles[r].model || '(default)'}</span></div>`).join('') +
-          `<div class="set-row"><span>Active report model</span><select class="select" onchange="setModel(this.value)">${(s.llm.models || []).map(m => `<option ${m === s.llm.current_model ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
-          `<div style="margin-top:10px; display:flex; gap:14px; flex-wrap:wrap; font-size:12px;">${(s.llm.providers || []).map(p => `<span>${dot(s.llm.provider_health[p])} ${p}</span>`).join('')}</div>`;
+          Object.keys(roles).map(r => `
+            <div class="set-row"><span style="text-transform:capitalize;">${r}</span>
+              <span style="display:flex; gap:5px;">
+                <input class="input" id="role_${r}_p" value="${esc(roles[r].provider || 'ollama')}" style="width:92px; font-size:12px;"/>
+                <input class="input" id="role_${r}_m" value="${esc(roles[r].model || '')}" placeholder="model" style="width:150px; font-size:12px;"/>
+              </span></div>`).join('') +
+          `<div style="margin:9px 0;"><button class="btn btn-sm btn-primary" onclick="saveLLM()">Save roles</button></div>` +
+          `<div class="set-row"><span>Active report model <span style="color:var(--text-dim)">(runtime)</span></span><select class="select" onchange="setModel(this.value)">${(s.llm.models || []).map(m => `<option ${m === s.llm.current_model ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
+          `<div style="margin-top:9px; display:flex; gap:14px; flex-wrap:wrap; font-size:12px;">${(s.llm.providers || []).map(p => `<span>${dot(s.llm.provider_health[p])} ${p}</span>`).join('')}</div>`;
 
+        // Scope (editable)
         document.getElementById('setScope').innerHTML =
-          `<div class="set-row"><span>Allowed CIDRs</span><span class="mono">${(s.scope.cidrs || []).join(', ')}</span></div>` +
-          `<div class="set-row"><span>Mode</span><span class="badge badge-neutral">${s.scope.mode}</span></div>` +
-          `<div class="set-row"><span>Excluded</span><span class="mono">${(s.scope.exclude || []).join(', ') || '—'}</span></div>` +
-          `<div class="set-row"><span>Non-destructive guard</span><span class="badge ${s.scope.non_destructive ? 'badge-green' : 'badge-red'}">${s.scope.non_destructive ? 'on' : 'off'}</span></div>`;
+          `<div class="set-row"><span>Allowed CIDRs</span><input class="input" id="scCidrs" value="${esc((cfg.scope.allowed_cidrs || []).join(', '))}" style="width:58%; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>Excluded</span><input class="input" id="scExclude" value="${esc((cfg.scope.exclude || []).join(', '))}" placeholder="none" style="width:58%; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>Mode</span><select class="select" id="scMode">${['active','passive','stealth'].map(m => `<option ${m === cfg.scope.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
+          `<div class="set-row"><span>Non-destructive guard</span><input type="checkbox" id="scND" ${cfg.scope.non_destructive ? 'checked' : ''}/></div>` +
+          `<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="saveScope()">Save scope</button></div>`;
 
+        // Security (read-only — auth is config-file/restart only)
         document.getElementById('setSecurity').innerHTML =
           `<div class="set-row"><span>Auth mode</span><span class="badge badge-neutral">${s.auth.mode}</span></div>` +
-          `<div style="color:var(--text-dim); font-size:11.5px; margin-top:6px;">Set in config.yaml: none · basic · local · oidc · proxy.</div>`;
+          `<div style="color:var(--text-dim); font-size:11.5px; margin-top:6px;">Auth (none / basic / local / oidc / proxy) is set in config.yaml and applied on restart.</div>`;
 
+        // Integrations (editable)
         document.getElementById('setIntegrations').innerHTML =
-          `<div class="set-row"><span>MISP (threat intel)</span><span class="badge ${s.integrations.misp ? 'badge-green' : 'badge-neutral'}">${s.integrations.misp ? 'enabled' : 'off'}</span></div>` +
-          `<div class="set-row"><span>Caldera (adversary emulation)</span><span class="badge ${s.integrations.caldera ? 'badge-green' : 'badge-neutral'}">${s.integrations.caldera ? 'enabled' : 'off'}</span></div>`;
+          ['misp','caldera'].map(k => `
+            <div class="set-row"><span>${k === 'misp' ? 'MISP (threat intel)' : 'Caldera (emulation)'}</span>
+              <span style="display:flex; gap:6px; align-items:center;">
+                <input class="input" id="int_${k}_h" value="${esc(cfg.integrations[k].host || '')}" placeholder="host url" style="width:150px; font-size:12px;"/>
+                <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="checkbox" id="int_${k}_e" ${cfg.integrations[k].enabled ? 'checked' : ''}/>on</label>
+              </span></div>`).join('') +
+          `<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="saveIntegrations()">Save integrations</button></div>`;
 
+        // About / instance (editable)
         document.getElementById('setAbout').innerHTML =
-          `<div class="set-row"><span>Instance</span><span>${s.instance}</span></div>` +
+          `<div class="set-row"><span>Instance name</span><input class="input" id="instName" value="${esc(cfg.instance_name)}" style="width:150px; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>External URL</span><input class="input" id="instUrl" value="${esc(cfg.external_url || '')}" placeholder="https://oniops.example.com" style="width:55%; font-size:12px;"/></div>` +
+          `<div style="margin:9px 0;"><button class="btn btn-sm btn-primary" onclick="saveInstance()">Save</button></div>` +
           `<div class="set-row"><span>Version</span><span class="mono">ONIOPS ${s.version}</span></div>` +
           `<div class="set-row"><span>License</span><span class="mono">Apache-2.0</span></div>`;
       } catch (e) {
         document.getElementById('setHosts').innerHTML = `<div style="color:var(--danger);">Settings error: ${e}</div>`;
       }
     }
-    async function useHost(n) {
-      await fetch('/api/host', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:n})});
-      loadSettings(); loadStatus();
+
+    function _collectHosts() {
+      return [...document.querySelectorAll('#setHostsRows .set-host-row')].map(r => {
+        const g = f => r.querySelector(`[data-f="${f}"]`);
+        const label = g('label').value.trim();
+        return {
+          name: (g('name').value || label || 'host').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          label, host: g('host').value.trim(), user: g('user').value.trim() || 'root',
+          ssh_key: g('ssh_key').value.trim(), default: g('default').checked
+        };
+      }).filter(h => h.host);
     }
-    async function testHost(n, btn) {
-      const old = btn.textContent; btn.textContent = '…'; btn.disabled = true;
-      try { const r = await (await fetch('/api/host/test?name=' + encodeURIComponent(n))).json(); btn.textContent = r.online ? 'OK' : 'FAIL'; }
+    function addHostRow() {
+      const c = document.getElementById('setHostsRows');
+      const tmp = document.createElement('div');
+      tmp.innerHTML = window._hostTemplate({name:'', label:'', host:'', user:'root', ssh_key:'./secrets/kali_id_rsa', default:false});
+      c.appendChild(tmp.firstElementChild);
+    }
+    async function saveHosts() {
+      const hosts = _collectHosts();
+      if (!hosts.length) { toast('Add at least one host with an address', true); return; }
+      await saveConfig({attack_hosts: hosts});
+    }
+    async function testHostRow(btn) {
+      const row = btn.closest('.set-host-row');
+      const name = row.querySelector('[data-f="name"]').value;
+      const old = btn.textContent; btn.textContent = '...'; btn.disabled = true;
+      try { const r = await (await fetch('/api/host/test?name=' + encodeURIComponent(name))).json(); btn.textContent = r.online ? 'OK' : 'FAIL'; }
       catch { btn.textContent = 'FAIL'; }
       setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 2500);
+    }
+    async function saveScope() {
+      await saveConfig({scope: {
+        allowed_cidrs: document.getElementById('scCidrs').value.split(',').map(x => x.trim()).filter(Boolean),
+        exclude: document.getElementById('scExclude').value.split(',').map(x => x.trim()).filter(Boolean),
+        mode: document.getElementById('scMode').value,
+        non_destructive: document.getElementById('scND').checked
+      }});
+    }
+    async function saveLLM() {
+      const roles = {};
+      ['planner','reporter','reason'].forEach(r => {
+        const p = document.getElementById('role_' + r + '_p');
+        if (p) roles[r] = {provider: p.value.trim(), model: document.getElementById('role_' + r + '_m').value.trim()};
+      });
+      await saveConfig({llm: {roles}});
+    }
+    async function saveIntegrations() {
+      const integrations = {};
+      ['misp','caldera'].forEach(k => {
+        integrations[k] = {enabled: document.getElementById('int_' + k + '_e').checked, host: document.getElementById('int_' + k + '_h').value.trim()};
+      });
+      await saveConfig({integrations});
+    }
+    async function saveInstance() {
+      await saveConfig({instance_name: document.getElementById('instName').value, external_url: document.getElementById('instUrl').value.trim()});
     }
     async function setModel(m) {
       await fetch('/api/model', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model:m})});

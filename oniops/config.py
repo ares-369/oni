@@ -12,6 +12,7 @@ Resolution order for the config path:
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -219,3 +220,90 @@ def get_config(reload: bool = False) -> Config:
     if _CONFIG is None or reload:
         _CONFIG = load_config()
     return _CONFIG
+
+
+_SCOPE_MODES = {"active", "passive", "stealth"}
+
+
+def apply_updates(updates: dict) -> Config:
+    """Validate and persist a partial config update from the UI, then reload.
+
+    Only non-secret, operational fields are editable here (scope, attack hosts,
+    LLM roles, integrations, instance). Secrets stay in .env; auth mode is
+    config-file/restart only. Writes a .bak first and validates before saving.
+    """
+    path = _config_path()
+    data = yaml.safe_load(path.read_text()) or {}
+    for sec in ("oniops", "scope", "llm", "integrations"):
+        data.setdefault(sec, {})
+
+    if "instance_name" in updates:
+        data["oniops"]["instance_name"] = str(updates["instance_name"])[:64] or "ONIOPS"
+    if "external_url" in updates:
+        data["oniops"]["external_url"] = str(updates["external_url"]).strip().rstrip("/")
+
+    if "scope" in updates:
+        su = updates["scope"] or {}
+        if "allowed_cidrs" in su:
+            cidrs = [str(c).strip() for c in su["allowed_cidrs"] if str(c).strip()]
+            if not cidrs:
+                raise ValueError("scope.allowed_cidrs cannot be empty")
+            for c in cidrs:
+                ipaddress.ip_network(c, strict=False)
+            data["scope"]["allowed_cidrs"] = cidrs
+        if "exclude" in su:
+            ex = [str(c).strip() for c in su["exclude"] if str(c).strip()]
+            for c in ex:
+                ipaddress.ip_network(c, strict=False)
+            data["scope"]["exclude"] = ex
+        if "mode" in su:
+            if su["mode"] not in _SCOPE_MODES:
+                raise ValueError(f"scope.mode must be one of {sorted(_SCOPE_MODES)}")
+            data["scope"]["mode"] = su["mode"]
+        if "non_destructive" in su:
+            data["scope"]["non_destructive"] = bool(su["non_destructive"])
+        if "rate_limit_per_min" in su:
+            data["scope"]["rate_limit_per_min"] = max(1, int(su["rate_limit_per_min"]))
+
+    if "llm" in updates and isinstance(updates["llm"].get("roles"), dict):
+        data["llm"].setdefault("roles", {})
+        for role, rc in updates["llm"]["roles"].items():
+            if role in ("planner", "reporter", "reason") and isinstance(rc, dict):
+                data["llm"]["roles"][role] = {
+                    "provider": str(rc.get("provider", "ollama")),
+                    "model": str(rc.get("model", "")),
+                }
+
+    if "attack_hosts" in updates:
+        hosts = []
+        for h in updates["attack_hosts"]:
+            if not h.get("host"):
+                continue
+            entry = {"name": str(h.get("name") or f"host{len(hosts) + 1}"),
+                     "host": str(h["host"]).strip(),
+                     "user": str(h.get("user") or "root"),
+                     "ssh_key": str(h.get("ssh_key") or "./secrets/kali_id_rsa")}
+            if h.get("label"):
+                entry["label"] = str(h["label"])
+            if h.get("default"):
+                entry["default"] = True
+            hosts.append(entry)
+        if not hosts:
+            raise ValueError("at least one attack host (with a host address) is required")
+        if not any(h.get("default") for h in hosts):
+            hosts[0]["default"] = True
+        data["attack_hosts"] = hosts
+        data.pop("kali", None)
+
+    if "integrations" in updates:
+        iu = updates["integrations"] or {}
+        for k in ("misp", "caldera"):
+            if k in iu and isinstance(iu[k], dict):
+                data["integrations"].setdefault(k, {})
+                data["integrations"][k]["enabled"] = bool(iu[k].get("enabled"))
+                if "host" in iu[k]:
+                    data["integrations"][k]["host"] = str(iu[k]["host"]).strip()
+
+    path.with_name(path.name + ".bak").write_text(path.read_text())
+    path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
+    return get_config(reload=True)
