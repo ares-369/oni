@@ -757,11 +757,13 @@
       .app-shell, .app-shell.sidebar-collapsed {
         grid-template-columns: 1fr;
         grid-template-areas: "header" "main";
+        height: 100vh;
+        height: 100dvh;
       }
       .header-center { display: none; }
       .brand-sub, .team-badge { display: none; }
       .brand-title { font-size: 17px; }
-      .app-main { padding: 14px 13px 28px; }
+      .app-main { padding: 14px 13px 96px; -webkit-overflow-scrolling: touch; }
 
       /* Left nav becomes an off-canvas drawer, closed by default */
       .app-sidebar {

@@ -127,7 +127,8 @@ def init_auth(app, cfg) -> None:
         if mode == "none":
             return redirect("/")
         if mode == "oidc":
-            redirect_uri = request.url_root.rstrip("/") + "/auth/callback"
+            base = (cfg.external_url or request.url_root).rstrip("/")
+            redirect_uri = base + "/auth/callback"
             return oauth.oniops_sso.authorize_redirect(redirect_uri)
         # local (and basic, though basic never redirects here)
         if request.method == "POST":

@@ -93,6 +93,7 @@ class AuthConfig:
 class Config:
     raw: dict[str, Any]
     instance_name: str
+    external_url: str          # public base URL behind the proxy (for OIDC redirects)
     bind_host: str
     bind_port: int
     scope: ScopeConfig
@@ -196,6 +197,7 @@ def load_config() -> Config:
     return Config(
         raw=data,
         instance_name=str(oniops.get("instance_name", "ONIOPS")),
+        external_url=str(oniops.get("external_url", "")).rstrip("/"),
         bind_host=str(oniops.get("bind_host", "0.0.0.0")),
         bind_port=int(oniops.get("bind_port", 8501)),
         scope=scope,
