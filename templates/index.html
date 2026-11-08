@@ -902,6 +902,7 @@
               <option value="fast_recon">Fast Tactical Recon (Top 100 TCP + Banners)</option>
               <option value="deep_service">Deep Service &amp; Exploit-DB Audit (-sV -sC)</option>
               <option value="web_tls_audit">Web Security Headers &amp; TLS Cipher Audit</option>
+              <option value="web_app_pt">Web App PT (WAPT — OWASP Web Top 10)</option>
               <option value="autonomous_ai">Autonomous AI Red-Team Playbook (Nmap + Web + LLM)</option>
             </select>
             <button class="btn btn-primary" id="quickLaunchBtn" onclick="runQuickAssessment()">
@@ -993,6 +994,7 @@
                 <option value="fast_recon">Fast Tactical Recon (Top 100 TCP Ports + Service Detection)</option>
                 <option value="deep_service">Deep Service &amp; Banner Discovery (-sV -sC + searchsploit)</option>
                 <option value="web_tls_audit">Web Security Headers (HSTS/CSP/XFO) &amp; TLS Cipher Audit</option>
+                <option value="web_app_pt">Web App PT (WAPT — OWASP Web Top 10: crawl, dirs, nuclei, nikto)</option>
               </select>
             </div>
             <button class="btn btn-primary" id="wbRunBtn" onclick="executeWorkbenchScan()" style="height:38px;">
@@ -1532,34 +1534,48 @@
       await executeWorkbenchScan();
     }
 
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
     async function executeWorkbenchScan() {
       const target = document.getElementById('wbTargetSelect').value;
       const profile = document.getElementById('wbProfileSelect').value;
       const btn = document.getElementById('wbRunBtn');
       btn.disabled = true;
-      btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running Recon...';
-      document.getElementById('wbScanMeta').textContent = `Scanning ${target} (${profile})...`;
-      document.getElementById('wbRawOutput').textContent = `[ONIOPS] Dispatching ${profile} against ${target} via Kali...\n`;
-      document.getElementById('wbAiReport').innerHTML = `<div style="color:var(--text-muted);">Correlating open services, Exploit-DB advisories, and synthesizing AI Red-Team report...</div>`;
+      btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
+      document.getElementById('wbScanMeta').textContent = `Dispatching ${profile} on ${target}...`;
+      document.getElementById('wbRawOutput').textContent = `[ONIOPS] Starting ${profile} against ${target} via Kali...\n`;
+      document.getElementById('wbAiReport').innerHTML = `<div style="color:var(--text-muted);">Running recon and synthesizing the AI red-team report...</div>`;
 
       try {
-        const res = await fetch('/api/assess', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+        // Enqueue as a background job so long WAPT/PTT runs don't block.
+        const sres = await fetch('/api/assess/start', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({target, profile})
         });
-        const data = await res.json();
-        if (data.error) {
-          document.getElementById('wbRawOutput').textContent = `ERROR: ${data.error}`;
-        } else {
-          document.getElementById('wbScanMeta').textContent = `Scan #${data.id} // Severity: ${data.severity}`;
-          document.getElementById('wbRawOutput').textContent = data.raw_output || 'Completed.';
-          document.getElementById('wbAiReport').innerHTML = renderMarkdown(data.ai_report);
-          document.getElementById('wbPortsBar').innerHTML = (data.ports_list || []).map(p =>
-            `<span class="badge badge-red">${p.port}/${p.proto} ${p.service} ${p.banner || ''}</span>`
-          ).join('');
-          refreshAll();
+        const sdata = await sres.json();
+        if (sdata.error) { document.getElementById('wbRawOutput').textContent = `ERROR: ${sdata.error}`; return; }
+        const jobId = sdata.job_id;
+
+        let data = null;
+        for (let i = 0; i < 150; i++) {
+          await sleep(2000);
+          const j = await (await fetch(`/api/job/${jobId}`)).json();
+          const tv = await (await fetch('/api/telemetry')).json();
+          const recent = (tv.events || []).slice(0, 10).map(e => `[${e.stage}] ${e.title}`).join('\n');
+          document.getElementById('wbScanMeta').textContent = `Job ${jobId} // ${j.status}`;
+          document.getElementById('wbRawOutput').textContent = `[ONIOPS] ${profile} on ${target} — ${j.status}\n\n${recent}`;
+          if (j.status === 'done') { data = j.result; break; }
+          if (j.status === 'error') { document.getElementById('wbRawOutput').textContent = `ERROR: ${j.error || 'job failed'}`; return; }
         }
+        if (!data) { document.getElementById('wbRawOutput').textContent += '\n[timed out waiting for job]'; return; }
+
+        document.getElementById('wbScanMeta').textContent = `Scan #${data.id} // Severity: ${data.severity}`;
+        document.getElementById('wbRawOutput').textContent = data.raw_output || 'Completed.';
+        document.getElementById('wbAiReport').innerHTML = renderMarkdown(data.ai_report);
+        document.getElementById('wbPortsBar').innerHTML = (data.ports_list || []).map(p =>
+          `<span class="badge badge-red">${p.port}/${p.proto} ${p.service} ${p.banner || ''}</span>`
+        ).join('');
+        refreshAll();
       } catch (e) {
         document.getElementById('wbRawOutput').textContent = `Request failed: ${e}`;
       } finally {
