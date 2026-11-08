@@ -867,6 +867,10 @@
           <span class="nav-item-left"><i class="mdi mdi-console-network"></i><span class="nav-label">Recon Workbench</span></span>
           <span class="nav-badge">LIVE</span>
         </button>
+        <button class="nav-item" data-view="agent" title="Autonomous AI Agent">
+          <span class="nav-item-left"><i class="mdi mdi-robot-excited-outline"></i><span class="nav-label">AI Agent</span></span>
+          <span class="nav-badge">AUTO</span>
+        </button>
         <button class="nav-item" data-view="targets" title="Target Matrix">
           <span class="nav-item-left"><i class="mdi mdi-crosshairs-gps"></i><span class="nav-label">Target Matrix</span></span>
           <span class="nav-badge" id="navTargetsBadge">0</span>
@@ -1290,6 +1294,42 @@
           </div>
         </div>
       </section>
+      <!-- VIEW: AUTONOMOUS AI AGENT -->
+      <section class="view-section" id="view-agent">
+        <div class="page-header">
+          <div>
+            <div class="page-title"><i class="mdi mdi-robot-excited-outline" style="color: var(--primary);"></i> Autonomous AI Agent</div>
+            <div class="page-subtitle">Give an objective; ONIOPS plans and runs scoped recon tools step by step, then reports. Non-destructive, scope-locked.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-target"></i> Mission</div></div>
+          <div class="panel-body">
+            <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">OBJECTIVE</label>
+            <input id="agentObjective" class="input" style="width:100%;" placeholder="e.g. Enumerate services on the adguard host and flag any exposures" />
+            <div style="display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; align-items:end;">
+              <div style="flex:1; min-width:180px;">
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">TARGET (optional)</label>
+                <select id="agentTarget" class="select" style="width:100%;"></select>
+              </div>
+              <div>
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">MAX STEPS</label>
+                <select id="agentMaxSteps" class="select"><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
+              </div>
+              <button class="btn btn-primary" id="agentRunBtn" onclick="runAgent()"><i class="mdi mdi-play"></i> Run Agent</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-timeline-text-outline"></i> Live Steps</div><span class="badge badge-neutral" id="agentStatus">idle</span></div>
+          <div class="panel-body"><div id="agentLog" class="terminal-box" style="min-height:120px; max-height:360px; overflow:auto;">No run yet. Enter an objective and Run Agent.</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div></div>
+          <div class="panel-body"><div id="agentFinal" style="color:var(--text-muted);">&mdash;</div></div>
+        </div>
+      </section>
+
       <!-- VIEW: SETTINGS -->
       <section class="view-section" id="view-settings">
         <div class="page-header">
@@ -1464,6 +1504,8 @@
         const opts = TARGETS_CACHE.map(t => `<option value="${t.ip}">${t.hostname} (${t.ip}) — ${t.role}</option>`).join('');
         qSel.innerHTML = opts;
         wSel.innerHTML = opts;
+        const aSel = document.getElementById('agentTarget');
+        if (aSel) aSel.innerHTML = '<option value="">(auto / discover)</option>' + opts;
 
         let totalHighCrit = 0;
         let totalOpenPorts = 0;
@@ -1642,6 +1684,42 @@
     async function setModel(m) {
       await fetch('/api/model', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model:m})});
       loadStatus();
+    }
+
+    async function runAgent() {
+      const objective = document.getElementById('agentObjective').value.trim();
+      if (!objective) { document.getElementById('agentLog').textContent = 'Enter an objective first.'; return; }
+      const target = document.getElementById('agentTarget').value;
+      const max_steps = parseInt(document.getElementById('agentMaxSteps').value, 10);
+      const btn = document.getElementById('agentRunBtn');
+      btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
+      document.getElementById('agentStatus').textContent = 'starting';
+      document.getElementById('agentLog').textContent = '[ONIOPS] launching autonomous agent...';
+      document.getElementById('agentFinal').innerHTML = '<span style="color:var(--text-muted);">Agent is working...</span>';
+      try {
+        const r = await (await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({objective, target, max_steps})})).json();
+        if (r.error) { document.getElementById('agentLog').textContent = 'ERROR: ' + r.error; return; }
+        const jid = r.job_id; let data = null;
+        for (let i = 0; i < 160; i++) {
+          await sleep(2000);
+          const j = await (await fetch('/api/job/' + jid)).json();
+          const tv = await (await fetch('/api/telemetry')).json();
+          const steps = (tv.events || []).filter(e => (e.stage || '').startsWith('AGENT')).slice(0, 16).reverse().map(e => `[${e.stage}] ${e.title}`).join('\n');
+          document.getElementById('agentStatus').textContent = j.status;
+          if (steps) document.getElementById('agentLog').textContent = steps;
+          if (j.status === 'done') { data = j.result; break; }
+          if (j.status === 'error') { document.getElementById('agentLog').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
+        }
+        if (!data) { document.getElementById('agentLog').textContent += '\n[timed out waiting for agent]'; return; }
+        const t = (data.steps || []).map(s => `#${s.step}  ${s.tool}  ${JSON.stringify(s.args)}\n  thought: ${s.thought || ''}\n  ${String(s.observation || '').slice(0, 400).replace(/\n/g, '\n  ')}`).join('\n\n');
+        document.getElementById('agentLog').textContent = t || '(no steps taken)';
+        document.getElementById('agentStatus').textContent = data.completed ? 'completed' : 'stopped (budget)';
+        document.getElementById('agentFinal').innerHTML = renderMarkdown(data.final || '(no summary)');
+      } catch (e) {
+        document.getElementById('agentLog').textContent = 'Request failed: ' + e;
+      } finally {
+        btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Agent';
+      }
     }
 
     function launchTargetInWorkbench(ip) {
