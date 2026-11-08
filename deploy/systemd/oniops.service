@@ -1,0 +1,19 @@
+[Unit]
+Description=ONIOPS - Offensive Neural Intelligence
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/oniops
+Environment=ONIOPS_CONFIG=/opt/oniops/config.yaml
+ExecStart=/opt/oniops/venv/bin/python -m oniops
+Restart=on-failure
+RestartSec=5
+# Hardening (adjust if ONIOPS needs broader filesystem access):
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

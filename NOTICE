@@ -1,0 +1,21 @@
+ONIOPS — Offensive Neural Intelligence
+Copyright 2026 The ONIOPS Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+AUTHORIZED USE ONLY
+-------------------
+ONIOPS is an offensive security framework. It performs active reconnaissance,
+service enumeration, and vulnerability validation that can be intrusive.
+
+You may only run ONIOPS against systems you own or are explicitly authorized,
+in writing, to test. Unauthorized use against third-party systems is illegal
+in most jurisdictions and is expressly not condoned by the authors.
+
+ONIOPS enforces a scope allow-list (Rules of Engagement) and is non-destructive
+by default. These are safety aids, not a substitute for proper authorization.
+You remain solely responsible for how you operate this software.

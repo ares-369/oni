@@ -1,0 +1,74 @@
+# =====================================================================
+#  ONIOPS — Offensive Neural Intelligence
+#  Copy this file to  config.yaml  and edit for YOUR environment.
+#  Secrets (API keys) go in  .env , never here.
+# =====================================================================
+
+oniops:
+  instance_name: "ONIOPS"
+  bind_host: "0.0.0.0"        # listen address for the web UI
+  bind_port: 8501
+
+# ---------------------------------------------------------------------
+#  Rules of Engagement (scope). REQUIRED.
+#  ONIOPS refuses to touch anything outside allowed_cidrs. There is NO
+#  implicit internet default — you must list what you are allowed to test.
+# ---------------------------------------------------------------------
+scope:
+  allowed_cidrs:
+    - "192.168.1.0/24"       # <-- change to YOUR network(s)
+  exclude:                   # never touched, even if inside allowed_cidrs
+    - "192.168.1.1"          # e.g. your gateway/router
+  auto_detect_subnet: true   # on first run, offer this host's own subnet
+  rate_limit_per_min: 120
+  mode: "active"             # active | passive | stealth
+  non_destructive: true      # hard-block destructive tool flags (keep true)
+  # active_window: "22:00-06:00"   # optional: only scan in this local window
+
+# ---------------------------------------------------------------------
+#  Attack host — the Kali (or any tooled Linux) box ONIOPS drives over SSH.
+#  ONIOPS connects with paramiko, so no local ssh client is needed (works on
+#  Windows too). Point ssh_key at a PRIVATE key the Kali host trusts.
+# ---------------------------------------------------------------------
+kali:
+  host: "192.168.1.50"       # <-- your Kali host
+  user: "root"
+  ssh_key: "./secrets/kali_id_rsa"   # keep OUT of git (secrets/ is ignored)
+  connect_timeout: 6
+
+# ---------------------------------------------------------------------
+#  LLM providers. Mix and match freely — any provider can fill any role.
+#  Set only the ones you use. Ollama is local and needs no API key.
+# ---------------------------------------------------------------------
+llm:
+  roles:
+    planner:  { provider: "ollama", model: "qwen2.5-coder:7b" }
+    reporter: { provider: "ollama", model: "qwen2.5-coder:7b" }
+    reason:   { provider: "ollama", model: "deepseek-r1:1.5b" }
+  providers:
+    ollama:
+      base_url: "http://localhost:11434"
+    anthropic:
+      default_model: "claude-sonnet-4-5"      # ANTHROPIC_API_KEY in .env
+    gemini:
+      default_model: "gemini-2.5-pro"         # GEMINI_API_KEY in .env
+    openai:
+      default_model: "gpt-4.1"                # OPENAI_API_KEY in .env
+    azure_openai:
+      base_url: ""                            # AZURE_OPENAI_API_KEY in .env
+      api_version: "2024-10-21"
+    openai_compatible:                        # vLLM / LM Studio / OpenRouter
+      base_url: "http://localhost:8000/v1"    # OPENAI_COMPAT_API_KEY in .env
+      default_model: ""
+
+# ---------------------------------------------------------------------
+#  Optional integrations (disabled unless enabled + configured).
+# ---------------------------------------------------------------------
+integrations:
+  misp:
+    enabled: false
+    host: ""                 # e.g. https://misp.local   (MISP_API_KEY in .env)
+    verify_tls: false
+  caldera:
+    enabled: false
+    host: ""                 # e.g. http://caldera.local:8888  (CALDERA_API_KEY in .env)
