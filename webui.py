@@ -21,6 +21,7 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from oniops import __version__
 from oniops.auth import init_auth
 from oniops.config import get_config
 from oniops.graph import build_graph
@@ -32,8 +33,15 @@ from oniops.targets import discover as discover_hosts
 
 cfg = get_config()
 scope = Scope(cfg)
-kali = KaliRunner(cfg, scope)
 llm = get_llm()
+
+# Attack hosts: ONIOPS can drive any SSH-reachable tooled Linux, not just Kali.
+HOST_RUNNERS = {h.name: KaliRunner(h, scope, cfg) for h in cfg.hosts}
+ACTIVE_HOST = cfg.kali.name
+
+
+def active_runner() -> KaliRunner:
+    return HOST_RUNNERS.get(ACTIVE_HOST) or next(iter(HOST_RUNNERS.values()))
 
 app = Flask(__name__)
 log = logging.getLogger("oniops.webui")
@@ -172,7 +180,7 @@ def index():
 def api_status():
     kali_ok = False
     try:
-        kali_ok = kali.ping()
+        kali_ok = active_runner().ping()
     except Exception:
         pass
 
@@ -226,11 +234,62 @@ def api_set_model():
     return jsonify({"ok": True, "current_model": active_model_name()})
 
 
+@app.route("/api/settings")
+def api_settings():
+    try:
+        models = llm.for_role("reporter").provider.available_models() or [active_model_name()]
+    except Exception:
+        models = [active_model_name()]
+    roles = {}
+    for role in ("planner", "reporter", "reason"):
+        rc = cfg.role_cfg(role)
+        roles[role] = {"provider": rc.get("provider", "ollama"), "model": rc.get("model", "")}
+    hosts = [{"name": h.name, "label": h.label or h.name, "host": h.host, "user": h.user,
+              "active": h.name == ACTIVE_HOST} for h in cfg.hosts]
+    return jsonify({
+        "instance": cfg.instance_name,
+        "version": __version__,
+        "scope": {"cidrs": scope.cidrs, "mode": cfg.scope.mode,
+                  "exclude": cfg.scope.exclude, "non_destructive": cfg.scope.non_destructive},
+        "auth": {"mode": cfg.auth.mode},
+        "hosts": hosts,
+        "active_host": ACTIVE_HOST,
+        "llm": {"roles": roles, "providers": list((cfg.llm.get("providers") or {}).keys()),
+                "provider_health": llm.health(), "current_model": active_model_name(), "models": models},
+        "integrations": {
+            "misp": bool((cfg.integrations.get("misp") or {}).get("enabled")),
+            "caldera": bool((cfg.integrations.get("caldera") or {}).get("enabled")),
+        },
+    })
+
+
+@app.route("/api/host", methods=["POST"])
+def api_set_host():
+    global ACTIVE_HOST
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if name not in HOST_RUNNERS:
+        return jsonify({"error": f"Unknown attack host '{name}'."}), 400
+    ACTIVE_HOST = name
+    emit_event("CONFIG", "ok", f"Switched active attack host to {name}")
+    return jsonify({"ok": True, "active_host": ACTIVE_HOST})
+
+
+@app.route("/api/host/test")
+def api_test_host():
+    name = (request.args.get("name") or ACTIVE_HOST).strip()
+    r = HOST_RUNNERS.get(name)
+    if not r:
+        return jsonify({"error": "unknown host"}), 400
+    res = r.run(["uname", "-a"], timeout=8)
+    return jsonify({"name": name, "online": res.ok, "output": res.out[:200]})
+
+
 @app.route("/api/discover", methods=["POST"])
 def api_discover():
     emit_event("DISCOVER", "busy", f"Sweeping scope {', '.join(scope.cidrs)} for live hosts")
     try:
-        hosts = discover_hosts(kali, scope)
+        hosts = discover_hosts(active_runner(), scope)
     except Exception as exc:
         return jsonify({"error": f"Discovery failed: {exc}"}), 500
     ts = now_iso()
@@ -257,7 +316,7 @@ def api_targets():
     # Auto-discover on first use if the target cache is empty.
     if not tgt_rows:
         try:
-            hosts = discover_hosts(kali, scope)
+            hosts = discover_hosts(active_runner(), scope)
             ts = now_iso()
             with sqlite3.connect(DB_PATH) as conn:
                 for h in hosts:
@@ -296,7 +355,7 @@ def api_assessments():
 
 # Offensive scan profiles (Kali tooling only — no SIEM correlation).
 def _run(cmd: list[str], timeout: int) -> str:
-    return kali.run(cmd, timeout=timeout).out
+    return active_runner().run(cmd, timeout=timeout).out
 
 
 def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
@@ -608,7 +667,7 @@ def api_kali_tools():
     bins = [t["bin"] for t in KALI_TOOL_CATALOG]
     script = ("export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; "
               "for b in " + " ".join(bins) + "; do if command -v $b >/dev/null 2>&1; then echo \"$b:1\"; else echo \"$b:0\"; fi; done")
-    res = kali.run(["bash", "-c", script], timeout=15)
+    res = active_runner().run(["bash", "-c", script], timeout=15)
     status = {}
     if res.ok:
         for line in res.out.splitlines():
@@ -627,7 +686,7 @@ def api_kali_install():
         return jsonify({"error": "Invalid package name."}), 400
     emit_event("KALI_PKG", "busy", f"Installing '{pkg}' on Kali via apt-get")
     cmd = f"export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq {pkg} 2>&1 | tail -n 35"
-    res = kali.run(["bash", "-c", cmd], timeout=180)
+    res = active_runner().run(["bash", "-c", cmd], timeout=180)
     emit_event("KALI_PKG", "ok" if res.ok else "err", f"Package '{pkg}' install {'ok' if res.ok else 'failed'}")
     return jsonify({"ok": res.ok, "package": pkg, "output": res.out})
 
@@ -650,7 +709,7 @@ def execute_chat_action(msg: str, default_target: str = ""):
         pkg = m.group(1)
         emit_event("AI_KALI", "busy", f"Installing '{pkg}' on Kali")
         cmd = f"export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq {pkg} 2>&1 | tail -n 25"
-        res = kali.run(["bash", "-c", cmd], timeout=160)
+        res = active_runner().run(["bash", "-c", cmd], timeout=160)
         return f"$ apt-get install -y {pkg}\n{res.out}", res.ok
 
     # Resolve a scoped target from the message or the default.
@@ -666,18 +725,18 @@ def execute_chat_action(msg: str, default_target: str = ""):
     if "searchsploit" in lower:
         m_sp = re.search(r"searchsploit\s+([a-zA-Z0-9.\-_]+)", msg, re.I)
         term = m_sp.group(1) if m_sp else "openssh"
-        res = kali.run(["searchsploit", "--colour", term], timeout=25)
+        res = active_runner().run(["searchsploit", "--colour", term], timeout=25)
         return f"$ searchsploit {term}\n{res.out[:2000]}", res.ok
 
     for name, builder in _CHAT_TOOLS.items():
         if name in lower and target_ip:
             emit_event("AI_KALI", "busy", f"Running {name} on {target_ip}")
-            res = kali.run(builder(target_ip), timeout=90)
+            res = active_runner().run(builder(target_ip), timeout=90)
             return f"$ {name} {target_ip}\n{res.out[:2500]}", res.ok
 
     if any(k in lower for k in ("nmap", "scan ", "port scan", "recon ")) and target_ip:
         emit_event("AI_KALI", "busy", f"Nmap recon on {target_ip}")
-        res = kali.run(["nmap", "-sV", "--version-light", "-F", "-T4", "--open", target_ip], timeout=60)
+        res = active_runner().run(["nmap", "-sV", "--version-light", "-F", "-T4", "--open", target_ip], timeout=60)
         return f"$ nmap -sV -F {target_ip}\n{res.out[:2000]}", res.ok
 
     return None, False

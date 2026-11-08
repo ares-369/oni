@@ -30,13 +30,30 @@ scope:
 #  ONIOPS connects with paramiko, so no local ssh client is needed (works on
 #  Windows too). Point ssh_key at a PRIVATE key the Kali host trusts.
 # ---------------------------------------------------------------------
+# Single attack host (simplest). ONIOPS can drive any SSH-reachable tooled Linux —
+# Kali, Parrot, BlackArch, or your own box (even localhost if ONIOPS runs on it).
 kali:
-  host: "192.168.1.50"       # <-- your Kali host
+  host: "192.168.1.50"       # <-- your attack host
   user: "root"
   ssh_key: "./secrets/kali_id_rsa"   # keep OUT of git (secrets/ is ignored)
   connect_timeout: 6
   verify_host_key: "tofu"    # tofu (trust-on-first-use) | strict | insecure
   known_hosts: "./secrets/known_hosts"
+
+# ...OR define MULTIPLE attack hosts and switch between them in the UI (Settings).
+# If present, attack_hosts takes precedence over the single `kali:` block above.
+# attack_hosts:
+#   - name: "kali"
+#     label: "Kali (lab)"
+#     host: "192.168.1.50"
+#     user: "root"
+#     ssh_key: "./secrets/kali_id_rsa"
+#     default: true
+#   - name: "parrot"
+#     label: "Parrot (DMZ)"
+#     host: "192.168.1.51"
+#     user: "ops"
+#     ssh_key: "./secrets/parrot_id_rsa"
 
 # ---------------------------------------------------------------------
 #  Authentication for the ONIOPS web UI. OFF by default. STRONGLY recommended

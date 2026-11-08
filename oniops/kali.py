@@ -29,8 +29,15 @@ class CmdResult:
 
 
 class KaliRunner:
-    def __init__(self, cfg: Config | None = None, scope: Scope | None = None):
+    """Runs scope-guarded commands on an attack host over SSH (paramiko).
+
+    `host` is a HostConfig (Kali or any tooled Linux). Defaults to the active
+    host in config for back-compat.
+    """
+
+    def __init__(self, host=None, scope: Scope | None = None, cfg: Config | None = None):
         self.cfg = cfg or get_config()
+        self.host = host or self.cfg.kali
         self.scope = scope or Scope(self.cfg)
 
     def _host_policy(self, client: paramiko.SSHClient):
@@ -41,8 +48,8 @@ class KaliRunner:
         strict - only hosts already in known_hosts are allowed.
         insecure - accept any key (not recommended).
         """
-        mode = (self.cfg.kali.verify_host_key or "tofu").lower()
-        kh = Path(self.cfg.kali.known_hosts)
+        mode = (self.host.verify_host_key or "tofu").lower()
+        kh = Path(self.host.known_hosts)
         if mode == "insecure":
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             return
@@ -63,12 +70,12 @@ class KaliRunner:
         self._persist_kh = None
         self._host_policy(client)
         client.connect(
-            hostname=self.cfg.kali.host,
-            username=self.cfg.kali.user,
-            key_filename=self.cfg.kali.ssh_key,
-            timeout=self.cfg.kali.connect_timeout,
-            banner_timeout=self.cfg.kali.connect_timeout,
-            auth_timeout=self.cfg.kali.connect_timeout,
+            hostname=self.host.host,
+            username=self.host.user,
+            key_filename=self.host.ssh_key,
+            timeout=self.host.connect_timeout,
+            banner_timeout=self.host.connect_timeout,
+            auth_timeout=self.host.connect_timeout,
             look_for_keys=False,
             allow_agent=False,
         )
