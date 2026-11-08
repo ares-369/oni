@@ -72,6 +72,7 @@ class AuthConfig:
     password_hash: str = ""     # optional pbkdf2 hash (preferred over password)
     secret_key: str = ""        # session signing; from .env ONIOPS_SECRET_KEY
     proxy_header: str = "X-Forwarded-User"   # reverse-proxy forward-auth header
+    proxy_trusted_ips: list = field(default_factory=list)  # only these source IPs may assert the header (anti-forgery)
     allowed_users: list = field(default_factory=list)  # allowlist (oidc/proxy); empty = any authenticated
     oidc: dict = field(default_factory=dict)  # issuer, client_id, client_secret, scopes, username_claim
 
@@ -163,6 +164,7 @@ def load_config() -> Config:
         password_hash=str(auth_raw.get("password_hash", "")),
         secret_key=os.getenv("ONIOPS_SECRET_KEY", auth_raw.get("secret_key", "")) or "",
         proxy_header=str(auth_raw.get("proxy_header", "X-Forwarded-User")),
+        proxy_trusted_ips=list(auth_raw.get("proxy_trusted_ips", []) or []),
         allowed_users=list(auth_raw.get("allowed_users", []) or []),
         oidc=oidc,
     )
