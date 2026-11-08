@@ -817,6 +817,9 @@
           <span class="nav-item-left"><i class="mdi mdi-crosshairs-gps"></i><span class="nav-label">Target Matrix</span></span>
           <span class="nav-badge" id="navTargetsBadge">0</span>
         </button>
+        <button class="nav-item" data-view="graph" title="Attack Surface Graph">
+          <span class="nav-item-left"><i class="mdi mdi-graph-outline"></i><span class="nav-label">Attack Graph</span></span>
+        </button>
         <button class="nav-item" data-view="arsenal" title="Kali Arsenal &amp; Package Installer">
           <span class="nav-item-left"><i class="mdi mdi-package-variant-closed"></i><span class="nav-label">Kali Arsenal &amp; Tools</span></span>
           <span class="nav-badge" id="navArsenalBadge">SSH</span>
@@ -1048,6 +1051,32 @@
         <div class="target-grid" id="targetMatrixGrid"></div>
       </section>
 
+      <!-- VIEW: ATTACK SURFACE GRAPH -->
+      <section class="view-section" id="view-graph">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-graph-outline" style="color: var(--primary);"></i>
+              Attack Surface Graph
+            </div>
+            <div class="page-subtitle">
+              Hosts &rarr; exposed services across your scope, coloured by risk. Built from assessment data.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="badge badge-neutral" id="graphStats">—</span>
+            <button class="btn" onclick="loadGraph()"><i class="mdi mdi-refresh"></i> Rebuild</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-body" style="overflow:auto;">
+            <div id="graphCanvas" style="min-height:300px;">
+              <div style="color:var(--text-muted); padding:20px;">Run assessments to populate the graph, then Rebuild.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- VIEW 4: KALI ARSENAL & TOOL INSTALLER -->
       <section class="view-section" id="view-arsenal">
         <div class="page-header">
@@ -1245,7 +1274,7 @@
     function switchView(viewName) {
       document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
       document.querySelectorAll('.view-section').forEach(s => s.classList.toggle('active', s.id === `view-${viewName}`));
-      // purple view removed (ONIOPS is offensive-only)
+      if (viewName === 'graph') loadGraph();
       if (viewName === 'reports') loadScansHistory();
       if (viewName === 'arsenal') loadKaliTools();
     }
@@ -1411,6 +1440,35 @@
           </div>
         `;
       }).join('');
+    }
+
+    function loadGraph() {
+      fetch('/api/graph').then(r => r.json()).then(g => {
+        const s = g.stats || {};
+        document.getElementById('graphStats').textContent = `${s.hosts || 0} hosts · ${s.services || 0} services · ${s.critical_hosts || 0} high-risk`;
+        const hosts = (g.nodes || []).filter(n => n.type === 'host');
+        const svcByHost = {};
+        (g.nodes || []).filter(n => n.type === 'service').forEach(v => { (svcByHost[v.host] = svcByHost[v.host] || []).push(v); });
+        const esc = t => String(t == null ? '' : t).replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+        const riskColor = r => ({CRITICAL:'#ef4444', HIGH:'#ef4444', MEDIUM:'#f59e0b', LOW:'#22c55e'}[r] || '#64748b');
+        if (!hosts.length) { document.getElementById('graphCanvas').innerHTML = '<div style="color:var(--text-muted); padding:20px;">No hosts yet. Discover targets or run an assessment.</div>'; return; }
+        const scopeX = 70, hostX = 250, svcX = 500; let y = 30; const rows = [];
+        hosts.forEach(h => { const svcs = svcByHost[h.ip] || []; const band = Math.max(svcs.length, 1) * 22; rows.push({h, svcs, top: y, cy: y + band / 2}); y += band + 20; });
+        const H = Math.max(y + 20, 240), scopeY = H / 2;
+        let svg = `<svg width="820" height="${H}" viewBox="0 0 820 ${H}" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">`;
+        rows.forEach(r => { svg += `<line x1="${scopeX}" y1="${scopeY}" x2="${hostX}" y2="${r.cy}" stroke="#2a3344" stroke-width="1"/>`; });
+        svg += `<circle cx="${scopeX}" cy="${scopeY}" r="10" fill="#0d1117" stroke="#ef4444" stroke-width="2"/>`;
+        svg += `<text x="${scopeX}" y="${scopeY - 16}" fill="#94a3b8" font-size="11" text-anchor="middle">scope</text>`;
+        rows.forEach(r => {
+          const c = riskColor(r.h.risk);
+          r.svcs.forEach((v, i) => { const sy = r.top + i * 22 + 11; svg += `<line x1="${hostX}" y1="${r.cy}" x2="${svcX}" y2="${sy}" stroke="#222b3a" stroke-width="1"/>`; svg += `<circle cx="${svcX}" cy="${sy}" r="4" fill="#38bdf8"/>`; svg += `<text x="${svcX + 10}" y="${sy + 4}" fill="#cbd5e1" font-size="11.5" font-family="JetBrains Mono,monospace">${esc(v.label)}</text>`; });
+          svg += `<circle cx="${hostX}" cy="${r.cy}" r="8" fill="${c}" stroke="#0d1117" stroke-width="2"/>`;
+          svg += `<text x="${hostX - 14}" y="${r.cy - 2}" fill="#f1f5f9" font-size="12.5" text-anchor="end">${esc(r.h.label)}</text>`;
+          svg += `<text x="${hostX - 14}" y="${r.cy + 12}" fill="#64748b" font-size="10.5" text-anchor="end" font-family="JetBrains Mono,monospace">${esc(r.h.ip)}${r.h.findings ? ` · ${r.h.findings} find` : ''}</text>`;
+        });
+        svg += '</svg>';
+        document.getElementById('graphCanvas').innerHTML = svg;
+      }).catch(e => { document.getElementById('graphCanvas').innerHTML = `<div style="color:var(--danger); padding:20px;">Graph error: ${e}</div>`; });
     }
 
     function launchTargetInWorkbench(ip) {
