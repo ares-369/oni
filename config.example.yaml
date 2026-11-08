@@ -35,6 +35,17 @@ kali:
   user: "root"
   ssh_key: "./secrets/kali_id_rsa"   # keep OUT of git (secrets/ is ignored)
   connect_timeout: 6
+  verify_host_key: "tofu"    # tofu (trust-on-first-use) | strict | insecure
+  known_hosts: "./secrets/known_hosts"
+
+# ---------------------------------------------------------------------
+#  Authentication for the ONIOPS web UI. STRONGLY recommended whenever the
+#  UI is reachable beyond localhost — it can drive the attack host.
+#  Password comes from .env (ONIOPS_AUTH_PASSWORD), never from this file.
+# ---------------------------------------------------------------------
+auth:
+  enabled: false
+  username: "oniops"
 
 # ---------------------------------------------------------------------
 #  LLM providers. Mix and match freely — any provider can fill any role.

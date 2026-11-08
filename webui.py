@@ -11,6 +11,7 @@ Flask ``app`` and the REST API the UI calls.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import re
@@ -18,7 +19,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from oniops.config import get_config
 from oniops.jobs import JobManager
@@ -136,13 +137,38 @@ def parse_nmap_ports(nmap_out: str) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════
-# SECURITY HEADERS
+# AUTHENTICATION (optional HTTP Basic) & SECURITY HEADERS
 # ═══════════════════════════════════════════════════════
+ALLOWED_PROFILES = {"fast_recon", "deep_service", "web_tls_audit", "web_app_pt", "autonomous_ai"}
+
+
+@app.before_request
+def _require_auth():
+    if not cfg.auth.enabled:
+        return None
+    a = request.authorization
+    ok = (
+        a is not None
+        and cfg.auth.password
+        and hmac.compare_digest(a.username or "", cfg.auth.username)
+        and hmac.compare_digest(a.password or "", cfg.auth.password)
+    )
+    if ok:
+        return None
+    return Response("ONIOPS authentication required", 401,
+                    {"WWW-Authenticate": 'Basic realm="ONIOPS"'})
+
+
 @app.after_request
 def add_security_headers(resp):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
     resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
+        "script-src 'self' 'unsafe-inline'; connect-src 'self'"
+    )
     return resp
 
 
@@ -481,11 +507,14 @@ def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
 def api_assess():
     """Synchronous assessment (blocks until done). Kept for CLI / compatibility."""
     data = request.get_json(silent=True) or {}
+    profile = data.get("profile", "fast_recon")
+    if profile not in ALLOWED_PROFILES:
+        return jsonify({"error": f"Unknown profile '{profile}'."}), 400
     try:
         rt = scope.resolve(data.get("target", ""))
     except ScopeViolation as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(_run_assessment(rt.ip, rt.label, data.get("profile", "fast_recon")))
+    return jsonify(_run_assessment(rt.ip, rt.label, profile))
 
 
 @app.route("/api/assess/start", methods=["POST"])
@@ -493,6 +522,8 @@ def api_assess_start():
     """Enqueue an assessment as a background job; returns a job_id to poll."""
     data = request.get_json(silent=True) or {}
     profile = data.get("profile", "fast_recon")
+    if profile not in ALLOWED_PROFILES:
+        return jsonify({"error": f"Unknown profile '{profile}'."}), 400
     try:
         rt = scope.resolve(data.get("target", ""))
     except ScopeViolation as exc:

@@ -57,6 +57,17 @@ class KaliConfig:
     user: str = "root"
     ssh_key: str = "./secrets/kali_id_rsa"
     connect_timeout: int = 6
+    # tofu = trust-on-first-use (save to known_hosts); strict = reject unknown;
+    # insecure = auto-accept any key (not recommended).
+    verify_host_key: str = "tofu"
+    known_hosts: str = "./secrets/known_hosts"
+
+
+@dataclass
+class AuthConfig:
+    enabled: bool = False
+    username: str = "oniops"
+    password: str = ""   # sourced from .env ONIOPS_AUTH_PASSWORD
 
 
 @dataclass
@@ -67,6 +78,7 @@ class Config:
     bind_port: int
     scope: ScopeConfig
     kali: KaliConfig
+    auth: AuthConfig
     llm: dict[str, Any]
     integrations: dict[str, Any]
     path: Path
@@ -117,6 +129,15 @@ def load_config() -> Config:
         user=str(kali_raw.get("user", "root")),
         ssh_key=os.getenv("ONIOPS_KALI_SSH_KEY", kali_raw.get("ssh_key", "./secrets/kali_id_rsa")),
         connect_timeout=int(kali_raw.get("connect_timeout", 6)),
+        verify_host_key=str(kali_raw.get("verify_host_key", "tofu")),
+        known_hosts=str(kali_raw.get("known_hosts", "./secrets/known_hosts")),
+    )
+
+    auth_raw = data.get("auth", {}) or {}
+    auth = AuthConfig(
+        enabled=bool(auth_raw.get("enabled", False)),
+        username=str(auth_raw.get("username", "oniops")),
+        password=os.getenv("ONIOPS_AUTH_PASSWORD", auth_raw.get("password", "")) or "",
     )
 
     return Config(
@@ -126,6 +147,7 @@ def load_config() -> Config:
         bind_port=int(oniops.get("bind_port", 8501)),
         scope=scope,
         kali=kali,
+        auth=auth,
         llm=data.get("llm", {}) or {},
         integrations=data.get("integrations", {}) or {},
         path=path,
