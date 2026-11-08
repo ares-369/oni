@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ONIOPS // Offensive Neural Intelligence</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='lokiGrad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23ef4444'/%3E%3Cstop offset='100%25' stop-color='%23dc2626'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpolygon points='32,3 57,15 52,45 32,61 12,45 7,15' fill='%230d1117' stroke='url(%23lokiGrad)' stroke-width='2.5'/%3E%3Cpath d='M18 40 C13 26 16 12 25 6 C21 16 21 25 27 32 L32 37 L37 32 C43 25 43 16 39 6 C48 12 51 26 46 40 L39 36 L32 54 L25 36 Z' fill='url(%23lokiGrad)'/%3E%3Cpolygon points='23,31 29,34 25,36' fill='%23ffffff'/%3E%3Cpolygon points='41,31 35,34 39,36' fill='%23ffffff'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/mdi/css/materialdesignicons.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* Neutral Dark Obsidian/Slate Theme with Red Accent */
+    :root, [data-theme="dark"] {
+      --bg-base: #090b10;
+      --bg-surface: #0d1117;
+      --bg-elevated: #141a23;
+      --bg-card: #11161f;
+      --bg-input: #0a0d13;
+      --border: #1f2735;
+      --border-subtle: #171d28;
+      --border-focus: #ef4444;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #ef4444;
+      --primary-hover: #f87171;
+      --primary-glow: rgba(239, 68, 68, 0.14);
+      --accent: #f97316;
+      --blue-team: #38bdf8;
+      --blue-glow: rgba(56, 189, 248, 0.12);
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --success: #22c55e;
+      --info: #38bdf8;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+    }
+
+    [data-theme="light"] {
+      --bg-base: #f1f5f9;
+      --bg-surface: #ffffff;
+      --bg-elevated: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-input: #ffffff;
+      --border: #cbd5e1;
+      --border-subtle: #e2e8f0;
+      --border-focus: #dc2626;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #64748b;
+      --primary: #dc2626;
+      --primary-hover: #b91c1c;
+      --primary-glow: rgba(220, 38, 38, 0.1);
+      --accent: #ea580c;
+      --blue-team: #0284c7;
+      --blue-glow: rgba(2, 132, 199, 0.1);
+      --danger: #dc2626;
+      --warning: #d97706;
+      --success: #16a34a;
+      --info: #0284c7;
+      --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+      --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13.5px;
+      line-height: 1.5;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code, pre, .mono {
+      font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace;
+    }
+
+    /* App Shell Layout */
+    .app-shell {
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      grid-template-columns: 240px 1fr auto;
+      grid-template-areas:
+        "header header header"
+        "sidebar main drawer";
+      height: 100vh;
+      width: 100vw;
+      transition: grid-template-columns 0.22s ease;
+    }
+    .app-shell.sidebar-collapsed {
+      grid-template-columns: 64px 1fr auto;
+    }
+
+    /* Top Header */
+    .app-header {
+      grid-area: header;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 30;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .icon-btn {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      font-size: 17px;
+      text-decoration: none;
+    }
+    .icon-btn:hover {
+      color: var(--primary);
+      border-color: var(--primary);
+      background: var(--primary-glow);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-elevated);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .brand-title {
+      font-weight: 800;
+      font-size: 15.5px;
+      letter-spacing: 1.2px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .team-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      background: var(--primary-glow);
+      color: var(--primary);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Header Status Pills */
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 500;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+    .status-dot.online {
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success);
+    }
+    .status-dot.red {
+      background: var(--primary);
+      box-shadow: 0 0 6px var(--primary);
+    }
+    .status-dot.warn {
+      background: var(--warning);
+      box-shadow: 0 0 6px var(--warning);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .blue-team-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--blue-team);
+      background: var(--blue-glow);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      text-decoration: none;
+      transition: all 0.16s ease;
+    }
+    .blue-team-link:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--blue-team);
+    }
+
+    /* Sidebar Navigation */
+    .app-sidebar {
+      grid-area: sidebar;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px 10px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .nav-group-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      padding: 10px 10px 5px;
+    }
+    .app-shell.sidebar-collapsed .nav-group-label,
+    .app-shell.sidebar-collapsed .nav-label,
+    .app-shell.sidebar-collapsed .nav-badge,
+    .app-shell.sidebar-collapsed .sidebar-footer-card {
+      display: none;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 9px 11px;
+      margin-bottom: 3px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    .nav-item-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-item i.mdi {
+      font-size: 18px;
+      width: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .nav-item:hover {
+      background: var(--bg-elevated);
+      color: var(--text-main);
+    }
+    .nav-item:hover i.mdi {
+      color: var(--text-main);
+    }
+    .nav-item.active {
+      background: var(--primary-glow);
+      color: var(--text-main);
+      border-color: rgba(239, 68, 68, 0.32);
+      font-weight: 600;
+    }
+    .nav-item.active i.mdi {
+      color: var(--primary);
+    }
+    .nav-badge {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .nav-item.active .nav-badge {
+      background: rgba(239, 68, 68, 0.18);
+      color: var(--primary-hover);
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    .sidebar-footer-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--primary);
+      border-radius: 8px;
+      padding: 10px 11px;
+      font-size: 11.5px;
+    }
+    .sidebar-footer-title {
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 3px;
+    }
+
+    /* Main Content Area */
+    .app-main {
+      grid-area: main;
+      overflow-y: auto;
+      padding: 20px 24px 36px;
+      background: var(--bg-base);
+    }
+    .view-section {
+      display: none;
+      animation: fadeIn 0.16s ease;
+    }
+    .view-section.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .page-title {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .page-subtitle {
+      color: var(--text-muted);
+      font-size: 12.5px;
+      margin-top: 2px;
+    }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--primary);
+    }
+    .kpi-card.blue-accent::before {
+      background: var(--blue-team);
+    }
+    .kpi-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+    }
+    .kpi-top i {
+      font-size: 17px;
+      color: var(--primary);
+    }
+    .kpi-value {
+      font-size: 25px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-main);
+      line-height: 1.15;
+    }
+    .kpi-sub {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 5px;
+    }
+
+    /* Cards & Panels */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .panel-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title i {
+      color: var(--primary);
+      font-size: 17px;
+    }
+    .panel-body {
+      padding: 16px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 1150px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* Buttons & Inputs */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 13px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      border-color: var(--primary);
+      color: var(--primary-hover);
+    }
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+      color: #ffffff;
+    }
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11.5px;
+      border-radius: 6px;
+    }
+
+    .input, .select {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 7px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .input:focus, .select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+
+    /* Tables */
+    .table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    th {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 12.8px;
+      vertical-align: middle;
+    }
+    tr:hover td {
+      background: var(--bg-elevated);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .badge-red {
+      background: rgba(239, 68, 68, 0.14);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .badge-orange {
+      background: rgba(249, 115, 22, 0.14);
+      color: #fb923c;
+      border: 1px solid rgba(249, 115, 22, 0.3);
+    }
+    .badge-green {
+      background: rgba(34, 197, 94, 0.14);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .badge-blue {
+      background: rgba(56, 189, 248, 0.14);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .badge-neutral {
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    /* Terminal & Markdown Report Viewer */
+    .terminal-box {
+      background: #06080c;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      max-height: 440px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+    .report-box {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.65;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+    .report-box h1, .report-box h2, .report-box h3 {
+      color: var(--primary-hover);
+      margin: 12px 0 6px;
+      font-size: 14.5px;
+    }
+    .report-box ul {
+      padding-left: 18px;
+      margin: 6px 0;
+    }
+    .report-box code {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--primary-hover);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* Target & Arsenal Cards */
+    .target-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+      gap: 14px;
+    }
+    .target-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+      transition: border-color 0.15s ease;
+    }
+    .target-card:hover {
+      border-color: var(--primary);
+    }
+    .target-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .target-name {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text-main);
+    }
+    .target-ip {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--primary-hover);
+    }
+    .target-role {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* Collapsible Right-Side AI Operator Drawer */
+    .ai-drawer {
+      grid-area: drawer;
+      width: 375px;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 56px);
+      transition: width 0.22s ease, opacity 0.2s ease;
+    }
+    .ai-drawer.closed {
+      width: 0;
+      opacity: 0;
+      overflow: hidden;
+      border-left: none;
+    }
+    .drawer-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-elevated);
+    }
+    .drawer-title {
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+    }
+    .drawer-title i {
+      color: var(--primary);
+      font-size: 17px;
+    }
+    .drawer-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .chat-bubble {
+      padding: 10px 13px;
+      border-radius: 9px;
+      font-size: 12.5px;
+      line-height: 1.55;
+      max-width: 94%;
+      word-wrap: break-word;
+    }
+    .chat-bubble.assistant {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      align-self: flex-start;
+    }
+    .chat-bubble.user {
+      background: var(--primary-glow);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: var(--text-main);
+      align-self: flex-end;
+    }
+    .drawer-input-bar {
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell" id="appShell">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <button class="icon-btn" id="sidebarToggle" title="Toggle Navigation">
+          <i class="mdi mdi-menu"></i>
+        </button>
+        <div class="brand">
+          <div class="brand-logo" title="ONIOPS — Offensive Neural Intelligence">
+            <svg width="22" height="22" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="lokiHeaderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#ef4444" />
+                  <stop offset="100%" stop-color="#dc2626" />
+                </linearGradient>
+              </defs>
+              <polygon points="32,3 57,15 52,45 32,61 12,45 7,15" fill="#0d1117" stroke="url(#lokiHeaderGrad)" stroke-width="2.5"/>
+              <path d="M18 40 C13 26 16 12 25 6 C21 16 21 25 27 32 L32 37 L37 32 C43 25 43 16 39 6 C48 12 51 26 46 40 L39 36 L32 54 L25 36 Z" fill="url(#lokiHeaderGrad)"/>
+              <polygon points="23,31 29,34 25,36" fill="#ffffff"/>
+              <polygon points="41,31 35,34 39,36" fill="#ffffff"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">
+              ONIOPS
+              <span class="team-badge"><i class="mdi mdi-radar"></i> OFFENSIVE NEURAL INTELLIGENCE</span>
+            </div>
+            <div class="brand-sub">Autonomous Red Team // Provider-Agnostic AI</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="status-pill" title="Kali Attack Host (SSH)">
+          <span class="status-dot" id="kaliDot"></span>
+          <span>Kali: <strong id="kaliStatusText" class="mono">Checking...</strong></span>
+        </div>
+        <div class="status-pill" title="Active LLM Provider">
+          <span class="status-dot" id="ollamaDot"></span>
+          <span>LLM: <strong id="ollamaStatusText" class="mono">Checking...</strong></span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button class="icon-btn" id="themeToggle" title="Toggle Dark/Light Theme">
+          <i class="mdi mdi-weather-night" id="themeIcon"></i>
+        </button>
+        <button class="icon-btn" id="drawerToggle" title="Toggle Red Team AI Operator">
+          <i class="mdi mdi-robot-outline"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Left Sidebar -->
+    <aside class="app-sidebar">
+      <div>
+        <div class="nav-group-label">Red Team Operations</div>
+        <button class="nav-item active" data-view="dashboard" title="Command Center">
+          <span class="nav-item-left"><i class="mdi mdi-view-dashboard-outline"></i><span class="nav-label">Command Center</span></span>
+          <span class="nav-badge" id="navScansBadge">0</span>
+        </button>
+        <button class="nav-item" data-view="workbench" title="Recon Workbench">
+          <span class="nav-item-left"><i class="mdi mdi-console-network"></i><span class="nav-label">Recon Workbench</span></span>
+          <span class="nav-badge">LIVE</span>
+        </button>
+        <button class="nav-item" data-view="targets" title="Target Matrix">
+          <span class="nav-item-left"><i class="mdi mdi-crosshairs-gps"></i><span class="nav-label">Target Matrix</span></span>
+          <span class="nav-badge" id="navTargetsBadge">0</span>
+        </button>
+        <button class="nav-item" data-view="arsenal" title="Kali Arsenal &amp; Package Installer">
+          <span class="nav-item-left"><i class="mdi mdi-package-variant-closed"></i><span class="nav-label">Kali Arsenal &amp; Tools</span></span>
+          <span class="nav-badge" id="navArsenalBadge">SSH</span>
+        </button>
+
+        <div class="nav-group-label">Adversary &amp; Intel</div>
+        <button class="nav-item" data-view="intel" title="Exploit &amp; CVE Intel">
+          <span class="nav-item-left"><i class="mdi mdi-bug-outline"></i><span class="nav-label">Exploit &amp; CVE Intel</span></span>
+          <span class="nav-badge" id="navCveBadge">0</span>
+        </button>
+        <button class="nav-item" data-view="reports" title="Assessment Reports">
+          <span class="nav-item-left"><i class="mdi mdi-file-document-outline"></i><span class="nav-label">Assessment Reports</span></span>
+        </button>
+      </div>
+
+      <div class="sidebar-footer-card">
+        <div class="sidebar-footer-title">
+          <i class="mdi mdi-console-network" style="color: var(--primary);"></i> Kali VM Connected
+        </div>
+        <div style="color: var(--text-muted); line-height: 1.4;">
+          Direct SSH execution &amp; tool installer on your Kali attack host, scoped to your authorized range.
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Viewport -->
+    <main class="app-main">
+      <!-- VIEW 1: COMMAND CENTER DASHBOARD -->
+      <section class="view-section active" id="view-dashboard">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-view-dashboard-outline" style="color: var(--primary);"></i>
+              Red Team Command Center
+            </div>
+            <div class="page-subtitle">
+              Real-time offensive surface mapping, Exploit-DB correlation, and AI red-team assessment across your authorized scope
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" onclick="refreshAll()">
+              <i class="mdi mdi-refresh"></i> Refresh Telemetry
+            </button>
+            <button class="btn btn-primary" onclick="switchView('workbench')">
+              <i class="mdi mdi-rocket-launch"></i> Launch Assessment
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI Row -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-top"><span>Hosts In Scope</span><i class="mdi mdi-target"></i></div>
+            <div class="kpi-value" id="kpiTotalTargets">0</div>
+            <div class="kpi-sub"><span id="kpiAssessedTargets">0</span> assessed in database</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span>Discovered Open Ports</span><i class="mdi mdi-lan-connect"></i></div>
+            <div class="kpi-value" id="kpiOpenPorts">0</div>
+            <div class="kpi-sub">Active TCP services fingerprinted</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span>Findings Detected</span><i class="mdi mdi-alert-octagram"></i></div>
+            <div class="kpi-value" id="kpiFleetCves">0</div>
+            <div class="kpi-sub">Exploit-DB &amp; Nuclei matches</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span>Assessments Executed</span><i class="mdi mdi-radar"></i></div>
+            <div class="kpi-value" id="kpiTotalScans">0</div>
+            <div class="kpi-sub">Kali recon &amp; service audits</div>
+          </div>
+        </div>
+
+        <!-- Quick Launch Bar -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-flash"></i> Quick-Launch Homelab Assessment</div>
+            <span class="badge badge-red">KALI ATTACK HOST</span>
+          </div>
+          <div class="panel-body" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <select id="quickTargetSelect" class="select" style="min-width:250px;"></select>
+            <select id="quickProfileSelect" class="select" style="min-width:240px;">
+              <option value="fast_recon">Fast Tactical Recon (Top 100 TCP + Banners)</option>
+              <option value="deep_service">Deep Service &amp; Exploit-DB Audit (-sV -sC)</option>
+              <option value="web_tls_audit">Web Security Headers &amp; TLS Cipher Audit</option>
+              <option value="autonomous_ai">Autonomous AI Red-Team Playbook (Nmap + Web + LLM)</option>
+            </select>
+            <button class="btn btn-primary" id="quickLaunchBtn" onclick="runQuickAssessment()">
+              <i class="mdi mdi-play"></i> Execute Assessment
+            </button>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <!-- Recent Assessments -->
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="mdi mdi-history"></i> Recent Offensive Assessments</div>
+              <button class="btn btn-sm" onclick="switchView('reports')">View All Reports</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Target</th>
+                    <th>Profile</th>
+                    <th>Ports</th>
+                    <th>Findings</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="recentScansTable">
+                  <tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:20px;">Loading assessments...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Top Exposed Hosts -->
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="mdi mdi-fire"></i> Highest Priority Homelab Surface</div>
+              <button class="btn btn-sm" onclick="switchView('targets')">Full Matrix</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Host</th>
+                    <th>IP Address</th>
+                    <th>Open Ports</th>
+                    <th>Crit/High CVEs</th>
+                    <th>Assess</th>
+                  </tr>
+                </thead>
+                <tbody id="prioritySurfaceTable">
+                  <tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:20px;">Loading surface telemetry...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: RECON WORKBENCH -->
+      <section class="view-section" id="view-workbench">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-console-network" style="color: var(--primary);"></i>
+              Offensive Recon &amp; Validation Workbench
+            </div>
+            <div class="page-subtitle">
+              Execute scoped Nmap service fingerprinting via Kali, HTTP header/TLS audits, and AI adversary analysis
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-tune-variant"></i> Assessment Parameters</div>
+            <span class="badge badge-red">Kali attack host</span>
+          </div>
+          <div class="panel-body" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:12px; align-items:end;">
+            <div>
+              <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">TARGET (IN SCOPE)</label>
+              <select id="wbTargetSelect" class="select" style="width:100%;"></select>
+            </div>
+            <div>
+              <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">ASSESSMENT PROFILE</label>
+              <select id="wbProfileSelect" class="select" style="width:100%;">
+                <option value="autonomous_ai">Autonomous AI Red-Team Playbook (Nmap + Web + Exploit-DB + LLM)</option>
+                <option value="fast_recon">Fast Tactical Recon (Top 100 TCP Ports + Service Detection)</option>
+                <option value="deep_service">Deep Service &amp; Banner Discovery (-sV -sC + searchsploit)</option>
+                <option value="web_tls_audit">Web Security Headers (HSTS/CSP/XFO) &amp; TLS Cipher Audit</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="wbRunBtn" onclick="executeWorkbenchScan()" style="height:38px;">
+              <i class="mdi mdi-play"></i> Run Assessment
+            </button>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="mdi mdi-console-network"></i> Raw Sensor Telemetry &amp; Discovered Ports</div>
+              <span class="badge badge-neutral mono" id="wbScanMeta">Ready</span>
+            </div>
+            <div class="panel-body">
+              <div id="wbPortsBar" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;"></div>
+              <div class="terminal-box" id="wbRawOutput">Select an in-scope target and click "Run Assessment" to initiate reconnaissance via Kali...</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="mdi mdi-robot-outline"></i> ONIOPS Red-Team Executive Report</div>
+              <span class="badge badge-red">MITRE ATT&amp;CK + REMEDIATION</span>
+            </div>
+            <div class="panel-body">
+              <div class="report-box" id="wbAiReport">
+                <div style="color:var(--text-muted);">AI Red-Team analysis, Exploit-DB advisory correlation, and Blue-Team hardening recommendations will render here upon assessment completion.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: TARGET MATRIX -->
+      <section class="view-section" id="view-targets">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-crosshairs-gps" style="color: var(--primary);"></i>
+              Target Matrix (in scope)
+            </div>
+            <div class="page-subtitle">
+              Live-discovered hosts in your authorized scope with open-port posture and assessment history
+            </div>
+          </div>
+          <div>
+            <input type="text" id="targetFilterInput" class="input" placeholder="Filter by hostname, IP, or role..." oninput="renderTargetMatrix()" style="width:260px;" />
+          </div>
+        </div>
+        <div class="target-grid" id="targetMatrixGrid"></div>
+      </section>
+
+      <!-- VIEW 4: KALI ARSENAL & TOOL INSTALLER -->
+      <section class="view-section" id="view-arsenal">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-package-variant-closed" style="color: var(--primary);"></i>
+              Kali Linux Arsenal &amp; Package Manager
+            </div>
+            <div class="page-subtitle">
+              Inspect installed tools on your Kali host or install new security packages directly via `apt-get` (also accessible via the AI Operator chat)
+            </div>
+          </div>
+          <button class="btn" onclick="loadKaliTools()">
+            <i class="mdi mdi-refresh"></i> Refresh Arsenal Status
+          </button>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-download"></i> Install / Update Kali Package (`apt-get install -y`)</div>
+            <span class="badge badge-red">SSH</span>
+          </div>
+          <div class="panel-body">
+            <div style="display:flex; gap:10px; margin-bottom:12px;">
+              <input type="text" id="kaliPkgInput" class="input" placeholder="Enter Kali apt package name (e.g. whatweb, sslscan, nuclei, nikto, gobuster, ffuf, dnsrecon)..." style="flex:1;" onkeydown="if(event.key==='Enter') installCustomKaliPkg()" />
+              <button class="btn btn-primary" id="kaliInstallBtn" onclick="installCustomKaliPkg()">
+                <i class="mdi mdi-package-variant-closed"></i> Install on Kali
+              </button>
+            </div>
+            <div class="terminal-box" id="kaliInstallOutput" style="max-height:160px; display:none;"></div>
+          </div>
+        </div>
+
+        <div class="target-grid" id="kaliArsenalGrid">
+          <div style="color:var(--text-muted); padding:16px;">Checking installed tools on your Kali host...</div>
+        </div>
+      </section>
+
+      <!-- VIEW 5: EXPLOIT-DB & CVE INTEL -->
+      <section class="view-section" id="view-intel">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-bug-outline" style="color: var(--primary);"></i>
+              Exploit-DB &amp; Fleet CVE Intelligence
+            </div>
+            <div class="page-subtitle">
+              Query Kali's local `searchsploit` Exploit-DB database for advisories by service, product, or CVE
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-magnify"></i> Kali Exploit-DB (`searchsploit`) Advisory Lookup</div>
+            <span class="badge badge-red">KALI EXPLOIT-DB ARCHIVE</span>
+          </div>
+          <div class="panel-body">
+            <div style="display:flex; gap:10px; margin-bottom:14px;">
+              <input type="text" id="exploitQueryInput" class="input" placeholder="Search product, service, or CVE (e.g. OpenSSH, nginx, Proxmox, Jellyfin)..." style="flex:1;" onkeydown="if(event.key==='Enter') searchExploitDb()" />
+              <button class="btn btn-primary" onclick="searchExploitDb()">
+                <i class="mdi mdi-database-search"></i> Search Exploit-DB
+              </button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Exploit-DB ID</th>
+                    <th>Advisory Title</th>
+                    <th>Type / Platform</th>
+                    <th>CVE / Date</th>
+                  </tr>
+                </thead>
+                <tbody id="exploitResultsTable">
+                  <tr><td colspan="4" style="color:var(--text-muted); text-align:center; padding:18px;">Enter a service banner or CVE above to search Kali's offline Exploit-DB archive.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-alert-octagram"></i> Correlated Fleet CVEs (intel integrations)</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Host</th>
+                  <th>IP</th>
+                  <th>Critical CVEs</th>
+                  <th>High CVEs</th>
+                  <th>Vulnerability Summary</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="intelFleetCveTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 7: ASSESSMENT REPORTS -->
+      <section class="view-section" id="view-reports">
+        <div class="page-header">
+          <div>
+            <div class="page-title">
+              <i class="mdi mdi-file-document-outline" style="color: var(--primary);"></i>
+              Offensive Assessment Archive
+            </div>
+            <div class="page-subtitle">
+              Historical Red-Team reconnaissance runs, Exploit-DB matches, and AI remediation reports
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="mdi mdi-format-list-bulleted"></i> Completed Assessments</div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Timestamp</th>
+                    <th>Target</th>
+                    <th>Profile</th>
+                    <th>Ports</th>
+                    <th>View</th>
+                  </tr>
+                </thead>
+                <tbody id="archiveScansTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title"><i class="mdi mdi-file-document-outline"></i> Selected Report Inspector</div>
+              <span class="badge badge-red mono" id="reportInspectorBadge">Select a scan</span>
+            </div>
+            <div class="panel-body">
+              <div class="report-box" id="reportInspectorBody" style="margin-bottom:12px;">
+                Click any assessment on the left to inspect its AI Red-Team report and raw sensor output.
+              </div>
+              <div class="terminal-box" id="reportInspectorRaw" style="max-height:220px;">Raw output will appear here.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Collapsible Right-Side AI Red-Team Operator Drawer -->
+    <aside class="ai-drawer" id="aiDrawer">
+      <div class="drawer-header">
+        <div class="drawer-title">
+          <i class="mdi mdi-robot-outline"></i>
+          ONIOPS // RED-TEAM OPERATOR
+        </div>
+        <button class="icon-btn" onclick="toggleDrawer()" style="width:28px; height:28px;">
+          <i class="mdi mdi-close"></i>
+        </button>
+      </div>
+      <div class="drawer-messages" id="chatMessages">
+        <div class="chat-bubble assistant">
+          <strong>ONIOPS Red-Team Operator online.</strong><br/>
+          Connected to your Kali attack host. You can ask me to:<br/>
+          • <code>install whatweb</code> or <code>install sslscan</code> on Kali<br/>
+          • <code>scan &lt;in-scope-ip&gt; with nmap</code> or <code>run whatweb on &lt;ip&gt;</code><br/>
+          • <code>searchsploit openssh</code> or prioritize findings across your scope.
+        </div>
+      </div>
+      <div class="drawer-input-bar">
+        <input type="text" id="chatInput" class="input" placeholder="Ask ONIOPS or run/install Kali tools..." style="flex:1;" onkeydown="if(event.key==='Enter') sendChatMessage()" />
+        <button class="btn btn-primary" onclick="sendChatMessage()">
+          <i class="mdi mdi-send"></i>
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    let TARGETS_CACHE = [];
+    let SCANS_CACHE = [];
+
+    // Navigation & Shell Controls
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => switchView(btn.dataset.view));
+    });
+
+    function switchView(viewName) {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+      document.querySelectorAll('.view-section').forEach(s => s.classList.toggle('active', s.id === `view-${viewName}`));
+      // purple view removed (ONIOPS is offensive-only)
+      if (viewName === 'reports') loadScansHistory();
+      if (viewName === 'arsenal') loadKaliTools();
+    }
+
+    document.getElementById('sidebarToggle').addEventListener('click', () => {
+      document.getElementById('appShell').classList.toggle('sidebar-collapsed');
+    });
+
+    function toggleDrawer() {
+      document.getElementById('aiDrawer').classList.toggle('closed');
+    }
+    document.getElementById('drawerToggle').addEventListener('click', toggleDrawer);
+
+    // Theme Toggle
+    const savedTheme = localStorage.getItem('oniops_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('oniops_theme', next);
+      document.getElementById('themeIcon').className = next === 'dark' ? 'mdi mdi-weather-night' : 'mdi mdi-white-balance-sunny';
+    });
+
+    // Safe Markdown formatter
+    function renderMarkdown(md) {
+      if (!md) return '<span style="color:var(--text-muted)">No report generated.</span>';
+      let html = md
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/```text\n([\s\S]*?)```/g, '<div class="terminal-box" style="margin:6px 0; max-height:180px;">$1</div>')
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/^\s*[-*] (.*$)/gim, '<li>$1</li>')
+        .replace(/\n/g, '<br/>');
+      return html;
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        const kaliOk = data.health?.kali;
+        document.getElementById('kaliDot').className = 'status-dot ' + (kaliOk ? 'online' : 'warn');
+        document.getElementById('kaliStatusText').textContent = kaliOk ? 'SSH OK' : 'Offline';
+
+        const ollamaOk = data.health?.llm;
+        document.getElementById('ollamaDot').className = 'status-dot ' + (ollamaOk ? 'online' : 'warn');
+        document.getElementById('ollamaStatusText').textContent = ollamaOk ? (data.current_model || 'Online') : 'Offline';
+
+        const k = data.kpis || {};
+        document.getElementById('kpiTotalTargets').textContent = k.scope_hosts ?? 0;
+        document.getElementById('kpiAssessedTargets').textContent = k.scanned_hosts ?? 0;
+        document.getElementById('kpiTotalScans').textContent = k.total_assessments ?? 0;
+        document.getElementById('navScansBadge').textContent = k.total_assessments ?? 0;
+        document.getElementById('navTargetsBadge').textContent = k.scope_hosts ?? 0;
+      } catch (e) {
+        console.error('Status load error:', e);
+      }
+    }
+
+    async function loadTargets() {
+      try {
+        const res = await fetch('/api/targets');
+        const data = await res.json();
+        TARGETS_CACHE = data.targets || [];
+
+        const qSel = document.getElementById('quickTargetSelect');
+        const wSel = document.getElementById('wbTargetSelect');
+        const opts = TARGETS_CACHE.map(t => `<option value="${t.ip}">${t.hostname} (${t.ip}) — ${t.role}</option>`).join('');
+        qSel.innerHTML = opts;
+        wSel.innerHTML = opts;
+
+        let totalHighCrit = 0;
+        let totalOpenPorts = 0;
+        TARGETS_CACHE.forEach(t => {
+          totalHighCrit += (t.vulns?.critical || 0) + (t.vulns?.high || 0);
+          totalOpenPorts += (t.services || []).length;
+        });
+        document.getElementById('kpiFleetCves').textContent = totalHighCrit;
+        document.getElementById('navCveBadge').textContent = totalHighCrit;
+        document.getElementById('kpiOpenPorts').textContent = totalOpenPorts;
+
+        const sorted = [...TARGETS_CACHE].sort((a, b) => {
+          const scoreA = (a.vulns?.critical || 0) * 10 + (a.vulns?.high || 0) * 3 + (a.services?.length || 0);
+          const scoreB = (b.vulns?.critical || 0) * 10 + (b.vulns?.high || 0) * 3 + (b.services?.length || 0);
+          return scoreB - scoreA;
+        }).slice(0, 7);
+
+        document.getElementById('prioritySurfaceTable').innerHTML = sorted.map(t => {
+          const portsHtml = (t.services || []).length
+            ? t.services.slice(0, 5).map(p => `<span class="badge badge-orange">${p.port}/${p.service}</span>`).join(' ')
+            : `<span class="badge badge-neutral">Unscanned</span>`;
+          const cveCount = (t.vulns?.critical || 0) + (t.vulns?.high || 0);
+          const cveBadge = cveCount > 0
+            ? `<span class="badge badge-red">${t.vulns.critical}C / ${t.vulns.high}H</span>`
+            : `<span class="badge badge-green">0 Crit/High</span>`;
+          return `
+            <tr>
+              <td><strong>${t.hostname}</strong><div style="font-size:11px; color:var(--text-muted);">${t.role}</div></td>
+              <td class="mono">${t.ip}</td>
+              <td>${portsHtml}</td>
+              <td>${cveBadge}</td>
+              <td><button class="btn btn-sm" onclick="launchTargetInWorkbench('${t.ip}')"><i class="mdi mdi-radar"></i> Assess</button></td>
+            </tr>
+          `;
+        }).join('');
+
+        document.getElementById('intelFleetCveTable').innerHTML = TARGETS_CACHE.filter(t => ((t.vulns?.critical || 0) + (t.vulns?.high || 0)) > 0).map(t => `
+          <tr>
+            <td><strong>${t.hostname}</strong></td>
+            <td class="mono">${t.ip}</td>
+            <td><span class="badge badge-red">${t.vulns.critical}</span></td>
+            <td><span class="badge badge-orange">${t.vulns.high}</span></td>
+            <td class="mono" style="font-size:11.5px;">Total CVEs: ${t.vulns.total} (Med: ${t.vulns.medium})</td>
+            <td><button class="btn btn-sm" onclick="launchTargetInWorkbench('${t.ip}')">Validate</button></td>
+          </tr>
+        `).join('') || `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:16px;">No correlated CVEs yet.</td></tr>`;
+
+        renderTargetMatrix();
+      } catch (e) {
+        console.error('Targets load error:', e);
+      }
+    }
+
+    function renderTargetMatrix() {
+      const q = (document.getElementById('targetFilterInput')?.value || '').toLowerCase();
+      const filtered = TARGETS_CACHE.filter(t =>
+        (t.hostname || '').toLowerCase().includes(q) ||
+        t.ip.includes(q) ||
+        (t.role || '').toLowerCase().includes(q)
+      );
+      document.getElementById('targetMatrixGrid').innerHTML = filtered.map(t => {
+        const ports = t.services || [];
+        const cveCrit = t.vulns?.critical || 0;
+        const cveHigh = t.vulns?.high || 0;
+        return `
+          <div class="target-card">
+            <div>
+              <div class="target-card-top">
+                <div>
+                  <div class="target-name">${t.hostname}</div>
+                  <div class="target-ip">${t.ip}</div>
+                </div>
+                <span class="badge badge-neutral">${(t.type || '').toUpperCase()} // ${t.node}</span>
+              </div>
+              <div class="target-role" style="margin-top:6px;">${t.role}</div>
+              <div style="margin-top:10px; display:flex; gap:5px; flex-wrap:wrap;">
+                ${ports.length ? ports.map(p => `<span class="badge badge-orange">${p.port}/${p.service}</span>`).join('') : '<span class="badge badge-neutral">Not yet scanned</span>'}
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding-top:8px; border-top:1px solid var(--border-subtle);">
+              <span class="badge ${cveCrit + cveHigh > 0 ? 'badge-red' : 'badge-green'}">
+                CVEs: ${cveCrit}C / ${cveHigh}H
+              </span>
+              <button class="btn btn-sm btn-primary" onclick="launchTargetInWorkbench('${t.ip}')">
+                <i class="mdi mdi-radar"></i> Assess
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function launchTargetInWorkbench(ip) {
+      document.getElementById('wbTargetSelect').value = ip;
+      switchView('workbench');
+    }
+
+    async function loadKaliTools() {
+      const grid = document.getElementById('kaliArsenalGrid');
+      try {
+        const res = await fetch('/api/kali/tools');
+        const data = await res.json();
+        const tools = data.tools || [];
+        const installedCount = tools.filter(t => t.installed).length;
+        document.getElementById('navArsenalBadge').textContent = `${installedCount}/${tools.length}`;
+
+        grid.innerHTML = tools.map(t => `
+          <div class="target-card">
+            <div>
+              <div class="target-card-top">
+                <div>
+                  <div class="target-name mono">${t.pkg}</div>
+                  <div style="font-size:11px; color:var(--text-muted);">${t.category}</div>
+                </div>
+                <span class="badge ${t.installed ? 'badge-green' : 'badge-neutral'}">
+                  ${t.installed ? 'INSTALLED' : 'NOT INSTALLED'}
+                </span>
+              </div>
+              <div class="target-role" style="margin-top:8px;">${t.desc}</div>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding-top:8px; border-top:1px solid var(--border-subtle);">
+              <span class="mono" style="font-size:11px; color:var(--text-dim);">bin: ${t.bin}</span>
+              <button class="btn btn-sm ${t.installed ? '' : 'btn-primary'}" onclick="installKaliPackage('${t.pkg}')">
+                <i class="mdi mdi-package-variant-closed"></i> ${t.installed ? 'Update' : 'Install'}
+              </button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        grid.innerHTML = `<div style="color:var(--danger);">Failed to query Kali VM: ${e}</div>`;
+      }
+    }
+
+    function installCustomKaliPkg() {
+      const pkg = document.getElementById('kaliPkgInput').value.trim();
+      if (pkg) installKaliPackage(pkg);
+    }
+
+    async function installKaliPackage(pkg) {
+      const outBox = document.getElementById('kaliInstallOutput');
+      const btn = document.getElementById('kaliInstallBtn');
+      outBox.style.display = 'block';
+      outBox.textContent = `[KALI] Executing: apt-get update && apt-get install -y ${pkg} ...\n`;
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch('/api/kali/install', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({package: pkg})
+        });
+        const data = await res.json();
+        outBox.textContent += (data.output || data.error || 'Done.');
+        await loadKaliTools();
+      } catch (e) {
+        outBox.textContent += `\nError: ${e}`;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function loadScansHistory() {
+      try {
+        const res = await fetch('/api/assessments');
+        const data = await res.json();
+        SCANS_CACHE = data.assessments || [];
+
+        const rowsHtml = SCANS_CACHE.slice(0, 8).map(s => `
+          <tr>
+            <td class="mono">#${s.id}</td>
+            <td><strong>${s.target_name || s.target_ip}</strong> <span class="mono" style="color:var(--text-muted); font-size:11.5px;">(${s.target_ip})</span></td>
+            <td><span class="badge badge-neutral">${s.profile}</span></td>
+            <td style="font-size:11.5px;">${s.open_ports || 'None'}</td>
+            <td><span class="badge ${s.severity === 'CRITICAL' || s.severity === 'HIGH' ? 'badge-red' : 'badge-orange'}">${s.severity} (${s.finding_count} findings)</span></td>
+            <td><button class="btn btn-sm" onclick="inspectScan(${s.id})">Report</button></td>
+          </tr>
+        `).join('') || `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:18px;">No assessments executed yet. Use Quick-Launch above!</td></tr>`;
+        document.getElementById('kpiFleetCves').textContent = SCANS_CACHE.reduce((a, s) => a + (s.finding_count || 0), 0);
+
+        document.getElementById('recentScansTable').innerHTML = rowsHtml;
+
+        document.getElementById('archiveScansTable').innerHTML = SCANS_CACHE.map(s => `
+          <tr>
+            <td class="mono">#${s.id}</td>
+            <td style="font-size:11.5px; color:var(--text-muted);">${(s.timestamp || '').replace('T', ' ').slice(0, 19)}</td>
+            <td><strong>${s.target_name || s.target_ip}</strong></td>
+            <td><span class="badge badge-neutral">${s.profile}</span></td>
+            <td style="font-size:11.5px;">${s.open_ports || '-'}</td>
+            <td><button class="btn btn-sm" onclick="inspectScan(${s.id})">Inspect</button></td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        console.error('Scans load error:', e);
+      }
+    }
+
+    function inspectScan(scanId) {
+      switchView('reports');
+      const s = SCANS_CACHE.find(item => item.id === scanId);
+      if (!s) return;
+      document.getElementById('reportInspectorBadge').textContent = `SCAN #${s.id} // ${s.target_name} (${s.target_ip})`;
+      document.getElementById('reportInspectorBody').innerHTML = renderMarkdown(s.ai_report);
+      document.getElementById('reportInspectorRaw').textContent = s.raw_output || 'No raw output.';
+    }
+
+    async function runQuickAssessment() {
+      const target = document.getElementById('quickTargetSelect').value;
+      const profile = document.getElementById('quickProfileSelect').value;
+      document.getElementById('wbTargetSelect').value = target;
+      document.getElementById('wbProfileSelect').value = profile;
+      switchView('workbench');
+      await executeWorkbenchScan();
+    }
+
+    async function executeWorkbenchScan() {
+      const target = document.getElementById('wbTargetSelect').value;
+      const profile = document.getElementById('wbProfileSelect').value;
+      const btn = document.getElementById('wbRunBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running Recon...';
+      document.getElementById('wbScanMeta').textContent = `Scanning ${target} (${profile})...`;
+      document.getElementById('wbRawOutput').textContent = `[ONIOPS] Dispatching ${profile} against ${target} via Kali...\n`;
+      document.getElementById('wbAiReport').innerHTML = `<div style="color:var(--text-muted);">Correlating open services, Exploit-DB advisories, and synthesizing AI Red-Team report...</div>`;
+
+      try {
+        const res = await fetch('/api/assess', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({target, profile})
+        });
+        const data = await res.json();
+        if (data.error) {
+          document.getElementById('wbRawOutput').textContent = `ERROR: ${data.error}`;
+        } else {
+          document.getElementById('wbScanMeta').textContent = `Scan #${data.id} // Severity: ${data.severity}`;
+          document.getElementById('wbRawOutput').textContent = data.raw_output || 'Completed.';
+          document.getElementById('wbAiReport').innerHTML = renderMarkdown(data.ai_report);
+          document.getElementById('wbPortsBar').innerHTML = (data.ports_list || []).map(p =>
+            `<span class="badge badge-red">${p.port}/${p.proto} ${p.service} ${p.banner || ''}</span>`
+          ).join('');
+          refreshAll();
+        }
+      } catch (e) {
+        document.getElementById('wbRawOutput').textContent = `Request failed: ${e}`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment';
+      }
+    }
+
+    async function searchExploitDb() {
+      const q = document.getElementById('exploitQueryInput').value.trim();
+      if (!q) return;
+      const tbody = document.getElementById('exploitResultsTable');
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:18px;">Querying Kali Exploit-DB for "${q}"...</td></tr>`;
+      try {
+        const res = await fetch(`/api/intel?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        const list = data.exploits || [];
+        tbody.innerHTML = list.length ? list.map(e => `
+          <tr>
+            <td><span class="badge badge-red">EDB-${e.id}</span></td>
+            <td><strong>${e.title}</strong></td>
+            <td><span class="badge badge-neutral">${e.type} / ${e.platform}</span></td>
+            <td class="mono" style="font-size:11.5px; color:var(--text-muted);">${e.codes || e.date || '-'}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:18px;">No public Exploit-DB advisories matched "${q}".</td></tr>`;
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger); padding:18px;">Error querying Exploit-DB: ${e}</td></tr>`;
+      }
+    }
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg) return;
+      input.value = '';
+      const box = document.getElementById('chatMessages');
+      box.innerHTML += `<div class="chat-bubble user">${msg.replace(/</g, '&lt;')}</div>`;
+      const pendingId = 'msg-' + Date.now();
+      box.innerHTML += `<div class="chat-bubble assistant" id="${pendingId}"><i class="mdi mdi-loading mdi-spin"></i> Executing on Kali / Analyzing...</div>`;
+      box.scrollTop = box.scrollHeight;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            message: msg,
+            target: document.getElementById('wbTargetSelect')?.value || ''
+          })
+        });
+        const data = await res.json();
+        document.getElementById(pendingId).innerHTML = renderMarkdown(data.reply || data.error || 'No response.');
+        if (data.tool_executed) loadKaliTools();
+      } catch (e) {
+        document.getElementById(pendingId).textContent = 'Error contacting ONIOPS operator.';
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function refreshAll() {
+      loadStatus();
+      loadTargets();
+      loadScansHistory();
+      loadKaliTools();
+    }
+
+    refreshAll();
+    setInterval(loadStatus, 25000);
+  </script>
+</body>
+</html>
