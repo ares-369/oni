@@ -679,16 +679,20 @@ def api_aisec_start():
     base_url = (data.get("base_url") or "").strip()
     model = (data.get("model") or "").strip()
     api_type = (data.get("api_type") or "ollama").strip()
+    system_prompt = (data.get("system_prompt") or "")[:4000]
+    req_template = (data.get("req_template") or "")[:2000]
+    resp_path = (data.get("resp_path") or "").strip()[:200]
     if not re.match(r"^https?://", base_url):
         return jsonify({"error": "Provide an http(s) AI endpoint base_url."}), 400
-    if not model or len(model) > 80:
-        return jsonify({"error": "Provide a model name."}), 400
-    if api_type not in ("ollama", "openai"):
+    if api_type not in ("ollama", "openai", "custom"):
         api_type = "ollama"
+    if api_type != "custom" and (not model or len(model) > 80):
+        return jsonify({"error": "Provide a model name."}), 400
 
     def _job(ctl):
         return run_aisec(base_url, model, api_type, emit=emit_event,
-                         judge=llm.for_role("reporter"), ctl=ctl)
+                         judge=llm.for_role("reporter"), ctl=ctl,
+                         system_prompt=system_prompt, req_template=req_template, resp_path=resp_path)
 
     job_id = jobs.submit("aisec", {"model": model, "target": base_url}, _job)
     return jsonify({"job_id": job_id})

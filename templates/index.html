@@ -888,8 +888,8 @@
           <span class="nav-item-left"><i class="mdi mdi-bug-outline"></i><span class="nav-label">Exploit &amp; CVE Intel</span></span>
           <span class="nav-badge" id="navCveBadge">0</span>
         </button>
-        <button class="nav-item" data-view="aisec" title="AI Security &amp; GRC">
-          <span class="nav-item-left"><i class="mdi mdi-brain"></i><span class="nav-label">AI Security &amp; GRC</span></span>
+        <button class="nav-item" data-view="aisec" title="AI / LLM Red Team &amp; GRC">
+          <span class="nav-item-left"><i class="mdi mdi-brain"></i><span class="nav-label">AI Red Team</span></span>
           <span class="nav-badge">LLM</span>
         </button>
         <button class="nav-item" data-view="reports" title="Assessment Reports">
@@ -1307,8 +1307,8 @@
       <section class="view-section" id="view-aisec">
         <div class="page-header">
           <div>
-            <div class="page-title"><i class="mdi mdi-brain" style="color: var(--primary);"></i> AI Security &amp; GRC</div>
-            <div class="page-subtitle">Probe an LLM/AI endpoint for OWASP LLM Top 10 risks; map results to OWASP, MITRE ATLAS, NIST AI RMF, and Google SAIF / ISO 42001.</div>
+            <div class="page-title"><i class="mdi mdi-brain" style="color: var(--primary);"></i> AI / LLM Red Team &amp; GRC</div>
+            <div class="page-subtitle">Red-team any LLM/AI endpoint — hosted, local, or a model you built from scratch — for OWASP LLM Top 10 risks, mapped to OWASP, MITRE ATLAS, NIST AI RMF, and Google SAIF / ISO 42001.</div>
           </div>
         </div>
         <div class="panel">
@@ -1325,10 +1325,22 @@
               </div>
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">API</label>
-                <select id="aisecApi" class="select"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option></select>
+                <select id="aisecApi" class="select" onchange="document.getElementById('aisecCustomFields').style.display=this.value==='custom'?'block':'none'"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option><option value="custom">Custom endpoint</option></select>
               </div>
               <button class="btn btn-primary" id="aisecRunBtn" onclick="runAiSec()"><i class="mdi mdi-play"></i> Run Assessment</button>
             </div>
+            <div style="margin-top:12px;">
+              <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">SYSTEM PROMPT (optional)</label>
+              <textarea id="aisecSystem" class="input" rows="2" style="width:100%; font-family:inherit; resize:vertical;" placeholder="Paste your app's system prompt to test the guardrailed app instead of the raw model."></textarea>
+            </div>
+            {% raw %}
+            <div id="aisecCustomFields" style="display:none; margin-top:12px;">
+              <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">REQUEST TEMPLATE (JSON — use {{PROMPT}}, {{MODEL}}, {{SYSTEM}})</label>
+              <input id="aisecReqTemplate" class="input" style="width:100%; font-size:12px;" placeholder='{"input": {{PROMPT}}}' />
+              <label style="display:block; font-size:11.5px; color:var(--text-muted); margin:8px 0 5px; font-weight:600;">RESPONSE PATH (dot path, e.g. data.0.text — blank = auto-detect)</label>
+              <input id="aisecRespPath" class="input" style="width:60%; font-size:12px;" placeholder="auto-detect" />
+            </div>
+            {% endraw %}
           </div>
         </div>
         <div class="panel">
@@ -1879,14 +1891,17 @@
       const base_url = document.getElementById('aisecUrl').value.trim();
       const model = document.getElementById('aisecModel').value.trim();
       const api_type = document.getElementById('aisecApi').value;
-      if (!base_url || !model) { document.getElementById('aisecPosture').textContent = 'Enter an endpoint URL and a model.'; return; }
+      const system_prompt = document.getElementById('aisecSystem').value;
+      const req_template = document.getElementById('aisecReqTemplate').value.trim();
+      const resp_path = document.getElementById('aisecRespPath').value.trim();
+      if (!base_url || (!model && api_type !== 'custom')) { document.getElementById('aisecPosture').textContent = 'Enter an endpoint URL (and a model, unless custom).'; return; }
       const btn = document.getElementById('aisecRunBtn'); btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('aisecStatus').textContent = 'starting';
       document.getElementById('aisecTable').innerHTML = '';
       document.getElementById('aisecPosture').textContent = 'Probing the AI endpoint...';
       document.getElementById('aisecReport').innerHTML = 'Working...';
       try {
-        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type})})).json();
+        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type, system_prompt, req_template, resp_path})})).json();
         if (r.error) { document.getElementById('aisecPosture').textContent = 'ERROR: ' + r.error; return; }
         const jid = r.job_id; let data = null;
         renderCtl('aisecCtl', jid);
