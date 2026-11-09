@@ -19,6 +19,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+_MAX_RESULT_CHARS = 250_000
+_DEFAULT_JOB_BUDGET_SEC = 900.0
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -28,18 +31,27 @@ class JobControl:
     """Passed into a job's function so it can be paused/stopped cooperatively.
     The function calls checkpoint() at safe boundaries (between tools/steps)."""
 
-    def __init__(self, mgr: JobManager, job_id: str):
+    def __init__(self, mgr: JobManager, job_id: str, max_runtime_sec: float = _DEFAULT_JOB_BUDGET_SEC):
         self.mgr = mgr
         self.job_id = job_id
+        self.started_monotonic = time.monotonic()
+        self.max_runtime_sec = max_runtime_sec
 
     @property
     def cancelled(self) -> bool:
         return self.mgr._control.get(self.job_id) == "cancel"
 
     def checkpoint(self) -> bool:
-        """Block while paused; return False if the job should stop."""
+        """Block while paused; update heartbeat; return False if cancelled or budget exceeded."""
         while self.mgr._control.get(self.job_id) == "pause":
             time.sleep(0.4)
+        if time.monotonic() - self.started_monotonic > self.max_runtime_sec:
+            self.mgr._control[self.job_id] = "cancel"
+            return False
+        try:
+            self.mgr._set(self.job_id, heartbeat=_now())
+        except Exception:
+            pass
         return self.mgr._control.get(self.job_id) != "cancel"
 
 
@@ -69,10 +81,14 @@ class JobManager:
                 meta TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created TEXT NOT NULL,
+                heartbeat TEXT DEFAULT '',
                 finished TEXT,
                 result TEXT,
                 error TEXT
             )""")
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+            if "heartbeat" not in cols:
+                conn.execute("ALTER TABLE jobs ADD COLUMN heartbeat TEXT DEFAULT ''")
             conn.commit()
 
     def _reconcile_orphans(self):
@@ -95,27 +111,47 @@ class JobManager:
             conn.execute(f"UPDATE jobs SET {cols} WHERE id=?", (*fields.values(), job_id))
             conn.commit()
 
-    def submit(self, kind: str, meta: dict[str, Any], fn: Callable[[JobControl], dict]) -> str:
+    def submit(
+        self,
+        kind: str,
+        meta: dict[str, Any],
+        fn: Callable[[JobControl], dict],
+        *,
+        deduplicate: bool = True,
+    ) -> str:
+        meta_json = json.dumps(meta, sort_keys=True)
+        if deduplicate:
+            with self._conn() as conn:
+                existing = conn.execute(
+                    "SELECT id FROM jobs WHERE kind=? AND meta=? AND status IN ('queued','running') LIMIT 1",
+                    (kind, meta_json),
+                ).fetchone()
+                if existing and existing[0] in self._control:
+                    return str(existing[0])
         job_id = uuid.uuid4().hex[:12]
+        now_ts = _now()
         self._control[job_id] = "run"
         with self._conn() as conn:
             conn.execute(
-                "INSERT INTO jobs (id, kind, meta, status, created) VALUES (?,?,?,?,?)",
-                (job_id, kind, json.dumps(meta), "queued", _now()),
+                "INSERT INTO jobs (id, kind, meta, status, created, heartbeat) VALUES (?,?,?,?,?,?)",
+                (job_id, kind, meta_json, "queued", now_ts, now_ts),
             )
             conn.commit()
         self.pool.submit(self._run, job_id, fn)
         return job_id
 
     def _run(self, job_id: str, fn: Callable[[JobControl], dict]):
-        self._set(job_id, status="running")
+        self._set(job_id, status="running", heartbeat=_now())
         ctl = JobControl(self, job_id)
         try:
             result = fn(ctl)
             status = "cancelled" if self._control.get(job_id) == "cancel" else "done"
-            self._set(job_id, status=status, finished=_now(), result=json.dumps(result))
+            serialized = json.dumps(result)
+            if len(serialized) > _MAX_RESULT_CHARS:
+                serialized = json.dumps({"truncated": True, "preview": serialized[:_MAX_RESULT_CHARS]})
+            self._set(job_id, status=status, heartbeat=_now(), finished=_now(), result=serialized)
         except Exception as exc:
-            self._set(job_id, status="error", finished=_now(),
+            self._set(job_id, status="error", heartbeat=_now(), finished=_now(),
                       error=f"{exc}\n{traceback.format_exc()[-800:]}")
         finally:
             self._control.pop(job_id, None)

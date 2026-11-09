@@ -3,7 +3,15 @@ from __future__ import annotations
 
 import pytest
 
-from oniops.findings import FindingsLedger, diff_assessments, redact_secrets, validate_evidence
+from oniops.findings import (
+    FindingsLedger,
+    diff_assessments,
+    map_finding_coverage,
+    redact_secrets,
+    validate_evidence,
+)
+from oniops.graph import compute_attack_paths
+from oniops.jobs import JobManager
 from oniops.scope import ScopeViolation
 
 
@@ -143,3 +151,52 @@ def test_validate_evidence_and_batch_retest_and_diff(tmp_path, scope):
     assert "8080/tcp (http-proxy)" in diff["new_ports"]
     assert "80/tcp (http)" in diff["closed_ports"]
     assert diff["active_findings"] == 1
+
+
+def test_vulnerability_specific_validators_and_compliance_coverage():
+    # LFI requires /etc/passwd or win.ini proof, not just HTTP 200
+    assert validate_evidence("HTTP/1.1 200 OK\r\n<html>Welcome</html>", category="lfi") == "UNCONFIRMED"
+    assert validate_evidence("root:x:0:0:root:/root:/bin/bash", category="lfi") == "VERIFIED"
+
+    # SQLi & SSRF proof patterns
+    assert validate_evidence("You have an error in your SQL syntax; check the manual that corresponds to your MySQL", category="sqli") == "VERIFIED"
+    assert validate_evidence("HTTP/1.1 200 OK\r\nami-id: ami-0abcdef12345", category="ssrf") == "VERIFIED"
+    assert validate_evidence("uid=0(root) gid=0(root) groups=0(root)", category="rce") == "VERIFIED"
+
+    cov = map_finding_coverage("api_security", "BOLA/BFLA privilege boundary bypass on /api/admin")
+    assert "API1:2023-BOLA" in cov["owasp_api"]
+    assert "API5:2023-BFLA" in cov["owasp_api"]
+    assert "WSTG-ATHZ-02" in cov["owasp_wstg"]
+    assert "T1190" in cov["mitre_attack"]
+
+
+def test_observed_vs_inferred_identity_attack_graph_and_idempotent_jobs(tmp_path):
+    surface = {
+        "10.0.0.150": {
+            "target_name": "dc01.corp.local",
+            "services_json": '[{"port": 88, "service": "kerberos"}, {"port": 389, "service": "ldap"}, {"port": 445, "service": "microsoft-ds"}]',
+        },
+        "10.0.0.151": {
+            "target_name": "app01.corp.local",
+            "services_json": '[{"port": 8080, "service": "http"}]',
+        },
+    }
+    findings_by_host = {
+        "10.0.0.150": [{"port": 445, "title": "SMB signing disabled", "category": "nuclei", "severity": "HIGH", "status": "VERIFIED"}],
+        "10.0.0.151": [{"port": 8080, "title": "CVE-2024-9999 banner match", "category": "cve", "severity": "MEDIUM", "status": "UNCONFIRMED"}],
+    }
+    paths = compute_attack_paths({"10.0.0.150", "10.0.0.151"}, surface, findings_by_host, {})
+    by_ip = {p["target_ip"]: p for p in paths}
+    assert by_ip["10.0.0.150"]["validation_state"] == "OBSERVED"
+    assert any("Kerberos" in s for s in by_ip["10.0.0.150"]["identity_exposure"])
+    assert any("T1558" in t for t in by_ip["10.0.0.150"]["mitre_techniques"])
+    assert by_ip["10.0.0.151"]["validation_state"] == "INFERRED"
+
+    # Verify idempotent job deduplication
+    import threading
+    ev = threading.Event()
+    jm = JobManager(tmp_path / "jobs.sqlite")
+    j1 = jm.submit("assessment", {"ip": "10.0.0.150", "profile": "fast_recon"}, lambda ctl: (ev.wait(1.0), {"ok": True})[1])
+    j2 = jm.submit("assessment", {"ip": "10.0.0.150", "profile": "fast_recon"}, lambda ctl: {"ok": True})
+    assert j1 == j2
+    ev.set()
