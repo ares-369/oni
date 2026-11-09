@@ -1,6 +1,6 @@
 # ONIOPS — Offensive Neural Intelligence
 
-**An open-source, provider-agnostic, autonomous red-team framework.**
+**An open-source, provider-agnostic, autonomous red-team framework (`v0.2.0-beta`).**
 
 ONIOPS drives a Kali (or any tooled Linux) toolchain over SSH, reasons with the
 LLM(s) of your choice — local or cloud — and runs scope-locked offensive
