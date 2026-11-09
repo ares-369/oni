@@ -1,17 +1,17 @@
 # Code of Conduct
 
-ONIOPS is a small community project, and we want it to be a welcoming place for
+ONIOPS is a small project that I maintain on my own, and I want it to be a welcoming place for
 everyone — whether you are new to security or have been doing it for years.
 
-## Our pledge
+## My pledge
 
-We aim to make participation in this project a harassment-free experience for
+I aim to make participation in this project a harassment-free experience for
 everyone, regardless of age, body size, disability, ethnicity, sex
 characteristics, gender identity and expression, level of experience,
 education, socio-economic status, nationality, personal appearance, race,
 religion, or sexual identity and orientation.
 
-## What we ask
+## What I ask
 
 - Be kind, patient and respectful, especially with newcomers.
 - Assume good intent, and give constructive feedback.

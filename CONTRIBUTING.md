@@ -1,7 +1,7 @@
 # Contributing to ONIOPS
 
-Thank you for taking the time to look at ONIOPS. It is a small project maintained
-in spare time, and every bug report, idea, doc fix or pull request genuinely
+Thank you for taking the time to look at ONIOPS. It is a small project that I maintain
+on my own in my spare time, and every bug report, idea, doc fix or pull request genuinely
 helps.
 
 ## Ways to help
@@ -31,7 +31,7 @@ helps.
 5. If you add something users will see, a short note in the README or docs is
    appreciated.
 
-## A few things we ask
+## A few things I ask
 
 ONIOPS is an offensive security tool, so a few guardrails matter more than usual:
 
@@ -50,7 +50,7 @@ ONIOPS is an offensive security tool, so a few guardrails matter more than usual
 "ONIOPS" is simply the name this project goes by. You are free to fork and build
 on the code under the Apache-2.0 license. If you publish a fork that changes
 things significantly, giving it its own name helps avoid confusing users about
-which project is which — that is all we ask. (The license itself does not grant
+which project is which — that is all I ask. (The license itself does not grant
 use of the project's name; see section 6 of [`LICENSE`](LICENSE).)
 
 ## Code of conduct

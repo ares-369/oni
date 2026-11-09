@@ -7,6 +7,11 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+### Added
+- `DISCLAIMER.md` responsible-use statement, also summarised in `NOTICE` and the
+  README: ONIOPS is for authorized testing, is provided as-is, and the author is
+  not responsible for misuse or for modified versions made by others.
+
 ### Changed
 - CONTRIBUTING and README rewritten to be friendlier for new contributors; the
   README now credits the tools and projects ONIOPS builds on.

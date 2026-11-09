@@ -15,7 +15,12 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 > **Authorized use only.** ONIOPS performs active, intrusive security testing. Run
 > it only against systems you own or have **explicit written permission** to
-> test. Unauthorized use is illegal in most jurisdictions. See [`NOTICE`](NOTICE).
+> test. Unauthorized use is illegal in most jurisdictions.
+>
+> ONIOPS is provided as-is, for learning and authorized testing. You are
+> responsible for how you use it — the author is not responsible for misuse,
+> for harm to any person or organization, or for modified versions made by
+> others. Please read the [Responsible Use and Disclaimer](DISCLAIMER.md).
 
 ![ONIOPS Command Center](docs/screenshots/oniops_dashboard.png)
 
@@ -315,6 +320,16 @@ Contributions of all sizes are welcome — bug reports, ideas, docs and code.
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) to get started, and
 [`CHANGELOG.md`](CHANGELOG.md) for what has changed between releases.
 
+## Disclaimer
+
+ONIOPS is a tool for learning and for testing systems you are authorized to test.
+It is provided "as is", without warranty. You are solely responsible for your
+use of it; the author accepts no liability for misuse, for any damage or harm
+caused to people, companies, or systems, or for modified versions, forks, or
+redistributions made by others. See [`DISCLAIMER.md`](DISCLAIMER.md) and
+[`NOTICE`](NOTICE).
+
 ## License
 
-Apache-2.0. See [`LICENSE`](LICENSE).
+Apache-2.0. See [`LICENSE`](LICENSE). Redistributions, including modified
+versions, must keep the [`NOTICE`](NOTICE) file.
