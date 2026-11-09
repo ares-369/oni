@@ -117,3 +117,30 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     prev_data = r_prev.get_json()
     assert prev_data["changed"] is True
     assert "ONIOPS-PREVIEW-CHECK" in prev_data["diff"]
+
+
+def test_job_events_are_tagged_for_the_step_timeline(cfg_path, tmp_path, monkeypatch):
+    import time
+
+    import oniops.config as c
+    c._CONFIG = None
+    import webui
+
+    monkeypatch.setattr(webui, "ACTIVITY_LOG", tmp_path / "activity.jsonl")
+    jm = webui.JobManager(tmp_path / "jobs.sqlite")
+    monkeypatch.setattr(webui, "jobs", jm)
+
+    def work(ctl):
+        webui.emit_event("RECON", "busy", "scanning")
+        webui.emit_event("VALIDATE", "ok", "1/1 verified")
+        return {"ok": True}
+
+    webui.emit_event("CONFIG", "ok", "outside any job")   # must NOT be attributed
+    jid = jm.submit("test", {}, work)
+    for _ in range(50):
+        if (jm.get(jid) or {}).get("status") == "done":
+            break
+        time.sleep(0.05)
+    j = webui.app.test_client().get(f"/api/job/{jid}").get_json()
+    assert [e["stage"] for e in j["events"]] == ["RECON", "VALIDATE"]
+    assert all(e["job"] == jid for e in j["events"])

@@ -840,6 +840,61 @@
     .terms-check a { color: var(--primary); }
     .terms-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
     .terms-note { font-size: 12px; color: var(--warning); margin-top: 10px; min-height: 16px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+    /* First-run setup checklist */
+    .setup-card { margin-bottom: 16px; }
+    .setup-bar { height: 4px; background: var(--border); margin: 0 16px; border-radius: 2px; overflow: hidden; }
+    .setup-bar > div { height: 100%; width: 0; background: var(--success); transition: width .3s ease; }
+    .setup-steps { list-style: none; margin: 0; padding: 8px 16px 14px; display: grid;
+                   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+    .setup-step { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 8px;
+                  border: 1px solid var(--border); }
+    .setup-step.done { opacity: .75; }
+    .setup-step .mdi { font-size: 18px; margin-top: 1px; }
+    .setup-step.done .mdi { color: var(--success); }
+    .setup-step.todo .mdi { color: var(--text-dim); }
+    .setup-step.wait .mdi { color: var(--warning); }
+    .setup-step .ss-title { font-weight: 600; font-size: 13px; }
+    .setup-step.done .ss-title { text-decoration: line-through; text-decoration-color: var(--text-dim); }
+    .setup-step .ss-text { font-size: 12px; color: var(--text-muted); margin: 2px 0 6px; }
+
+    /* Empty states */
+    .empty-state { display: flex; flex-direction: column; align-items: center; text-align: center;
+                   gap: 6px; padding: 26px 16px; color: var(--text-muted); }
+    .empty-state > .mdi { font-size: 30px; color: var(--text-dim); }
+    .empty-state .es-title { font-weight: 600; color: var(--text-main); font-size: 14px; }
+    .empty-state .es-text { font-size: 12.5px; max-width: 440px; line-height: 1.5; }
+    .empty-state .btn { margin-top: 6px; }
+
+    /* Confidence filter chips + badges (Burp-style Certain / Firm / Tentative) */
+    .conf-filter { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 0; }
+    .conf-filter:empty { display: none; }
+    .chip { border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+            border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
+    .chip.active { border-color: var(--primary); color: var(--text-main); background: rgba(239,68,68,.12); }
+    .conf { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+    .conf .bars { display: inline-flex; gap: 2px; }
+    .conf .bars i { width: 4px; height: 11px; border-radius: 1px; background: var(--border); display: inline-block; }
+    .conf.c3 .bars i { background: var(--success); }
+    .conf.c2 .bars i:nth-child(-n+2) { background: var(--warning); }
+    .conf.c1 .bars i:nth-child(1) { background: var(--text-muted); }
+    /* Job step timeline (one row per stage, expandable log) */
+    .tl { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+    .tl:empty { display: none; }
+    .tl-step { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated, rgba(255,255,255,.02)); }
+    .tl-step > summary { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; list-style: none; }
+    .tl-step > summary::-webkit-details-marker { display: none; }
+    .tl-step > summary::after { content: '\25B8'; color: var(--text-dim); font-size: 11px; transition: transform .15s; }
+    .tl-step[open] > summary::after { transform: rotate(90deg); }
+    .tl-ico { width: 18px; text-align: center; font-size: 16px; }
+    .tl-ico.ok { color: var(--success); } .tl-ico.run { color: var(--primary); }
+    .tl-ico.warn { color: var(--warning); } .tl-ico.err { color: var(--danger, #ef4444); }
+    .tl-main { flex: 1; min-width: 0; }
+    .tl-name { font-weight: 600; font-size: 13px; }
+    .tl-sub { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tl-dur { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--text-muted); }
+    .tl-log { margin: 0; padding: 0 12px 10px 38px; font-family: var(--font-mono, monospace); font-size: 11.5px;
+              color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
     .terms-actions .btn:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.4); }
   </style>
 </head>
@@ -1008,6 +1063,19 @@
           </div>
         </div>
 
+        <!-- First-run setup checklist (hidden once everything is done or dismissed) -->
+        <div class="panel setup-card" id="setupChecklist" hidden>
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-rocket-launch-outline"></i> Get ONIOPS ready</div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <span class="mono" id="setupProgressText" style="font-size:12px; color:var(--text-muted);"></span>
+              <button class="btn btn-sm" type="button" onclick="hideChecklist()" aria-label="Hide setup checklist">Hide</button>
+            </div>
+          </div>
+          <div class="setup-bar" aria-hidden="true"><div id="setupBarFill"></div></div>
+          <ol class="setup-steps" id="setupSteps"></ol>
+        </div>
+
         <!-- KPI Row -->
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -1172,6 +1240,7 @@
             </div>
             <div class="panel-body">
               <div id="wbPortsBar" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;"></div>
+              <div id="wbTimeline" class="tl" aria-live="polite"></div>
               <div class="terminal-box" id="wbRawOutput">Select an in-scope target and click "Run Assessment" to start reconnaissance from your attack host...</div>
             </div>
           </div>
@@ -1420,6 +1489,7 @@
               <button class="btn btn-sm" onclick="loadFindingsLedger()"><i class="mdi mdi-refresh"></i> Refresh Ledger</button>
             </div>
           </div>
+          <div class="conf-filter" id="confFilter" role="group" aria-label="Filter findings by confidence"></div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -1428,13 +1498,14 @@
                   <th>Target</th>
                   <th>Finding</th>
                   <th>Severity</th>
+                  <th title="How sure ONIOPS is that the finding is real: Certain = verified with proof, Firm = strong signal, Tentative = lead to verify manually">Confidence</th>
                   <th>Status</th>
                   <th>Evidence / Deterministic Replay</th>
                   <th>Zero-Token Retest</th>
                 </tr>
               </thead>
               <tbody id="findingsLedgerTable">
-                <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">No structured findings recorded yet.</td></tr>
+                <tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No structured findings recorded yet.</td></tr>
               </tbody>
             </table>
           </div>
@@ -1699,6 +1770,7 @@
         const llmState = st(data.health?.llm);
         const hostName = data.health?.host_name || 'your attack host';
         window.__oniStatus = {hostState, llmState, hostName, model: data.current_model};
+        window.__oniStatusData = data;
 
         document.getElementById('kaliDot').className = dotCls(hostState);
         document.getElementById('kaliStatusText').textContent =
@@ -1738,6 +1810,7 @@
         document.getElementById('kpiTotalScans').textContent = k.total_assessments ?? 0;
         document.getElementById('navScansBadge').textContent = k.total_assessments ?? 0;
         document.getElementById('navTargetsBadge').textContent = k.scope_hosts ?? 0;
+        renderChecklist();
       } catch (e) {
         console.error('Status load error:', e);
       }
@@ -1798,7 +1871,9 @@
               <td><button class="btn btn-sm" onclick="launchTargetInWorkbench('${t.ip}')"><i class="mdi mdi-radar"></i> Assess</button></td>
             </tr>
           `;
-        }).join('');
+        }).join('') || `<tr><td colspan="5">${emptyState('mdi-radar', 'No hosts in scope yet',
+          'Discover live hosts in your authorized scope, or type an IP in the Workbench.',
+          'Discover targets', "switchView('targets')")}</td></tr>`;
 
         document.getElementById('intelFleetCveTable').innerHTML = TARGETS_CACHE.filter(t => ((t.vulns?.critical || 0) + (t.vulns?.high || 0)) > 0).map(t => `
           <tr>
@@ -1809,7 +1884,9 @@
             <td class="mono" style="font-size:11.5px;">Total CVEs: ${t.vulns.total} (Med: ${t.vulns.medium})</td>
             <td><button class="btn btn-sm" onclick="launchTargetInWorkbench('${t.ip}')">Validate</button></td>
           </tr>
-        `).join('') || `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:16px;">No correlated CVEs yet.</td></tr>`;
+        `).join('') || `<tr><td colspan="6">${emptyState('mdi-bug-check-outline', 'No high or critical CVEs found',
+          'Known CVEs and exploits for detected service versions show up here after an assessment.',
+          'Run an assessment', "switchView('workbench')")}</td></tr>`;
 
         renderTargetMatrix();
       } catch (e) {
@@ -1853,7 +1930,9 @@
             </div>
           </div>
         `;
-      }).join('');
+      }).join('') || (TARGETS_CACHE.length
+        ? emptyState('mdi-filter-remove-outline', 'No targets match that filter', 'Try a different hostname, IP or role.', 'Clear filter', "document.getElementById('targetFilterInput').value=''; renderTargetMatrix()")
+        : emptyState('mdi-lan-pending', 'No targets yet', 'Discovery finds live hosts inside your authorized scope. Nothing outside the scope is touched.', 'Discover hosts in scope', 'discoverHosts(this)'));
     }
 
     function loadGraph() {
@@ -1865,7 +1944,9 @@
         (g.nodes || []).filter(n => n.type === 'service').forEach(v => { (svcByHost[v.host] = svcByHost[v.host] || []).push(v); });
         const esc = t => String(t == null ? '' : t).replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
         const riskColor = r => ({CRITICAL:'#ef4444', HIGH:'#ef4444', MEDIUM:'#f59e0b', LOW:'#22c55e'}[r] || '#64748b');
-        if (!hosts.length) { document.getElementById('graphCanvas').innerHTML = '<div style="color:var(--text-muted); padding:20px;">No hosts yet. Discover targets or run an assessment.</div>'; return; }
+        if (!hosts.length) { document.getElementById('graphCanvas').innerHTML = emptyState('mdi-graph-outline', 'Nothing to map yet',
+          'The attack graph links hosts, services and findings once you have discovered or assessed something.',
+          'Discover targets', "switchView('targets')"); return; }
         const scopeX = 70, hostX = 250, svcX = 500; let y = 30; const rows = [];
         hosts.forEach(h => { const svcs = svcByHost[h.ip] || []; const band = Math.max(svcs.length, 1) * 22; rows.push({h, svcs, top: y, cy: y + band / 2}); y += band + 20; });
         const H = Math.max(y + 20, 240), scopeY = H / 2;
@@ -2340,7 +2421,9 @@
             <td><span class="badge ${s.severity === 'CRITICAL' || s.severity === 'HIGH' ? 'badge-red' : 'badge-orange'}">${s.severity} (${s.finding_count} findings)</span></td>
             <td><button class="btn btn-sm" onclick="inspectScan(${s.id})">Report</button></td>
           </tr>
-        `).join('') || `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:18px;">No assessments executed yet. Use Quick-Launch above!</td></tr>`;
+        `).join('') || `<tr><td colspan="6">${emptyState('mdi-history', 'No assessments yet',
+          'Pick a target and a profile in Quick-Launch above, or open the Workbench for more options.',
+          'Open Workbench', "switchView('workbench')")}</td></tr>`;
         document.getElementById('kpiFleetCves').textContent = SCANS_CACHE.reduce((a, s) => a + (s.finding_count || 0), 0);
 
         document.getElementById('recentScansTable').innerHTML = rowsHtml;
@@ -2354,7 +2437,9 @@
             <td style="font-size:11.5px;">${s.open_ports || '-'}</td>
             <td><button class="btn btn-sm" onclick="inspectScan(${s.id})">Inspect</button></td>
           </tr>
-        `).join('');
+        `).join('') || `<tr><td colspan="6">${emptyState('mdi-file-document-outline', 'No reports yet',
+          'Every assessment produces a report you can inspect and export as Markdown, JSON or PDF.',
+          'Run an assessment', "switchView('workbench')")}</td></tr>`;
       } catch (e) {
         console.error('Scans load error:', e);
       }
@@ -2383,9 +2468,106 @@
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+    // ── First-run setup checklist (Grafana / Tailscale style) ───────────────
+    function renderChecklist() {
+      const card = document.getElementById('setupChecklist');
+      const d = window.__oniStatusData, st = window.__oniStatus;
+      if (!card || !d || !st || !TERMS) return;
+      if (localStorage.getItem('oniops.checklist.hidden') === '1') { card.hidden = true; return; }
+      const k = d.kpis || {}, scopeTxt = (d.scope || []).join(', ');
+      const steps = [
+        {done: !!TERMS.accepted, title: 'Accept the responsible-use terms',
+         text: 'Confirm you will only test systems you are authorized to test.', act: 'Review terms', js: 'checkTerms()'},
+        {done: st.hostState === 'online', wait: st.hostState === 'checking', title: 'Connect an attack host',
+         text: st.hostState === 'offline' ? `Can't reach ${st.hostName} over SSH yet.` : 'A Linux box with your tools (Kali, Parrot, or your own).',
+         act: 'Open Settings', js: "switchView('settings')"},
+        {done: st.llmState === 'online', wait: st.llmState === 'checking', title: 'Connect an AI model',
+         text: 'Local Ollama or a cloud provider, for reasoning and reports.', act: 'Open Settings', js: "switchView('settings')"},
+        {done: !!scopeTxt, title: 'Check your scope',
+         text: scopeTxt ? `Authorized: ${scopeTxt}` : 'Set the networks you are allowed to test.', act: 'Review scope', js: "switchView('settings')"},
+        {done: (k.scope_hosts || 0) > 0, title: 'Discover targets',
+         text: 'Find live hosts inside your scope.', act: 'Discover', js: "switchView('targets')"},
+        {done: (k.total_assessments || 0) > 0, title: 'Run your first assessment',
+         text: 'Start with Fast Tactical Recon on one host.', act: 'Open Workbench', js: "switchView('workbench')"},
+      ];
+      const n = steps.filter(s => s.done).length;
+      if (n === steps.length) { card.hidden = true; return; }
+      card.hidden = false;
+      document.getElementById('setupProgressText').textContent = `${n} of ${steps.length} done`;
+      document.getElementById('setupBarFill').style.width = `${Math.round(100 * n / steps.length)}%`;
+      document.getElementById('setupSteps').innerHTML = steps.map(s => {
+        const cls = s.done ? 'done' : (s.wait ? 'wait' : 'todo');
+        const icon = s.done ? 'mdi-check-circle' : (s.wait ? 'mdi-progress-clock' : 'mdi-checkbox-blank-circle-outline');
+        return `<li class="setup-step ${cls}"><i class="mdi ${icon}" aria-hidden="true"></i><div>
+          <div class="ss-title">${s.title}<span class="sr-only">${s.done ? ' (done)' : ' (to do)'}</span></div>
+          <div class="ss-text">${escT(s.text)}</div>
+          ${s.done ? '' : `<button class="btn btn-sm" type="button" onclick="${s.js}">${s.act}</button>`}</div></li>`;
+      }).join('');
+    }
+    function hideChecklist() {
+      localStorage.setItem('oniops.checklist.hidden', '1');
+      document.getElementById('setupChecklist').hidden = true;
+      toast('Setup checklist hidden. Clear site data to show it again.');
+    }
+
+    // ── Empty states (Stripe / Notion style): say what goes here + next step ──
+    function emptyState(icon, title, text, actionLabel, actionJs) {
+      const btn = actionLabel
+        ? `<button class="btn btn-sm btn-primary" type="button" onclick="${actionJs}"><i class="mdi mdi-arrow-right"></i> ${actionLabel}</button>` : '';
+      return `<div class="empty-state"><i class="mdi ${icon}" aria-hidden="true"></i>
+        <div class="es-title">${title}</div><div class="es-text">${text}</div>${btn}</div>`;
+    }
+
+    // ── Step timeline (GitHub Actions-style): one row per stage ────────────
+    const STAGE_LABELS = {
+      RECON: 'Port & service scan', VALIDATE: 'Verify live services', CVE_INTEL: 'CVE & exploit lookup',
+      AI_REASON: 'AI attack-path reasoning', AI_REPORT: 'AI report', COMPLETE: 'Save results',
+      WAPT: 'Web service discovery', WAPT_FP: 'Fingerprint web stack', WAPT_CRAWL: 'Crawl endpoints',
+      WAPT_DIR: 'Content discovery', WAPT_JS: 'JavaScript route discovery', WAPT_API: 'API & access-control checks',
+      WAPT_VULN: 'Vulnerability scan', PTT_INIT: 'Surface discovery', PTT_TECH: 'Technology fingerprint',
+      PTT_SMB: 'SMB enumeration', PTT_AUDIT: 'Service audit', PLAYBOOK: 'Playbook steps', DISCOVER: 'Host discovery',
+    };
+    const fmtDur = ms => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+    const escT = s => String(s == null ? '' : s).replace(/[<&>]/g, c => ({'<': '&lt;', '&': '&amp;', '>': '&gt;'}[c]));
+
+    // jobState: running | done | error | stopped | timeout
+    function renderTimeline(elId, events, jobState) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      const steps = [];
+      (events || []).forEach(e => {
+        const last = steps[steps.length - 1];
+        if (last && last.stage === e.stage) last.events.push(e);
+        else steps.push({stage: e.stage, events: [e]});
+      });
+      const open = new Set([...el.querySelectorAll('details[open]')].map(d => d.dataset.stage));
+      const now = Date.now();
+      el.innerHTML = steps.map((st, i) => {
+        const first = Date.parse(st.events[0].timestamp);
+        const lastEv = st.events[st.events.length - 1];
+        const isLast = i === steps.length - 1;
+        const end = !isLast ? Date.parse(steps[i + 1].events[0].timestamp)
+                  : (jobState === 'running' ? now : Date.parse(lastEv.timestamp));
+        let cls = 'ok', icon = 'mdi-check-circle';
+        if (lastEv.status === 'warn') { cls = 'warn'; icon = 'mdi-alert-circle'; }
+        if (lastEv.status === 'error') { cls = 'err'; icon = 'mdi-close-circle'; }
+        if (isLast && jobState === 'running') { cls = 'run'; icon = 'mdi-loading mdi-spin'; }
+        if (isLast && (jobState === 'error' || jobState === 'timeout')) { cls = 'err'; icon = 'mdi-close-circle'; }
+        if (isLast && jobState === 'stopped') { cls = 'warn'; icon = 'mdi-stop-circle'; }
+        const name = STAGE_LABELS[st.stage] || st.stage.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase());
+        const log = st.events.map(e => `${new Date(e.timestamp).toLocaleTimeString()}  ${e.title}${e.detail ? '\n    ' + e.detail : ''}`).join('\n');
+        return `<details class="tl-step" data-stage="${escT(st.stage)}" ${open.has(st.stage) ? 'open' : ''}>
+          <summary><i class="mdi ${icon} tl-ico ${cls}" aria-hidden="true"></i>
+            <div class="tl-main"><div class="tl-name">${escT(name)}</div><div class="tl-sub">${escT(lastEv.title)}</div></div>
+            <span class="tl-dur">${fmtDur(end - first)}</span></summary>
+          <pre class="tl-log">${escT(log)}</pre></details>`;
+      }).join('');
+    }
+
     // Put every Workbench panel into a consistent end state, so nothing keeps
     // saying "Dispatching..." / "Running..." after a run fails or stops.
     function wbFinish(state, message) {
+      renderTimeline('wbTimeline', window._wbEvents || [], state);
       const labels = {error: 'Failed', stopped: 'Stopped', timeout: 'Timed out'};
       document.getElementById('wbScanMeta').textContent = labels[state] || state;
       if (message) document.getElementById('wbRawOutput').textContent = message;
@@ -2407,6 +2589,7 @@
       btn.disabled = true;
       btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('wbScanMeta').textContent = `Dispatching ${profile} on ${target}...`;
+      window._wbEvents = []; document.getElementById('wbTimeline').innerHTML = '';
       document.getElementById('wbRawOutput').textContent = `[ONIOPS] Starting ${profile} against ${target} from the attack host...\n`;
       document.getElementById('wbAiReport').innerHTML = `<div style="color:var(--text-muted);">Running recon and synthesizing the AI red-team report...</div>`;
 
@@ -2425,10 +2608,12 @@
         for (let i = 0; i < 150; i++) {
           await sleep(2000);
           const j = await (await fetch(`/api/job/${jobId}`)).json();
-          const tv = await (await fetch('/api/telemetry')).json();
-          const recent = (tv.events || []).slice(0, 10).map(e => `[${e.stage}] ${e.title}`).join('\n');
-          document.getElementById('wbScanMeta').textContent = `Job ${jobId} // ${j.status}`;
-          document.getElementById('wbRawOutput').textContent = `[ONIOPS] ${profile} on ${target} — ${j.status}\n\n${recent}`;
+          window._wbEvents = j.events || [];
+          const elapsed = j.created ? fmtDur(Date.now() - Date.parse(j.created)) : '';
+          document.getElementById('wbScanMeta').textContent = `Job ${jobId} // ${j.status}${elapsed ? ' // ' + elapsed : ''}`;
+          renderTimeline('wbTimeline', window._wbEvents, j.status === 'done' ? 'done' : 'running');
+          document.getElementById('wbRawOutput').textContent =
+            `[ONIOPS] ${profile} on ${target} — ${j.status}. Raw tool output appears here when the run finishes.`;
           if (j.status === 'done') { data = j.result; break; }
           if (j.status === 'cancelled') { wbFinish('stopped', document.getElementById('wbRawOutput').textContent + '\n\n[stopped by operator]'); return; }
           if (j.status === 'error' || j.status === 'interrupted') { wbFinish('error', `ERROR: ${j.error || 'job failed'}`); return; }
@@ -2508,20 +2693,45 @@
       try {
         const res = await fetch('/api/findings');
         const data = await res.json();
-        const list = data.findings || [];
-        if (!list.length) {
-          tb.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">No structured findings recorded yet. Run an assessment to populate the ledger.</td></tr>';
+        const all = data.findings || [];
+        const filterEl = document.getElementById('confFilter');
+        if (!all.length) {
+          if (filterEl) filterEl.innerHTML = '';
+          tb.innerHTML = `<tr><td colspan="8">${emptyState('mdi-shield-search', 'No findings yet',
+            'Findings appear here after an assessment. Each one keeps its evidence and a replay command, so you can retest it without the AI.',
+            'Run an assessment', "switchView('workbench')")}</td></tr>`;
           return;
         }
         const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+        // Confidence: how sure ONIOPS is the finding is real (calibrated server-side
+        // from verification status + evidence). Shown Burp-style.
+        const CONF = {HIGH: ['Certain', 3, 'Verified with proof captured from the target'],
+                      MEDIUM: ['Firm', 2, 'Strong signal, but not fully proven'],
+                      LOW: ['Tentative', 1, 'A lead to verify manually']};
+        const confOf = f => CONF[(f.confidence || 'MEDIUM').toUpperCase()] ? (f.confidence || 'MEDIUM').toUpperCase() : 'MEDIUM';
+        const SEV = {CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1};
+        const counts = {ALL: all.length, HIGH: 0, MEDIUM: 0, LOW: 0};
+        all.forEach(f => counts[confOf(f)]++);
+        const sel = window._confFilter || 'ALL';
+        if (filterEl) filterEl.innerHTML = ['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(k =>
+          `<button type="button" class="chip ${sel === k ? 'active' : ''}" aria-pressed="${sel === k}"
+             onclick="window._confFilter='${k}'; loadFindingsLedger()">${k === 'ALL' ? 'All' : CONF[k][0]} (${counts[k]})</button>`).join('');
+        const list = all.filter(f => sel === 'ALL' || confOf(f) === sel)
+          .sort((a, b) => (SEV[b.severity] || 0) - (SEV[a.severity] || 0) || CONF[confOf(b)][1] - CONF[confOf(a)][1]);
+        if (!list.length) {
+          tb.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No ${CONF[sel][0].toLowerCase()} findings. <a href="#" onclick="window._confFilter='ALL'; loadFindingsLedger(); return false;" style="color:var(--primary);">Show all</a></td></tr>`;
+          return;
+        }
         tb.innerHTML = list.map(f => {
           const stBadge = f.status === 'FIXED' ? 'badge-green' : (f.status === 'VERIFIED' || f.status === 'AUTH-GATED' ? 'badge-red' : 'badge-orange');
           const sevBadge = (f.severity === 'CRITICAL' || f.severity === 'HIGH') ? 'badge-red' : 'badge-neutral';
+          const [cName, cLvl, cTip] = CONF[confOf(f)];
           return `<tr>
             <td class="mono">#${f.id}</td>
             <td class="mono">${esc(f.target_ip)}${f.port ? ':' + f.port : ''}</td>
             <td><strong>${esc(f.title)}</strong></td>
             <td><span class="badge ${sevBadge}">${esc(f.severity)}</span></td>
+            <td><span class="conf c${cLvl}" title="${cTip}"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>${cName}</span></td>
             <td><span class="badge ${stBadge}" id="fstatus_${f.id}">${esc(f.status)}</span></td>
             <td class="mono" style="font-size:11px; max-width:340px; overflow:hidden; text-overflow:ellipsis;" title="${esc(f.repro_display)}">${esc(f.evidence.slice(0, 120))}</td>
             <td>${f.repro_display ? `<button class="btn btn-sm" onclick="retestFinding(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest</button>` : '&mdash;'}</td>
@@ -2582,6 +2792,7 @@
     async function checkTerms() {
       try {
         TERMS = await (await fetch('/api/terms')).json();
+        renderChecklist();
         if (TERMS.accepted) return;
         document.getElementById('termsList').innerHTML =
           (TERMS.summary || []).map(t => `<li>${String(t).replace(/</g, '&lt;')}</li>`).join('');
@@ -2598,6 +2809,7 @@
           body: JSON.stringify({confirm: true, version: TERMS && TERMS.version})})).json();
         if (r.error) { note.textContent = r.error; return; }
         Object.assign(TERMS, {accepted: true, accepted_at: r.accepted_at, user: r.user});
+        renderChecklist();
         document.getElementById('termsOverlay').hidden = true;
         toast('Thanks — terms accepted. Happy (authorized) testing.');
       } catch (e) { note.textContent = 'Could not save your acceptance: ' + e; }

@@ -36,7 +36,7 @@ from oniops.findings import (
 )
 from oniops.graph import build_graph
 from oniops.greybox import analyze_source_code, discover_js_endpoints, probe_openapi, sanitize_auth_header
-from oniops.jobs import JobManager
+from oniops.jobs import JobManager, current_job_id
 from oniops.kali import KaliRunner
 from oniops.pdf import markdown_to_pdf
 from oniops.playbooks import load_playbooks, render_step_cmd
@@ -128,6 +128,9 @@ def now_iso() -> str:
 def emit_event(stage: str, status: str, title: str, detail: str = ""):
     ev = {"timestamp": now_iso(), "stage": stage, "status": status,
           "title": title, "detail": detail[:300]}
+    jid = current_job_id()
+    if jid:
+        ev["job"] = jid   # lets the UI draw a per-job step timeline
     try:
         with open(ACTIVITY_LOG, "a") as f:
             f.write(json.dumps(ev) + "\n")
@@ -554,7 +557,7 @@ def _run(cmd: list[str], timeout: int) -> str:
 def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
                     auth_header: str = "", low_priv_header: str = "") -> dict:
     started_at = now_iso()
-    emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) via Kali")
+    emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) from the attack host")
     clean_auth = sanitize_auth_header(auth_header) if auth_header else ""
     clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
 
@@ -1063,7 +1066,22 @@ def api_job(job_id):
     j = jobs.get(job_id)
     if not j:
         return jsonify({"error": "job not found"}), 404
+    # Progress events emitted by this job, oldest first (for the step timeline).
+    j["events"] = _job_events(job_id)
     return jsonify(j)
+
+
+def _job_events(job_id: str) -> list[dict]:
+    out = []
+    if ACTIVITY_LOG.exists():
+        for line in ACTIVITY_LOG.read_text().splitlines():
+            if f'"job": "{job_id}"' not in line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                pass
+    return out[-120:]
 
 
 @app.route("/api/jobs")
@@ -1199,7 +1217,7 @@ def api_kali_install():
     pkg = (data.get("package") or "").strip().lower()
     if not pkg or len(pkg) > 64 or not re.match(r"^[a-z0-9][a-z0-9+.\-]+$", pkg):
         return jsonify({"error": "Invalid package name."}), 400
-    emit_event("KALI_PKG", "busy", f"Installing '{pkg}' on Kali via apt-get")
+    emit_event("KALI_PKG", "busy", f"Installing '{pkg}' on the attack host via apt-get")
     cmd = f"export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq {pkg} 2>&1 | tail -n 35"
     res = active_runner().run(["bash", "-c", cmd], timeout=180)
     emit_event("KALI_PKG", "ok" if res.ok else "err", f"Package '{pkg}' install {'ok' if res.ok else 'failed'}")
@@ -1222,7 +1240,7 @@ def execute_chat_action(msg: str, default_target: str = ""):
     m = re.search(r"\b(?:install|apt\s+install)\s+([a-z0-9][a-z0-9+.\-]+)", lower)
     if m and m.group(1) not in ("the", "a", "new", "tool", "on", "kali"):
         pkg = m.group(1)
-        emit_event("AI_KALI", "busy", f"Installing '{pkg}' on Kali")
+        emit_event("AI_KALI", "busy", f"Installing '{pkg}' on the attack host")
         cmd = f"export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq {pkg} 2>&1 | tail -n 25"
         res = active_runner().run(["bash", "-c", cmd], timeout=160)
         return f"$ apt-get install -y {pkg}\n{res.out}", res.ok

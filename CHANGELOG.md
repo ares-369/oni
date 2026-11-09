@@ -7,6 +7,22 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+### Added
+- **Confidence column** on findings (Certain / Firm / Tentative, inspired by
+  Burp Suite), with filter chips and sorting by severity then confidence.
+- **Step-by-step job timeline** in the Workbench (inspired by GitHub Actions):
+  one row per stage with live status, duration and an expandable log.
+  Progress events are now tagged with the job that produced them.
+- **"Get ONIOPS ready" setup checklist** on the dashboard for new installs
+  (inspired by Grafana and Tailscale onboarding): terms, attack host, AI model,
+  scope, discovery, first assessment. Hides itself when complete.
+- **Helpful empty states** (inspired by Stripe and Notion) for assessments,
+  reports, findings, targets, the attack graph and CVE intel, each with a
+  next-step button.
+
+### Changed
+- Progress messages say "attack host" instead of "Kali".
+
 ## [0.3.3-beta] — 2026-11-09
 
 ### Added

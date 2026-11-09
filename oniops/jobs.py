@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import traceback
 import uuid
@@ -21,6 +22,16 @@ from typing import Any
 
 _MAX_RESULT_CHARS = 250_000
 _DEFAULT_JOB_BUDGET_SEC = 900.0
+
+
+# Each worker thread runs one job at a time; remember which, so progress
+# events can be attributed to the job that produced them.
+_current = threading.local()
+
+
+def current_job_id() -> str | None:
+    """ID of the job running on this thread, or None outside a job."""
+    return getattr(_current, "job_id", None)
 
 
 def _now() -> str:
@@ -143,6 +154,7 @@ class JobManager:
     def _run(self, job_id: str, fn: Callable[[JobControl], dict]):
         self._set(job_id, status="running", heartbeat=_now())
         ctl = JobControl(self, job_id)
+        _current.job_id = job_id   # lets emit_event() tag progress events with this job
         try:
             result = fn(ctl)
             status = "cancelled" if self._control.get(job_id) == "cancel" else "done"
@@ -154,6 +166,7 @@ class JobManager:
             self._set(job_id, status="error", heartbeat=_now(), finished=_now(),
                       error=f"{exc}\n{traceback.format_exc()[-800:]}")
         finally:
+            _current.job_id = None
             self._control.pop(job_id, None)
 
     # ---- cooperative control ----
