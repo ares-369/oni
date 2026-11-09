@@ -12,8 +12,10 @@ Resolution order for the config path:
 
 from __future__ import annotations
 
+import difflib
 import ipaddress
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -225,15 +227,14 @@ def get_config(reload: bool = False) -> Config:
 _SCOPE_MODES = {"active", "passive", "stealth"}
 
 
-def apply_updates(updates: dict) -> Config:
-    """Validate and persist a partial config update from the UI, then reload.
-
-    Only non-secret, operational fields are editable here (scope, attack hosts,
-    LLM roles, integrations, instance). Secrets stay in .env; auth mode is
-    config-file/restart only. Writes a .bak first and validates before saving.
+def _build_updated_config(updates: dict) -> tuple[Any, str, dict]:
+    """Validate ``updates`` against the current config.yaml and return
+    ``(path, old_yaml_text, new_data)`` WITHOUT writing. Raises ValueError on
+    invalid input. Shared by apply_updates (writes) and preview_updates (diff).
     """
     path = _config_path()
-    data = yaml.safe_load(path.read_text()) or {}
+    old_text = path.read_text()
+    data = yaml.safe_load(old_text) or {}
     for sec in ("oniops", "scope", "llm", "integrations"):
         data.setdefault(sec, {})
 
@@ -303,7 +304,48 @@ def apply_updates(updates: dict) -> Config:
                 data["integrations"][k]["enabled"] = bool(iu[k].get("enabled"))
                 if "host" in iu[k]:
                     data["integrations"][k]["host"] = str(iu[k]["host"]).strip()
+        # NVD CVE enrichment: optional, off by default. No host; optional key.
+        if "nvd" in iu and isinstance(iu["nvd"], dict):
+            data["integrations"].setdefault("nvd", {})
+            data["integrations"]["nvd"]["enabled"] = bool(iu["nvd"].get("enabled"))
+            if "api_key" in iu["nvd"]:
+                data["integrations"]["nvd"]["api_key"] = str(iu["nvd"]["api_key"]).strip()
 
+    return path, old_text, data
+
+
+def _redact(text: str) -> str:
+    """Mask secret-ish values in YAML before showing a diff to the UI."""
+    return re.sub(r"(?im)^(\s*(?:api_key|secret|password|token)\s*:\s*).+$",
+                  r"\1***", text)
+
+
+def preview_updates(updates: dict) -> dict:
+    """Validate ``updates`` and return a unified diff of config.yaml WITHOUT
+    writing. Lets the UI show exactly what a save would change (config drives
+    command execution, so a confirm step reduces footguns)."""
+    _path, old_text, data = _build_updated_config(updates)
+    old_data = yaml.safe_load(old_text) or {}
+    # Normalize BOTH sides through the same serializer so the diff shows only
+    # real changes, not YAML-formatting churn. "changed" is semantic.
+    def _dump(d):
+        return yaml.safe_dump(d, sort_keys=False, default_flow_style=False)
+    diff = "".join(difflib.unified_diff(
+        _redact(_dump(old_data)).splitlines(keepends=True),
+        _redact(_dump(data)).splitlines(keepends=True),
+        fromfile="config.yaml (current)", tofile="config.yaml (proposed)",
+    ))
+    return {"changed": old_data != data, "diff": diff}
+
+
+def apply_updates(updates: dict) -> Config:
+    """Validate and persist a partial config update from the UI, then reload.
+
+    Only non-secret, operational fields are editable here (scope, attack hosts,
+    LLM roles, integrations, instance). Secrets stay in .env; auth mode is
+    config-file/restart only. Writes a .bak first and validates before saving.
+    """
+    path, _old, data = _build_updated_config(updates)
     path.with_name(path.name + ".bak").write_text(path.read_text())
     path.write_text(yaml.safe_dump(data, sort_keys=False, default_flow_style=False))
     return get_config(reload=True)

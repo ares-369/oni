@@ -1302,6 +1302,7 @@
                 <span class="badge badge-red mono" id="reportInspectorBadge">Select a scan</span>
                 <button class="btn btn-sm" onclick="downloadText('oniops-assessment.md', window._lastScanMd || '')"><i class="mdi mdi-download"></i> .md</button>
                 <button class="btn btn-sm" onclick="downloadText('oniops-assessment.json', window._lastScanJson || '')"><i class="mdi mdi-download"></i> .json</button>
+                <button class="btn btn-sm" onclick="downloadPdf('oniops-assessment.pdf', 'ONIOPS Assessment Report', window._lastScanMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button>
               </div>
             </div>
             <div class="panel-body">
@@ -1363,7 +1364,7 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div><button class="btn btn-sm" onclick="downloadText('oniops-aisec-grc.md', window._lastAisecMd || '')"><i class="mdi mdi-download"></i> .md</button></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div><div style="display:flex; gap:8px;"><button class="btn btn-sm" onclick="downloadText('oniops-aisec-grc.md', window._lastAisecMd || '')"><i class="mdi mdi-download"></i> .md</button><button class="btn btn-sm" onclick="downloadPdf('oniops-aisec-grc.pdf', 'ONIOPS AI / LLM Red Team & GRC Report', window._lastAisecMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button></div></div>
           <div class="panel-body"><div id="aisecReport" style="color:var(--text-muted);">&mdash;</div></div>
         </div>
       </section>
@@ -1399,7 +1400,7 @@
           <div class="panel-body"><div id="agentLog" class="terminal-box" style="min-height:120px; max-height:360px; overflow:auto;">No run yet. Enter an objective and Run Agent.</div></div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div><button class="btn btn-sm" onclick="downloadText('oniops-agent-report.md', window._lastAgentMd || '')"><i class="mdi mdi-download"></i> .md</button></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div><div style="display:flex; gap:8px;"><button class="btn btn-sm" onclick="downloadText('oniops-agent-report.md', window._lastAgentMd || '')"><i class="mdi mdi-download"></i> .md</button><button class="btn btn-sm" onclick="downloadPdf('oniops-agent-report.pdf', 'ONIOPS Autonomous Agent Report', window._lastAgentMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button></div></div>
           <div class="panel-body"><div id="agentFinal" style="color:var(--text-muted);">&mdash;</div></div>
         </div>
       </section>
@@ -1748,6 +1749,14 @@
     }
     async function saveConfig(updates) {
       try {
+        // Preview the change first — config.yaml drives command execution, so
+        // confirm the exact diff before persisting.
+        const p = await (await fetch('/api/config/preview', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)})).json();
+        if (p.error) { toast(p.error, true); return false; }
+        if (!p.changed) { toast('No changes to save'); return false; }
+        if (!window.confirm('Apply this configuration change?\n\n' + (p.diff || '(no diff)'))) {
+          toast('Save cancelled'); return false;
+        }
         const r = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(updates)})).json();
         if (r.error) { toast(r.error, true); return false; }
         toast('Saved'); loadSettings(); loadStatus(); loadTargets(); return true;
@@ -1820,6 +1829,12 @@
                 <input class="input" id="int_${k}_h" value="${esc(cfg.integrations[k].host || '')}" placeholder="host url" style="width:150px; font-size:12px;"/>
                 <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="checkbox" id="int_${k}_e" ${cfg.integrations[k].enabled ? 'checked' : ''}/>on</label>
               </span></div>`).join('') +
+          `<div class="set-row"><span>NVD CVE enrichment (offline + optional online)<br>
+             <small style="color:var(--muted);font-size:10px;">searchsploit works offline always; this adds live CVE IDs + CVSS from nvd.nist.gov. No MISP needed.</small></span>
+             <span style="display:flex; gap:6px; align-items:center;">
+               <input class="input" id="int_nvd_k" value="" placeholder="${cfg.integrations.nvd && cfg.integrations.nvd.has_key ? 'key set — leave blank to keep' : 'optional API key'}" style="width:150px; font-size:12px;"/>
+               <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="checkbox" id="int_nvd_e" ${cfg.integrations.nvd && cfg.integrations.nvd.enabled ? 'checked' : ''}/>on</label>
+             </span></div>` +
           `<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="saveIntegrations()">Save integrations</button></div>`;
 
         // About / instance (editable)
@@ -1885,6 +1900,9 @@
       ['misp','caldera'].forEach(k => {
         integrations[k] = {enabled: document.getElementById('int_' + k + '_e').checked, host: document.getElementById('int_' + k + '_h').value.trim()};
       });
+      integrations.nvd = {enabled: document.getElementById('int_nvd_e').checked};
+      const nvdKey = document.getElementById('int_nvd_k').value.trim();
+      if (nvdKey) integrations.nvd.api_key = nvdKey;
       await saveConfig({integrations});
     }
     async function saveInstance() {
@@ -1979,6 +1997,20 @@
       const blob = new Blob([text], {type: name.endsWith('.json') ? 'application/json' : 'text/markdown'});
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+    async function downloadPdf(name, title, text) {
+      if (!text) { toast('Nothing to download yet', true); return; }
+      try {
+        const res = await fetch('/api/report/pdf', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({filename: name, title: title, markdown: text})
+        });
+        if (!res.ok) { toast('PDF export failed', true); return; }
+        const blob = await res.blob();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      } catch (e) { toast('PDF export failed: ' + e, true); }
     }
     async function jobAction(jid, action) { try { await fetch(`/api/job/${jid}/${action}`, {method:'POST'}); } catch (e) {} }
     function renderCtl(elId, jid) {

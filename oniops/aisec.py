@@ -14,7 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from typing import Callable
+from collections.abc import Callable
 
 import requests
 
@@ -225,7 +225,7 @@ def _ask(base_url: str, model: str, api_type: str, prompt: str, *,
         }, timeout=timeout)
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"] or ""
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return f"__ERROR__: {exc}"
 
 

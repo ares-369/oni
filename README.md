@@ -12,6 +12,8 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 > it only against systems you own or have **explicit written permission** to
 > test. Unauthorized use is illegal in most jurisdictions. See [`NOTICE`](NOTICE).
 
+![ONIOPS Interface Overview](docs/oniops-overview.svg)
+
 ---
 
 ## Features
@@ -19,24 +21,42 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 - **Any LLM** — Ollama (local), Anthropic Claude, Google Gemini, OpenAI, Azure
   OpenAI, or any OpenAI-compatible endpoint. Per-role model selection.
 - **Network PT + Web App PT (WAPT)** assessment tracks, plus an **autonomous
-  agent** that plans and runs scoped tools step by step.
+  ReAct agent** that plans and runs scoped tools step by step.
 - **41 built-in tools** (nmap, nuclei, ffuf, sqlmap, Metasploit, Burp, wpscan,
   feroxbuster, netexec, hydra, …) — installed/checked on your attack host.
-- **PoC validation** — findings are re-tested on the target and tagged
-  VERIFIED / UNCONFIRMED to cut false positives.
+- **PoC validation** — findings are re-tested on the target (HTTP status, banner,
+  and auth-challenge verification) and tagged `VERIFIED` / `UNCONFIRMED` to cut
+  false positives.
+- **Offline-first CVE & exploit intelligence** — maps detected service banners
+  to local Exploit-DB (`searchsploit`) advisories on your attack host with zero
+  external dependencies, plus optional online NVD CVE/CVSS enrichment.
 - **Attack-surface graph + analytics** (risk, services, severity).
 - **AI / LLM Red Team & GRC** — probe any LLM endpoint (incl. your own custom
-  model) for the OWASP LLM Top 10, mapped to OWASP, MITRE ATLAS, NIST AI RMF and
-  Google SAIF / ISO 42001, with a posture score and report.
+  model and system prompt) across 11 OWASP LLM Top 10 probes, mapped to OWASP,
+  MITRE ATLAS, NIST AI RMF, and Google SAIF / ISO 42001, with a posture score.
 - **Safe by design** — explicit scope allow-list, non-destructive by default, a
   destructive-command guard, no auto-scanning, pause/stop on running jobs, and
-  pluggable auth (none / basic / local / **OIDC SSO** / reverse-proxy).
-- **Editable config in the UI**, report export (md/json), and runs on Linux,
-  Windows, Docker and Proxmox LXC.
+  pluggable auth (`none` / `basic` / `local` / **OIDC SSO** / reverse-proxy).
+- **Editable config in the UI** (with unified YAML diff preview before save),
+  **report export (`.md` / `.json` / `.pdf`)**, and runs on Linux, Windows,
+  Docker, and Proxmox LXC.
 
 ---
 
-## How it works
+## Architecture
+
+```mermaid
+flowchart LR
+    Op["Operator Browser\n(Web UI / OIDC SSO)"] -->|"HTTPS"| Ctrl["ONIOPS Controller\n(Flask + Waitress)"]
+    Ctrl -->|"Rules of Engagement\n(CIDR + Cmd Guard)"| Scope["Scope & Safety Engine\n(oniops/scope.py)"]
+    Scope -->|"SSH / Paramiko\n(argv-only)"| Kali["Attack Host(s)\n(Kali / 41 Tools)"]
+    Kali -->|"nmap / nuclei / ffuf\nsearchsploit / httpx"| Target["Authorized Targets\n(In-Scope CIDRs)"]
+    Ctrl -->|"ReAct Agent & Reporting"| LLM["Pluggable LLM Layer\n(Ollama / Claude / Gemini / OpenAI)"]
+    Ctrl -->|"11 Canary Probes"| AITarget["Target AI / LLM Endpoint"]
+    AITarget -->|"OWASP / ATLAS / NIST / SAIF"| GRC["Executive & GRC Reports\n(.md / .json / .pdf)"]
+```
+
+### How it works
 
 ONIOPS has two parts you provide:
 

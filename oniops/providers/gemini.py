@@ -45,7 +45,7 @@ class GeminiProvider(LLMProvider):
                 ),
             )
             return LLMResult(text=(resp.text or "").strip(), model=use_model)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return LLMResult(text="", model=use_model, error=f"Gemini error: {exc}")
 
     def health(self) -> bool:

@@ -36,7 +36,7 @@ class OllamaProvider(LLMProvider):
             content = r.json().get("message", {}).get("content", "") or ""
             content = _THINK_RE.sub("", content).strip()
             return LLMResult(text=content or "(empty response)", model=use_model)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return LLMResult(text="", model=use_model, error=f"Ollama error: {exc}")
 
     def available_models(self) -> list[str]:
@@ -44,12 +44,12 @@ class OllamaProvider(LLMProvider):
             r = requests.get(f"{self.base_url}/api/tags", timeout=4)
             if r.status_code == 200:
                 return [m["name"] for m in r.json().get("models", []) if "embed" not in m["name"]]
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         return super().available_models()
 
     def health(self) -> bool:
         try:
             return requests.get(f"{self.base_url}/api/tags", timeout=3).status_code == 200
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False

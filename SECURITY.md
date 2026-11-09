@@ -6,8 +6,8 @@ design to recognized security frameworks and states the current posture honestly
 including gaps.
 
 ## Reporting a vulnerability
-Open a private security advisory on the repository (or email the maintainers).
-Do not file public issues for exploitable bugs.
+Open a private security advisory at `https://github.com/ares-369/oniops/security/advisories/new`
+(or contact `@ares-369` via GitHub). Do not file public issues for exploitable bugs.
 
 ## Secure defaults
 - **Scope allow-list (Rules of Engagement):** ONIOPS refuses any target outside

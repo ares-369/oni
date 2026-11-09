@@ -11,7 +11,6 @@ Flask ``app`` and the REST API the UI calls.
 
 from __future__ import annotations
 
-import hmac
 import json
 import logging
 import re
@@ -21,14 +20,15 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
 
-from oniops import __version__
+from oniops import __version__, cve
 from oniops.agent import run_agent
 from oniops.aisec import run_aisec
 from oniops.auth import init_auth
-from oniops.config import apply_updates, get_config
+from oniops.config import apply_updates, get_config, preview_updates
 from oniops.graph import build_graph
 from oniops.jobs import JobManager
 from oniops.kali import KaliRunner
+from oniops.pdf import markdown_to_pdf
 from oniops.providers import get_llm
 from oniops.scope import Scope, ScopeViolation
 from oniops.targets import discover as discover_hosts
@@ -48,7 +48,8 @@ def active_runner() -> KaliRunner:
 app = Flask(__name__)
 # ONIOPS typically runs behind a TLS-terminating reverse proxy; honor its
 # X-Forwarded-* headers so generated URLs (e.g. the OIDC redirect_uri) use https.
-from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 log = logging.getLogger("oniops.webui")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [ONIOPS] %(message)s")
@@ -265,6 +266,7 @@ def api_settings():
         "integrations": {
             "misp": bool((cfg.integrations.get("misp") or {}).get("enabled")),
             "caldera": bool((cfg.integrations.get("caldera") or {}).get("enabled")),
+            "nvd": bool((cfg.integrations.get("nvd") or {}).get("enabled")),
         },
     })
 
@@ -293,8 +295,21 @@ def api_get_config():
                 "providers": list((cfg.llm.get("providers") or {}).keys())},
         "integrations": {k: {"enabled": bool((cfg.integrations.get(k) or {}).get("enabled")),
                              "host": (cfg.integrations.get(k) or {}).get("host", "")}
-                         for k in ("misp", "caldera")},
+                         for k in ("misp", "caldera")} | {
+            "nvd": {"enabled": bool((cfg.integrations.get("nvd") or {}).get("enabled")),
+                    "has_key": bool((cfg.integrations.get("nvd") or {}).get("api_key"))}},
     })
+
+
+@app.route("/api/config/preview", methods=["POST"])
+def api_preview_config():
+    """Validate a proposed change and return a diff, WITHOUT saving — so the
+    UI can show exactly what will change before it touches config.yaml."""
+    updates = request.get_json(silent=True) or {}
+    try:
+        return jsonify(preview_updates(updates))
+    except Exception as exc:
+        return jsonify({"error": f"Rejected: {exc}"}), 400
 
 
 @app.route("/api/config", methods=["POST"])
@@ -302,11 +317,29 @@ def api_save_config():
     updates = request.get_json(silent=True) or {}
     try:
         apply_updates(updates)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return jsonify({"error": f"Rejected: {exc}"}), 400
     _reload_config()
     emit_event("CONFIG", "ok", "Configuration updated from the UI")
     return jsonify({"ok": True})
+
+
+@app.route("/api/report/pdf", methods=["POST"])
+def api_report_pdf():
+    data = request.get_json(silent=True) or {}
+    md = (data.get("markdown") or "").strip()
+    if not md:
+        return jsonify({"error": "Nothing to export."}), 400
+    title = (data.get("title") or "ONIOPS Security Assessment Report").strip()[:120]
+    filename = re.sub(r"[^a-zA-Z0-9._-]", "-", (data.get("filename") or "oniops-report.pdf"))
+    if not filename.endswith(".pdf"):
+        filename += ".pdf"
+    pdf_bytes = markdown_to_pdf(md, title=title)
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.route("/api/host", methods=["POST"])
@@ -564,19 +597,47 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         pn, svc = p["port"], p["service"]
         if pn in _webset or "http" in svc or "ssl" in svc:
             scheme = "https" if pn in (443, 8443, 9443, 8006) or "ssl" in svc else "http"
-            out = _run(["curl", "-kIsS", "--max-time", "4", f"{scheme}://{target_ip}:{pn}"], 8)
-            m = re.search(r"HTTP/[\d.]+\s+\d{3}[^\r\n]*", out or "")
+            out = _run(["curl", "-kIsS", "--max-time", "4", f"{scheme}://{target_ip}:{pn}"], 8) or ""
+            m = re.search(r"HTTP/[\d.]+\s+(\d{3})[^\r\n]*", out)
             if m:
-                verified_services.append({"port": pn, "service": svc, "status": "VERIFIED", "evidence": m.group(0).strip()})
+                code = int(m.group(1))
+                # Content signatures beyond the bare status line: Server banner,
+                # and whether the service is live-but-access-controlled.
+                sm = re.search(r"^[Ss]erver:\s*(.+)$", out, re.MULTILINE)
+                server = sm.group(1).strip()[:60] if sm else ""
+                sig = m.group(0).strip() + (f" | Server: {server}" if server else "")
+                if code in (401, 403) or re.search(r"[Ww]ww-[Aa]uthenticate:", out):
+                    status = "AUTH-GATED"   # service confirmed live, access-controlled
+                elif 200 <= code < 600:
+                    status = "VERIFIED"
+                else:
+                    status = "UNCONFIRMED"
+                verified_services.append({"port": pn, "service": svc, "status": status, "evidence": sig})
             else:
                 verified_services.append({"port": pn, "service": svc, "status": "UNCONFIRMED", "evidence": (out or "no HTTP response")[:80]})
         else:
             verified_services.append({"port": pn, "service": svc, "status": "OPEN", "evidence": "port open; non-HTTP service (not re-verified)"})
-    verified_count = sum(1 for v in verified_services if v["status"] == "VERIFIED")
+    verified_count = sum(1 for v in verified_services if v["status"] in ("VERIFIED", "AUTH-GATED"))
     if verified_services:
         emit_event("VALIDATE", "ok", f"PoC validation: {verified_count}/{len(verified_services)} services verified live")
         raw_sections.append("=== PoC Validation: Service Verification ===\n"
                             + "\n".join(f"- {v['port']}/{v['service']}: {v['status']} ({v['evidence']})" for v in verified_services))
+
+    # ── CVE / Exploit intelligence: map detected product versions to known
+    # exploits (searchsploit, offline) + optional NVD CVE IDs/CVSS. No MISP.
+    cve_intel = {"cve_count": 0, "exploit_count": 0, "max_severity": "NONE", "findings": []}
+    if discovered_ports:
+        emit_event("CVE_INTEL", "busy", "Correlating service versions with known CVEs / exploits")
+        try:
+            cve_intel = cve.enrich(discovered_ports, cfg, _run, ctl=ctl)
+            if cve_intel["cve_count"] or cve_intel["exploit_count"]:
+                raw_sections.append(cve_intel["raw_section"])
+                emit_event("CVE_INTEL", "ok",
+                           f"{cve_intel['cve_count']} CVE(s), {cve_intel['exploit_count']} exploit(s) matched")
+            else:
+                emit_event("CVE_INTEL", "ok", "No known CVEs/exploits matched detected versions")
+        except Exception as e:  # intel is best-effort; never fail the assessment
+            emit_event("CVE_INTEL", "warn", f"CVE intel skipped: {e}")
 
     full_raw = "\n\n".join(raw_sections)
     port_summary = ", ".join(f"{p['port']}/{p['proto']} ({p['service']})" for p in discovered_ports) \
@@ -592,6 +653,11 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         severity = "MEDIUM"
     else:
         severity = "LOW"
+
+    # A confirmed CRITICAL/HIGH CVE on a detected version raises the floor.
+    _rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+    if cve_intel.get("max_severity") in ("HIGH", "CRITICAL"):
+        severity = cve_intel["max_severity"] if _rank[cve_intel["max_severity"]] > _rank[severity] else severity
 
     emit_event("AI_REASON", "busy", "Synthesizing attack-path reasoning")
     cot = ai_chat([
@@ -614,7 +680,9 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
     user_prompt = (
         f"Target: {hostname} ({target_ip})\nProfile: {profile}\nOpen ports: {port_summary}\n"
         f"Findings detected: {finding_count}\n"
-        f"Verified live services (PoC-validated): {verified_count}/{len(verified_services)}\n\n"
+        f"Verified live services (PoC-validated): {verified_count}/{len(verified_services)}\n"
+        f"Known CVEs matched: {cve_intel.get('cve_count', 0)} | "
+        f"Public exploits matched: {cve_intel.get('exploit_count', 0)}\n\n"
         f"Attack-path reasoning:\n{cot}\n\nEvidence:\n{full_raw[:3000]}"
     )
     ai_report = ai_chat([{"role": "system", "content": sys_prompt},
@@ -642,6 +710,8 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         "profile": profile, "severity": severity, "open_ports": port_summary,
         "ports_list": discovered_ports, "finding_count": finding_count,
         "verified_services": verified_services, "verified_count": verified_count,
+        "cve_count": cve_intel.get("cve_count", 0), "exploit_count": cve_intel.get("exploit_count", 0),
+        "cve_findings": cve_intel.get("findings", []),
         "commands_run": commands_run, "raw_output": full_raw, "ai_report": ai_report,
     }
 
