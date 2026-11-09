@@ -129,7 +129,7 @@ def _host_of(raw: str) -> str:
 # ───────────────────────── the loop ─────────────────────────
 def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
               emit: Callable[[str, str, str], None] | None = None,
-              max_steps: int = 8) -> dict:
+              max_steps: int = 8, ctl=None) -> dict:
     emit = emit or (lambda *a, **k: None)
     tool_list = "\n".join(f"- {n}: {t['desc']}" for n, t in TOOLS.items())
     system = (
@@ -153,6 +153,10 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
 
     emit("AGENT_START", "busy", f"Autonomous agent: {objective[:80]}")
     for step in range(1, max_steps + 1):
+        if ctl is not None and not ctl.checkpoint():
+            emit("AGENT_STOP", "ok", f"Stopped by user at step {step}")
+            return {"objective": objective, "target": target, "steps": transcript,
+                    "final": "Run stopped by the operator.", "completed": False, "stopped": True}
         res = bound.chat(messages, temperature=0.1, max_tokens=500)
         reply = res.text or ""
         if res.error:
