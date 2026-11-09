@@ -1,0 +1,32 @@
+# ONIOPS gitleaks configuration.
+#
+# Inherits ALL default gitleaks rules (real secrets are still caught), and adds
+# a narrow allowlist for the fake, non-functional credential strings that exist
+# ONLY as test fixtures. ONIOPS's test suite deliberately feeds secret-SHAPED
+# strings into redact_secrets() and the SAST/secret detector to prove they get
+# masked/flagged — they are not real credentials and must not fail CI.
+#
+# Real secrets never enter the repo: config.yaml, .env and secrets/ are
+# gitignored. This allowlist does not relax that.
+
+title = "ONIOPS gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake credentials used only as redaction/SAST test fixtures"
+
+# Path-scoped: the two test modules that intentionally contain dummy tokens.
+paths = [
+  '''tests/test_findings\.py''',
+  '''tests/test_greybox\.py''',
+]
+
+# Value-scoped backup: the specific placeholder tokens, allowlisted wherever
+# they appear (belt-and-suspenders in case a rule reports a different path).
+regexes = [
+  '''sk-proj1234567890abcdef''',
+  '''ghp_1234567890abcdef123456''',
+  '''sk-1234567890abcdef123456''',
+]
