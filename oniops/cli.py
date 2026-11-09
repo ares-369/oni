@@ -131,6 +131,10 @@ def cli_main(argv: list[str] | None = None) -> int:
     fl = sub.add_parser("findings", help="List findings from the SQLite Evidence Ledger")
     fl.add_argument("--target", default="", help="Filter by target IP")
     fl.add_argument("--db", default="", help="Path to oniops.sqlite")
+    fl.add_argument("--verified-only", action="store_true",
+                    help="Only include findings with status == VERIFIED")
+    fl.add_argument("--fail-on", default="", choices=["", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+                    help="Exit with code 1 if any returned finding meets or exceeds this severity")
 
     rt = sub.add_parser("retest", help="Run zero-token deterministic PoC retest on stored findings")
     rt.add_argument("--id", type=int, default=0, help="Specific finding ID to retest")
@@ -200,7 +204,14 @@ def cli_main(argv: list[str] | None = None) -> int:
     if ns.cmd == "findings":
         db_path = ns.db or _default_db_path()
         ledger = FindingsLedger(db_path)
-        print(json.dumps({"findings": ledger.list_findings(target_ip=ns.target)}, indent=2))
+        items = ledger.list_findings(target_ip=ns.target)
+        if ns.verified_only:
+            items = [f for f in items if str(f.get("status", "")).upper() == "VERIFIED"]
+        print(json.dumps({"findings": items}, indent=2))
+        if ns.fail_on:
+            threshold = _SEV_RANK.get(ns.fail_on.upper(), 99)
+            if any(_SEV_RANK.get(str(f.get("severity", "")).upper(), 0) >= threshold for f in items):
+                return 1
         return 0
 
     if ns.cmd == "retest":

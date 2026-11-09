@@ -83,6 +83,63 @@ def extract_openapi_endpoints(spec: dict) -> list[dict]:
     return endpoints[:30]
 
 
+_PRIVILEGE_PROPS = {"role", "roles", "is_admin", "isadmin", "admin", "tenant_id", "permissions", "balance", "credit"}
+
+
+def extract_bopla_mass_assignment_risks(spec: dict) -> list[dict]:
+    """Inspect OpenAPI POST/PUT/PATCH schemas for writable privilege properties
+    (OWASP API3:2023 BOPLA / Mass Assignment)."""
+    if not isinstance(spec, dict):
+        return []
+    paths = spec.get("paths") or {}
+    components = ((spec.get("components") or {}).get("schemas") or {}) if isinstance(spec.get("components"), dict) else {}
+    risks: list[dict] = []
+    for route, item in paths.items():
+        if not isinstance(item, dict):
+            continue
+        for method in ("post", "put", "patch"):
+            op = item.get(method)
+            if not isinstance(op, dict):
+                continue
+            rb = op.get("requestBody") or {}
+            content = (rb.get("content") or {}).get("application/json") or {}
+            schema = content.get("schema") or {}
+            if "$ref" in schema:
+                ref_name = str(schema["$ref"]).rsplit("/", 1)[-1]
+                schema = components.get(ref_name) or {}
+            props = schema.get("properties") or {}
+            exposed = [
+                k for k, v in props.items()
+                if k.lower() in _PRIVILEGE_PROPS and not (isinstance(v, dict) and v.get("readOnly"))
+            ]
+            if exposed:
+                risks.append({
+                    "path": route,
+                    "method": method.upper(),
+                    "writable_privilege_fields": exposed,
+                })
+    return risks
+
+
+def probe_graphql_introspection(ip: str, port: int, scheme: str, run_fn) -> dict | None:
+    """Test whether `/graphql` exposes unauthenticated GraphQL schema introspection
+    (OWASP API8:2023 / WSTG-APIT-01)."""
+    url = f"{scheme}://{ip}:{port}/graphql"
+    query = '{"query":"{__schema{queryType{name}}}"}'
+    cmd = ["curl", "-ksS", "--max-time", "5", "-X", "POST", "-H", "Content-Type: application/json", "-d", query, url]
+    out = (run_fn(cmd, 7) or "").strip()
+    if '"__schema"' in out or '"queryType"' in out:
+        return {
+            "port": port,
+            "title": "Exposed GraphQL schema introspection on /graphql (API8:2023)",
+            "severity": "MEDIUM",
+            "status": "VERIFIED",
+            "evidence": f"POST {url} returned GraphQL __schema introspection: {out[:200]}",
+            "repro_cmd": cmd,
+        }
+    return None
+
+
 def _split_http_body(raw: str) -> tuple[str, str]:
     """Split a `curl -i` or `curl -I` response into `(headers, body)`."""
     if not raw:
@@ -147,13 +204,16 @@ def probe_openapi(
     *,
     auth_header: str = "",
     low_priv_header: str = "",
+    peer_auth_header: str = "",
     ctl=None,
 ) -> dict:
     """Discover OpenAPI/Swagger specs on a target web service and run an
-    unauthenticated vs. low-privilege vs. admin access-control differential check."""
+    unauthenticated vs. low-privilege (User A) vs. peer user (User B) vs. admin
+    access-control differential check."""
     base = f"{scheme}://{ip}:{port}"
     clean_hdr = sanitize_auth_header(auth_header) if auth_header else ""
     clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
+    clean_peer = sanitize_auth_header(peer_auth_header) if peer_auth_header else ""
     spec_data = None
     spec_url = ""
 
@@ -243,6 +303,39 @@ def probe_openapi(
             lines.append(f"- [AUTH-ENFORCED] {ep['path']}: unauth={un_code} -> auth={auth_code}")
         elif un_code:
             lines.append(f"- {ep['path']}: HTTP {un_code}")
+
+        # Horizontal Cross-User BOLA check (User A vs. User B on parameterized object route)
+        if clean_low and clean_peer and "{" in ep["path"] and low_code == 200:
+            peer_out = run_fn(["curl", "-kisS", "--max-time", "4", "-H", clean_peer, u], 6) or ""
+            m_pr = re.search(r"HTTP/[\d.]+\s+(\d{3})", peer_out)
+            peer_code = int(m_pr.group(1)) if m_pr else 0
+            if peer_code == 200:
+                valid_peer, peer_reason = validate_bola_response_content(peer_out, low_out)
+                if valid_peer:
+                    findings.append({
+                        "port": port,
+                        "title": f"Cross-user horizontal BOLA on {ep['path']} (User B read User A object)",
+                        "severity": "HIGH",
+                        "status": "VERIFIED",
+                        "evidence": (
+                            f"GET {u} with peer identity returned HTTP 200 matching User A object "
+                            f"({peer_reason})"
+                        ),
+                        "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
+                    })
+                    lines.append(f"- [VULNERABLE/HIGH HORIZONTAL-BOLA] {ep['path']}: peer_user=200 ({peer_reason})")
+
+    for bopla in extract_bopla_mass_assignment_risks(spec_data):
+        fields_str = ", ".join(bopla["writable_privilege_fields"])
+        findings.append({
+            "port": port,
+            "title": f"BOPLA / Mass Assignment risk on {bopla['method']} {bopla['path']} ({fields_str})",
+            "severity": "MEDIUM",
+            "status": "UNCONFIRMED",
+            "evidence": f"OpenAPI schema exposes writable privilege properties ({fields_str}) without readOnly protection",
+            "repro_cmd": ["curl", "-kisS", "--max-time", "5", f"{base}{bopla['path']}"],
+        })
+        lines.append(f"- [BOPLA/MASS-ASSIGNMENT] {bopla['method']} {bopla['path']}: writable [{fields_str}]")
 
     return {
         "found": True,

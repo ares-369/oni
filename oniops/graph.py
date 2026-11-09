@@ -13,10 +13,23 @@ and severity rollups.
 from __future__ import annotations
 
 import json
-import sqlite3
+
+from .findings import connect_sqlite
 
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0, "": 0}
-_HIGH_VALUE_PORTS = {22, 88, 135, 139, 389, 445, 636, 1433, 3306, 3389, 5432, 6379, 8006, 8443, 9200}
+_HIGH_VALUE_PORTS = {22, 88, 135, 139, 389, 445, 636, 1433, 3306, 3389, 5432, 5985, 5986, 6379, 8006, 8443, 9200}
+_IDENTITY_SERVICES = {
+    88: "Kerberos KDC (AD Identity)",
+    135: "MS-RPC Endpoint Mapper",
+    139: "NetBIOS Session / SMB",
+    389: "Active Directory LDAP",
+    445: "SMB File & Auth Server",
+    636: "Active Directory LDAPS",
+    3268: "AD Global Catalog",
+    3389: "RDP Remote Desktop",
+    5985: "WinRM HTTP Management",
+    5986: "WinRM HTTPS Management",
+}
 
 
 def compute_attack_paths(
@@ -25,8 +38,9 @@ def compute_attack_paths(
     findings_by_host: dict[str, list[dict]],
     targets: dict[str, dict],
 ) -> list[dict]:
-    """Correlate open services, verified findings, and high-value internal
-    services into multi-stage risk paths with a 0-100 blast-radius score."""
+    """Correlate open services, verified findings, identity/AD ports, and high-value
+    internal services into multi-stage risk paths with a 0-100 blast-radius score,
+    explicitly distinguishing OBSERVED (proven) paths from INFERRED paths."""
     paths: list[dict] = []
     for ip in sorted(host_ips):
         surf = surface.get(ip, {})
@@ -41,9 +55,21 @@ def compute_attack_paths(
                 services = []
         open_ports = {int(s.get("port") or 0) for s in services if s.get("port")}
         verified = [f for f in h_findings if f.get("status") in ("VERIFIED", "AUTH-GATED")]
+        strictly_verified = [f for f in h_findings if f.get("status") == "VERIFIED"]
+        validation_state = "OBSERVED" if strictly_verified else "INFERRED"
+
         top_finding = max(h_findings, key=lambda f: _SEV_RANK.get(f.get("severity", ""), 0))
         top_sev = top_finding.get("severity", "MEDIUM")
         crown_ports = sorted(open_ports & _HIGH_VALUE_PORTS)
+        identity_ports = [f"{p}/{_IDENTITY_SERVICES[p]}" for p in sorted(open_ports & set(_IDENTITY_SERVICES))]
+
+        mitre_techniques = ["T1190 Exploit Public-Facing Application"]
+        if identity_ports:
+            mitre_techniques.extend(["T1078 Valid Accounts", "T1021 Remote Services"])
+        if 88 in open_ports:
+            mitre_techniques.append("T1558 Steal or Forge Kerberos Tickets")
+        if any("bola" in str(f.get("title", "")).lower() or "api" in str(f.get("category", "")).lower() for f in h_findings):
+            mitre_techniques.append("T1552 Unsecured Credentials / Token Access")
 
         # Calculate blast-radius score (0-100) from severity, verification, and exposed high-value services.
         score = _SEV_RANK.get(top_sev, 1) * 18
@@ -57,8 +83,10 @@ def compute_attack_paths(
         entry_port = int(top_finding.get("port") or (min(open_ports) if open_ports else 0))
         steps = [
             f"Initial Surface: {hostname} ({ip}:{entry_port})" if entry_port else f"Initial Surface: {hostname} ({ip})",
-            f"Weakness: {top_finding['title']} [{top_sev}/{top_finding['status']}]",
+            f"[{validation_state}] {top_finding['title']} [{top_sev}/{top_finding['status']}]",
         ]
+        if identity_ports:
+            steps.append(f"Identity / AD Surface: {', '.join(identity_ports)}")
         if crown_ports:
             steps.append(f"Lateral / High-Value Reachability: ports {', '.join(str(p) for p in crown_ports)}")
         else:
@@ -70,7 +98,10 @@ def compute_attack_paths(
             "entry_port": entry_port,
             "primary_finding": top_finding["title"],
             "severity": top_sev,
+            "validation_state": validation_state,
             "verified_count": len(verified),
+            "identity_exposure": identity_ports,
+            "mitre_techniques": mitre_techniques,
             "blast_radius_score": score,
             "steps": steps,
         })
@@ -79,8 +110,7 @@ def compute_attack_paths(
 
 
 def build_graph(db_path, cidrs: list[str]) -> dict:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = connect_sqlite(db_path)
 
     targets = {r["target_ip"]: dict(r) for r in conn.execute("SELECT * FROM targets").fetchall()}
     surface = {r["target_ip"]: dict(r) for r in conn.execute("SELECT * FROM host_surface").fetchall()}
@@ -174,6 +204,8 @@ def build_graph(db_path, cidrs: list[str]) -> dict:
             edges.append({"source": parent_id, "target": fid})
 
     attack_paths = compute_attack_paths(host_ips, surface, findings_by_host, targets)
+    observed_paths = sum(1 for p in attack_paths if p.get("validation_state") == "OBSERVED")
+    inferred_paths = sum(1 for p in attack_paths if p.get("validation_state") == "INFERRED")
     max_blast = max((p["blast_radius_score"] for p in attack_paths), default=0)
 
     stats = {
@@ -183,6 +215,8 @@ def build_graph(db_path, cidrs: list[str]) -> dict:
         "verified_findings": verified_total,
         "critical_hosts": sum(1 for ip in host_ips if _SEV_RANK.get((surface.get(ip, {}).get("risk_level") or roll.get(ip, {}).get("worst") or ""), 0) >= 3),
         "attack_paths": len(attack_paths),
+        "observed_paths": observed_paths,
+        "inferred_paths": inferred_paths,
         "max_blast_radius": max_blast,
     }
     return {"nodes": nodes, "edges": edges, "stats": stats, "attack_paths": attack_paths}

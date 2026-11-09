@@ -12,9 +12,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import shlex
 import sqlite3
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,14 +61,113 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_VULN_PROOF_PATTERNS: dict[str, re.Pattern[str]] = {
+    "lfi": re.compile(r"(?:root:x:0:0:|\[boot loader\]|\[extensions\]|/bin/(?:bash|sh|zsh))", re.I),
+    "sqli": re.compile(
+        r"(?:SQL syntax.*MySQL|Warning.*mysql_|PostgreSQL.*ERROR|ORA-\d{5}|"
+        r"SQLite/JDBCDriver|Unclosed quotation mark|SQLITE_ERROR)",
+        re.I,
+    ),
+    "ssrf": re.compile(r"(?:169\.254\.169\.254|instance-id|ami-id|computeMetadata/v1|internal-token)", re.I),
+    "rce": re.compile(r"(?:uid=\d+\([a-z0-9_.\-]+\)\s+gid=\d+|Linux\s+\S+\s+\d+\.\d+)", re.I),
+    "xss": re.compile(r"(?:<script[^>]*>.*?alert\(|onerror\s*=|onload\s*=)", re.I),
+    "graphql": re.compile(r'(?:"__schema"\s*:|"queryType"\s*:)', re.I),
+}
+
+
+def map_finding_coverage(category: str, title: str = "") -> dict[str, list[str]]:
+    """Map a finding category and title to OWASP API Top 10, OWASP WSTG 4.2,
+    OWASP ASVS 5.0, and MITRE ATT&CK control/technique identifiers."""
+    cat = (category or "").lower()
+    t = (title or "").lower()
+    if cat in ("api_security", "bola", "bfla") or "bola" in t or "bfla" in t or "openapi" in t:
+        api_ids = ["API1:2023-BOLA"]
+        if "bfla" in t or "admin" in t or "privilege" in t:
+            api_ids.append("API5:2023-BFLA")
+        if "mass assignment" in t or "bopla" in t or "property" in t:
+            api_ids.append("API3:2023-BOPLA")
+        if "graphql" in t:
+            api_ids.append("API8:2023-Misconfiguration")
+        return {
+            "owasp_api": api_ids,
+            "owasp_wstg": ["WSTG-ATHZ-02", "WSTG-ATHZ-04", "WSTG-APIT-01"],
+            "owasp_asvs": ["V4.1", "V4.2", "V13.1"],
+            "mitre_attack": ["T1190", "T1078"],
+        }
+    if cat in ("sqli", "lfi", "ssrf", "rce", "xss", "nuclei"):
+        return {
+            "owasp_api": ["API8:2023-Misconfiguration"] if "api" in t else [],
+            "owasp_wstg": ["WSTG-INPV-01", "WSTG-CONF-04"],
+            "owasp_asvs": ["V5.3", "V14.2"],
+            "mitre_attack": ["T1190", "T1059"],
+        }
+    if cat in ("cve", "exploitdb"):
+        return {
+            "owasp_api": [],
+            "owasp_wstg": ["WSTG-INFO-08"],
+            "owasp_asvs": ["V14.2"],
+            "mitre_attack": ["T1190", "T1210"],
+        }
+    return {
+        "owasp_api": [],
+        "owasp_wstg": ["WSTG-INFO-02", "WSTG-CONF-01"],
+        "owasp_asvs": ["V14.1"],
+        "mitre_attack": ["T1046", "T1133"],
+    }
+
+
+def dispatch_webhook_alert(
+    event_type: str,
+    payload: dict,
+    *,
+    webhook_url: str = "",
+    signing_key: str = "",
+) -> bool:
+    """POST a signed JSON alert to a configured webhook URL (Slack, Discord, or
+    generic SIEM/SOAR receiver) when a high-severity finding is verified or regresses."""
+    url = (webhook_url or os.getenv("ONIOPS_WEBHOOK_URL", "")).strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return False
+    envelope = {
+        "event": event_type,
+        "timestamp": _now_iso(),
+        "payload": payload,
+    }
+    body = json.dumps(envelope, sort_keys=True).encode("utf-8")
+    key = (signing_key or os.getenv("ONIOPS_SECRET_KEY", "") or "oniops-webhook-key").encode("utf-8")
+    sig = hmac.new(key, body, hashlib.sha256).hexdigest()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "ONIOPS-Security-Webhook/0.3",
+            "X-ONIOPS-Signature": f"hmac-sha256:{sig}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return 200 <= int(getattr(resp, "status", 200)) < 300
+    except Exception:
+        return False
+
+
 def validate_evidence(evidence: str, expected_indicator: str = "", category: str = "") -> str:
     """Independently verify whether captured command output confirms a finding.
 
     Prevents unverified LLM claims or empty scanner output from being marked
-    VERIFIED without deterministic indicator confirmation.
+    VERIFIED without deterministic indicator or vulnerability-class confirmation.
     """
     text = (evidence or "").strip()
     if not text:
+        return "UNCONFIRMED"
+    cat = (category or "").lower().strip()
+    if cat in _VULN_PROOF_PATTERNS:
+        if _VULN_PROOF_PATTERNS[cat].search(text):
+            return "VERIFIED"
+        if expected_indicator and expected_indicator.strip().lower() in text.lower():
+            return "VERIFIED"
         return "UNCONFIRMED"
     if expected_indicator:
         ind = expected_indicator.strip()
@@ -85,7 +186,7 @@ def validate_evidence(evidence: str, expected_indicator: str = "", category: str
         if code in (200, 201, 204):
             return "VERIFIED"
         if code in (401, 403):
-            return "AUTH-GATED" if category == "service_exposure" else "UNCONFIRMED"
+            return "AUTH-GATED" if cat == "service_exposure" else "UNCONFIRMED"
         if code >= 400:
             return "UNCONFIRMED"
     return "VERIFIED" if len(text) > 12 else "UNCONFIRMED"
@@ -317,13 +418,18 @@ class FindingsLedger:
                 d["repro_display"] = shlex.join(cmd_list) if cmd_list else ""
             except Exception:
                 d["repro_display"] = ""
+            d["coverage"] = map_finding_coverage(d.get("category", ""), d.get("title", ""))
             out.append(d)
         return out
 
     def get(self, finding_id: int) -> dict | None:
         with self._conn() as con:
             row = con.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        d["coverage"] = map_finding_coverage(d.get("category", ""), d.get("title", ""))
+        return d
 
     def retest(self, finding_id: int, runner, scope: Scope) -> dict:
         """Re-run a finding's deterministic PoC command on the attack host with
@@ -408,6 +514,7 @@ class FindingsLedger:
                     verified += 1
                     if prev == "FIXED":
                         regressed += 1
+                        dispatch_webhook_alert("finding.regressed", res)
                 elif st == "FIXED":
                     fixed += 1
             except Exception as exc:

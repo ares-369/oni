@@ -8,8 +8,10 @@ import pytest
 from oniops.greybox import (
     analyze_source_code,
     discover_js_endpoints,
+    extract_bopla_mass_assignment_risks,
     extract_openapi_endpoints,
     parse_external_sast_json,
+    probe_graphql_introspection,
     probe_openapi,
     sanitize_auth_header,
     validate_bola_response_content,
@@ -153,3 +155,56 @@ def test_bola_content_diff_filters_html_shell_and_empty_json():
     ok, reason = validate_bola_response_content(real_json, real_json)
     assert ok is True
     assert "JSON" in reason
+
+
+def test_horizontal_peer_bola_and_bopla_and_graphql():
+    spec = {
+        "openapi": "3.0.0",
+        "security": [{"bearerAuth": []}],
+        "paths": {
+            "/api/v1/orders/{id}": {"get": {"summary": "Get order by ID"}},
+            "/api/v1/profile": {
+                "patch": {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "display_name": {"type": "string"},
+                                        "is_admin": {"type": "boolean"},
+                                        "role": {"type": "string"},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        },
+    }
+    bopla = extract_bopla_mass_assignment_risks(spec)
+    assert len(bopla) == 1
+    assert "is_admin" in bopla[0]["writable_privilege_fields"]
+
+    def _peer_runner(cmd, timeout):
+        url = cmd[-1]
+        if url.endswith("/openapi.json"):
+            return json.dumps(spec)
+        if "-H" in cmd:
+            return 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"order_id": 1, "owner": "userA", "total": 99}'
+        return "HTTP/1.1 401 Unauthorized\r\n"
+
+    res = probe_openapi(
+        "10.0.0.150", 8080, "http", _peer_runner,
+        low_priv_header="Bearer userA", peer_auth_header="Bearer userB",
+    )
+    titles = [f["title"] for f in res["findings"]]
+    assert any("Cross-user horizontal BOLA" in t for t in titles)
+    assert any("BOPLA / Mass Assignment" in t for t in titles)
+
+    gql = probe_graphql_introspection(
+        "10.0.0.150", 8080, "http",
+        lambda cmd, t: '{"data":{"__schema":{"queryType":{"name":"Query"}}}}',
+    )
+    assert gql is not None
+    assert "GraphQL" in gql["title"]
