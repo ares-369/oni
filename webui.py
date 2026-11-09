@@ -22,13 +22,16 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from oniops import __version__, cve
 from oniops.agent import run_agent
-from oniops.aisec import run_aisec
+from oniops.aisec import CONVERTERS, run_aisec
 from oniops.auth import init_auth
 from oniops.config import apply_updates, get_config, preview_updates
+from oniops.findings import FindingsLedger, redact_secrets
 from oniops.graph import build_graph
+from oniops.greybox import analyze_source_code, probe_openapi, sanitize_auth_header
 from oniops.jobs import JobManager
 from oniops.kali import KaliRunner
 from oniops.pdf import markdown_to_pdf
+from oniops.playbooks import load_playbooks, render_step_cmd
 from oniops.providers import get_llm
 from oniops.scope import Scope, ScopeViolation
 from oniops.targets import discover as discover_hosts
@@ -105,6 +108,8 @@ def init_db():
 
 init_db()
 jobs = JobManager(DB_PATH)
+ledger = FindingsLedger(DB_PATH)
+PLAYBOOKS = load_playbooks()
 
 
 def now_iso() -> str:
@@ -448,10 +453,13 @@ def _run(cmd: list[str], timeout: int) -> str:
     return active_runner().run(cmd, timeout=timeout).out
 
 
-def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> dict:
+def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None, auth_header: str = "") -> dict:
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) via Kali")
+    clean_auth = sanitize_auth_header(auth_header) if auth_header else ""
 
     commands_run, raw_sections, discovered_ports = [], [], []
+    nuclei_lines: list[str] = []
+    openapi_findings: list[dict] = []
     finding_count = 0
 
     if profile == "fast_recon":
@@ -488,7 +496,7 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         raw_sections.append(f"=== Web & TLS Posture Audit ===\n$ {' '.join(cmd)}\n{out}")
         discovered_ports = parse_nmap_ports(out)
 
-    elif profile == "web_app_pt":  # WAPT — OWASP Web Top 10 oriented
+    elif profile == "web_app_pt":  # WAPT — OWASP Web Top 10 + Grey-Box + OpenAPI
         emit_event("WAPT", "busy", f"Web App PT on {hostname} ({target_ip})")
         web_ports = "80,443,3000,5000,8000,8080,8081,8443,8888,9000"
         cmd = ["nmap", "-p", web_ports, "--open", "-sV", target_ip]
@@ -509,38 +517,70 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
 
             emit_event("WAPT_CRAWL", "busy", f"[WAPT] Crawl {url}")
             commands_run.append(f"katana {url}")
-            kt = _run(["katana", "-u", url, "-depth", "2", "-silent"], 35)
+            kt_cmd = ["katana", "-u", url, "-depth", "2", "-silent"]
+            if clean_auth:
+                kt_cmd.extend(["-H", clean_auth])
+            kt = _run(kt_cmd, 35)
             endpoints = [l.strip() for l in kt.splitlines() if l.startswith("http")][:15]
             if endpoints:
                 raw_sections.append(f"=== WAPT: Endpoints ({url}) ===\n" + "\n".join(endpoints))
 
             emit_event("WAPT_DIR", "busy", f"[WAPT] Content discovery {url}")
             commands_run.append(f"ffuf {url}/FUZZ")
-            ff = _run(["ffuf", "-u", f"{url}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt",
-                       "-mc", "200,204,301,302,307,401,403", "-t", "40", "-s"], 60)
+            ff_cmd = ["ffuf", "-u", f"{url}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt",
+                      "-mc", "200,204,301,302,307,401,403", "-t", "40", "-s"]
+            if clean_auth:
+                ff_cmd.extend(["-H", clean_auth])
+            ff = _run(ff_cmd, 60)
             paths = [l for l in ff.splitlines() if l.strip()]
             if paths:
-                # Content-discovery paths are informational context, NOT findings.
-                # (A catch-all app can return thousands; counting them as vulns
-                # would wildly inflate severity.)
                 note = " (catch-all? treating as informational)" if len(paths) > 100 else ""
                 raw_sections.append(
                     f"=== WAPT: Discovered Paths ({url}) — {len(paths)}{note} ===\n"
                     + "\n".join(paths[:40])
                 )
 
+            emit_event("WAPT_API", "busy", f"[WAPT] OpenAPI & Access-Control probe {url}")
+            oa = probe_openapi(target_ip, pn, scheme, _run, auth_header=clean_auth, ctl=ctl)
+            if oa["found"]:
+                raw_sections.append(oa["raw_section"])
+                finding_count += len(oa["findings"])
+                openapi_findings.extend(oa["findings"])
+
             emit_event("WAPT_VULN", "busy", f"[WAPT] OWASP checks {url}")
             commands_run.append(f"nuclei {url} (web)")
-            nc = _run(["nuclei", "-target", url, "-tags", "cve,misconfig,exposure,xss,sqli,lfi,ssrf,rce",
-                       "-silent", "-severity", "low,medium,high,critical"], 70)
+            nc_cmd = ["nuclei", "-target", url, "-tags", "cve,misconfig,exposure,xss,sqli,lfi,ssrf,rce",
+                      "-silent", "-severity", "low,medium,high,critical"]
+            if clean_auth:
+                nc_cmd.extend(["-H", clean_auth])
+            nc = _run(nc_cmd, 70)
             if nc.strip():
-                finding_count += len([l for l in nc.splitlines() if l.strip()])
+                nlines = [l for l in nc.splitlines() if l.strip()]
+                finding_count += len(nlines)
+                nuclei_lines.extend(nlines)
                 raw_sections.append(f"=== WAPT: OWASP/Nuclei Findings ({url}) ===\n{nc[:1500]}")
 
             commands_run.append(f"nikto {url}")
             nk = _run(["nikto", "-h", url, "-Tuning", "1,2,3,b", "-maxtime", "60s"], 75)
             if nk.strip():
                 raw_sections.append(f"=== WAPT: Nikto ({url}) ===\n{nk[:1200]}")
+
+    elif profile in PLAYBOOKS:
+        pb = PLAYBOOKS[profile]
+        emit_event("PLAYBOOK", "busy", f"[Playbook: {pb['name']}] on {hostname} ({target_ip})")
+        for step in pb["steps"]:
+            if ctl is not None and not ctl.checkpoint():
+                break
+            scmd = render_step_cmd(step["cmd"], target_ip)
+            commands_run.append(" ".join(scmd))
+            sout = _run(scmd, step["timeout"])
+            raw_sections.append(f"=== {step['name']} ===\n$ {' '.join(scmd)}\n{sout[:1800]}")
+            if step.get("parse_ports"):
+                discovered_ports.extend(parse_nmap_ports(sout))
+            if step.get("count_findings") and sout.strip():
+                nlines = [l for l in sout.splitlines() if l.strip()]
+                finding_count += len(nlines)
+                nuclei_lines.extend(nlines)
 
     else:  # autonomous_ai — Pentesting Task Tree
         emit_event("PTT_INIT", "busy", f"Pentesting Task Tree for {hostname} ({target_ip})")
@@ -566,10 +606,15 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
 
                 emit_event("PTT_AUDIT", "busy", f"[PTT] Nuclei audit {url}")
                 commands_run.append(f"nuclei -target {url}")
-                nc = _run(["nuclei", "-target", url, "-tags", "cve,misconfig,exposures",
-                           "-silent", "-severity", "low,medium,high,critical"], 60)
+                nc_cmd = ["nuclei", "-target", url, "-tags", "cve,misconfig,exposures",
+                          "-silent", "-severity", "low,medium,high,critical"]
+                if clean_auth:
+                    nc_cmd.extend(["-H", clean_auth])
+                nc = _run(nc_cmd, 60)
                 if nc.strip():
-                    finding_count += len([l for l in nc.splitlines() if l.strip()])
+                    nlines = [l for l in nc.splitlines() if l.strip()]
+                    finding_count += len(nlines)
+                    nuclei_lines.extend(nlines)
                     raw_sections.append(f"=== PTT: Nuclei Findings ({url}) ===\n{nc[:1500]}")
             elif pn in (139, 445) or "smb" in service:
                 emit_event("PTT_SMB", "busy", f"[PTT] SMB enum {target_ip}")
@@ -639,9 +684,21 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         except Exception as e:  # intel is best-effort; never fail the assessment
             emit_event("CVE_INTEL", "warn", f"CVE intel skipped: {e}")
 
-    full_raw = "\n\n".join(raw_sections)
+    full_raw = redact_secrets("\n\n".join(raw_sections))
     port_summary = ", ".join(f"{p['port']}/{p['proto']} ({p['service']})" for p in discovered_ports) \
         or "No open ports in scanned range"
+
+    # Record structured, replayable findings into the Evidence Ledger.
+    try:
+        ledger.record_from_assessment(
+            target_ip,
+            verified_services,
+            cve_intel.get("findings", []),
+            nuclei_lines=nuclei_lines,
+            openapi_findings=openapi_findings,
+        )
+    except Exception:
+        pass
 
     # Severity from offensive signal only (ports + findings).
     n = len(discovered_ports)
@@ -685,8 +742,10 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         f"Public exploits matched: {cve_intel.get('exploit_count', 0)}\n\n"
         f"Attack-path reasoning:\n{cot}\n\nEvidence:\n{full_raw[:3000]}"
     )
-    ai_report = ai_chat([{"role": "system", "content": sys_prompt},
-                         {"role": "user", "content": user_prompt}], role="reporter")
+    ai_report = redact_secrets(
+        ai_chat([{"role": "system", "content": sys_prompt},
+                 {"role": "user", "content": user_prompt}], role="reporter")
+    )
 
     ts = now_iso()
     with sqlite3.connect(DB_PATH) as conn:
@@ -721,13 +780,14 @@ def api_assess():
     """Synchronous assessment (blocks until done). Kept for CLI / compatibility."""
     data = request.get_json(silent=True) or {}
     profile = data.get("profile", "fast_recon")
-    if profile not in ALLOWED_PROFILES:
+    if profile not in (ALLOWED_PROFILES | set(PLAYBOOKS)):
         return jsonify({"error": f"Unknown profile '{profile}'."}), 400
     try:
         rt = scope.resolve(data.get("target", ""))
-    except ScopeViolation as exc:
+        auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
+    except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(_run_assessment(rt.ip, rt.label, profile))
+    return jsonify(_run_assessment(rt.ip, rt.label, profile, auth_header=auth_header))
 
 
 @app.route("/api/assess/start", methods=["POST"])
@@ -735,16 +795,49 @@ def api_assess_start():
     """Enqueue an assessment as a background job; returns a job_id to poll."""
     data = request.get_json(silent=True) or {}
     profile = data.get("profile", "fast_recon")
-    if profile not in ALLOWED_PROFILES:
+    if profile not in (ALLOWED_PROFILES | set(PLAYBOOKS)):
         return jsonify({"error": f"Unknown profile '{profile}'."}), 400
     try:
         rt = scope.resolve(data.get("target", ""))
-    except ScopeViolation as exc:
+        auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
+    except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
     ip, label = rt.ip, rt.label
     job_id = jobs.submit("assessment", {"target": label, "ip": ip, "profile": profile},
-                         lambda ctl: _run_assessment(ip, label, profile, ctl=ctl))
+                         lambda ctl: _run_assessment(ip, label, profile, ctl=ctl, auth_header=auth_header))
     return jsonify({"job_id": job_id})
+
+
+@app.route("/api/playbooks")
+def api_playbooks():
+    return jsonify({"playbooks": list(PLAYBOOKS.values())})
+
+
+@app.route("/api/findings")
+def api_findings():
+    target = (request.args.get("target") or "").strip()
+    return jsonify({"findings": ledger.list_findings(target_ip=target)})
+
+
+@app.route("/api/findings/<int:fid>/retest", methods=["POST"])
+def api_retest_finding(fid: int):
+    try:
+        res = ledger.retest(fid, active_runner(), scope)
+        emit_event("RETEST", "ok", f"Zero-token PoC retest #{fid}: {res['status']}")
+        return jsonify(res)
+    except (ScopeViolation, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/whitebox/scan", methods=["POST"])
+def api_whitebox_scan():
+    data = request.get_json(silent=True) or {}
+    source = (data.get("source") or "").strip()
+    if not source:
+        return jsonify({"error": "Provide a local source directory/file path or code snippet."}), 400
+    res = analyze_source_code(source)
+    emit_event("WHITEBOX", "ok", f"White-box scan: {len(res['routes'])} routes, {len(res['sinks'])} sinks")
+    return jsonify(res)
 
 
 @app.route("/api/agent/start", methods=["POST"])
@@ -760,11 +853,16 @@ def api_agent_start():
             target = scope.resolve(target).ip
         except ScopeViolation as exc:
             return jsonify({"error": str(exc)}), 400
+    try:
+        auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     steps = max(2, min(int(data.get("max_steps", 8) or 8), 12))
 
     def _job(ctl):
         return run_agent(objective, target, llm=llm, scope=scope,
-                         runner=active_runner(), emit=emit_event, max_steps=steps, ctl=ctl)
+                         runner=active_runner(), emit=emit_event, max_steps=steps,
+                         ctl=ctl, db_path=DB_PATH, auth_header=auth_header)
 
     job_id = jobs.submit("agent", {"objective": objective[:80], "target": target or "(auto)"}, _job)
     return jsonify({"job_id": job_id})
@@ -780,6 +878,10 @@ def api_aisec_start():
     system_prompt = (data.get("system_prompt") or "")[:4000]
     req_template = (data.get("req_template") or "")[:2000]
     resp_path = (data.get("resp_path") or "").strip()[:200]
+    converter = (data.get("converter") or "none").strip()
+    if converter not in CONVERTERS:
+        converter = "none"
+    include_crescendo = bool(data.get("include_crescendo", True))
     if not re.match(r"^https?://", base_url):
         return jsonify({"error": "Provide an http(s) AI endpoint base_url."}), 400
     if api_type not in ("ollama", "openai", "custom"):
@@ -790,7 +892,9 @@ def api_aisec_start():
     def _job(ctl):
         return run_aisec(base_url, model, api_type, emit=emit_event,
                          judge=llm.for_role("reporter"), ctl=ctl,
-                         system_prompt=system_prompt, req_template=req_template, resp_path=resp_path)
+                         system_prompt=system_prompt, req_template=req_template,
+                         resp_path=resp_path, converter=converter,
+                         include_crescendo=include_crescendo)
 
     job_id = jobs.submit("aisec", {"model": model, "target": base_url}, _job)
     return jsonify({"job_id": job_id})

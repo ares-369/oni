@@ -20,20 +20,31 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 - **Any LLM** — Ollama (local), Anthropic Claude, Google Gemini, OpenAI, Azure
   OpenAI, or any OpenAI-compatible endpoint. Per-role model selection.
-- **Network PT + Web App PT (WAPT)** assessment tracks, plus an **autonomous
-  ReAct agent** that plans and runs scoped tools step by step.
-- **41 built-in tools** (nmap, nuclei, ffuf, sqlmap, Metasploit, Burp, wpscan,
-  feroxbuster, netexec, hydra, …) — installed/checked on your attack host.
-- **PoC validation** — findings are re-tested on the target (HTTP status, banner,
-  and auth-challenge verification) and tagged `VERIFIED` / `UNCONFIRMED` to cut
-  false positives.
+- **Black-Box, Grey-Box & Lightweight White-Box** — run unauthenticated recon,
+  pass authenticated headers/cookies (`Authorization: Bearer …` / `Cookie: …`) to
+  WAPT and the AI Agent, auto-discover OpenAPI/Swagger specs for unauth-vs-auth
+  access-control diffs, and scan source code for routes and dangerous sinks.
+- **Autonomous ReAct Agent with Graph Memory & Indirect-Injection Quarantine** —
+  plans and executes 11 scoped tools (`nmap`, `whatweb`, `httpx`, `nuclei`,
+  `ffuf`, `nikto`, `wafw00f`, `sslscan`, `openapi_probe`, `enum4linux`,
+  `searchsploit`), condenses noisy tool output for local 7B models, wraps
+  target responses in `<untrusted_tool_output>` delimiters, and syncs discovered
+  ports with the Attack-Surface Graph.
+- **Proof-First Evidence Ledger & Zero-Token PoC Retest** — stores structured
+  findings with automatic secret redaction and a 1-click deterministic SSH
+  replay (`VERIFIED` / `AUTH-GATED` / `FIXED`) that requires zero LLM tokens.
 - **Offline-first CVE & exploit intelligence** — maps detected service banners
   to local Exploit-DB (`searchsploit`) advisories on your attack host with zero
   external dependencies, plus optional online NVD CVE/CVSS enrichment.
-- **Attack-surface graph + analytics** (risk, services, severity).
-- **AI / LLM Red Team & GRC** — probe any LLM endpoint (incl. your own custom
-  model and system prompt) across 11 OWASP LLM Top 10 probes, mapped to OWASP,
-  MITRE ATLAS, NIST AI RMF, and Google SAIF / ISO 42001, with a posture score.
+- **Declarative YAML Playbooks** — drop `.yaml` playbooks into `playbooks/`
+  (ships with Identity/AD/SMB, API Exposure, and TLS Crypto audits) without
+  touching Python code.
+- **AI / LLM Red Team & GRC 2.0** — probe any LLM endpoint across **14 single-turn
+  probes** (incl. RAG context poisoning, MCP tool-description poisoning, and
+  cross-tenant leakage), **6 composable prompt converters** (`leetspeak`,
+  `rot13`, `unicode_homoglyph`, `markdown_wrap`, `json_smuggle`), and a **3-turn
+  Crescendo escalation loop**, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI
+  RMF, and Google SAIF / ISO 42001.
 - **Safe by design** — explicit scope allow-list, non-destructive by default, a
   destructive-command guard, no auto-scanning, pause/stop on running jobs, and
   pluggable auth (`none` / `basic` / `local` / **OIDC SSO** / reverse-proxy).
@@ -85,7 +96,7 @@ key) powers the AI reports and the autonomous agent.
 
 ```bash
 # 1. Get the code
-git clone <your-repo-url> oniops && cd oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
 
 # 2. Create your config and secrets files from the examples
 cp config.example.yaml config.yaml
@@ -139,7 +150,7 @@ powershell -ExecutionPolicy Bypass -File deploy\windows-install.ps1
 ### Option D — Bare Linux + systemd
 
 ```bash
-git clone <your-repo-url> oniops && cd oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 cp config.example.yaml config.yaml && cp .env.example .env
 nano config.yaml                       # set scope + attack host + LLM
