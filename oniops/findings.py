@@ -500,3 +500,36 @@ def restore_sqlite(backup_db: str | Path, target_db: str | Path) -> dict:
         if not row or row[0] != "ok":
             raise ValueError(f"Backup failed SQLite integrity_check: {row[0] if row else 'invalid'}")
     return backup_sqlite(src, target_db)
+
+
+def build_assessment_manifest(
+    *,
+    assessment_id: int | str,
+    oniops_version: str,
+    target_ip: str,
+    profile: str,
+    scope_cidrs: list[str],
+    model_name: str,
+    started_at: str,
+    completed_at: str,
+    commands_run: list[str],
+    evidence_hashes: list[str],
+) -> dict:
+    """Create a secret-free, cryptographically verifiable execution manifest
+    for assessment reproducibility."""
+    scope_canonical = ",".join(sorted(scope_cidrs))
+    scope_hash = hashlib.sha256(scope_canonical.encode("utf-8")).hexdigest()[:16]
+    cmds_canonical = "\n".join(commands_run)
+    commands_hash = hashlib.sha256(cmds_canonical.encode("utf-8")).hexdigest()[:16]
+    return {
+        "assessment_id": f"ONIOPS-{assessment_id}",
+        "oniops_version": oniops_version,
+        "target_ip": target_ip,
+        "profile": profile,
+        "scope_hash": scope_hash,
+        "commands_hash": commands_hash,
+        "model": model_name,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "evidence_hashes": evidence_hashes[:25],
+    }

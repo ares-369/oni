@@ -32,6 +32,11 @@ _DESTRUCTIVE_PATTERNS = [
     r"\bdrop\s+table\b",
 ]
 _DESTRUCTIVE_RE = re.compile("|".join(_DESTRUCTIVE_PATTERNS), re.IGNORECASE)
+_NET_TOOLS_RE = re.compile(
+    r"^\s*(?:sudo\s+)?(?:nmap|curl|wget|nuclei|ffuf|nikto|whatweb|httpx|wafw00f|katana|gobuster|enum4linux(?:-ng)?|sqlmap|hydra|sslscan)\b",
+    re.IGNORECASE,
+)
+_IPV4_RE = re.compile(r"\b((?:\d{1,3}\.){3}\d{1,3})\b")
 
 
 class ScopeViolation(Exception):
@@ -80,11 +85,26 @@ class Scope:
             ipaddress.ip_address(t)
             ip = t
         except ValueError:
-            # Resolve hostname via DNS, then scope-check the resulting IP.
+            # Resolve hostname via DNS, then scope-check ALL resulting IPs.
             try:
                 ip = socket.gethostbyname(t)
             except OSError as exc:
                 raise ScopeViolation(f"Could not resolve '{raw}': {exc}") from exc
+            try:
+                infos = socket.getaddrinfo(t, None)
+                for info in infos:
+                    addr = info[4][0]
+                    if "%" in addr:
+                        addr = addr.split("%", 1)[0]
+                    if not self.is_in_scope(addr):
+                        raise ScopeViolation(
+                            f"Scope violation: '{raw}' resolved to out-of-scope address {addr} "
+                            f"(authorized: {', '.join(self.cfg.scope.allowed_cidrs)})."
+                        )
+            except ScopeViolation:
+                raise
+            except OSError:
+                pass
 
         if not self.is_in_scope(ip):
             raise ScopeViolation(
@@ -96,12 +116,24 @@ class Scope:
 
     # ---- command safety ----
     def guard_command(self, command: str) -> None:
-        """Refuse obviously destructive commands when non_destructive is set."""
+        """Refuse destructive commands and network commands targeting out-of-scope IPs."""
         if self.cfg.scope.non_destructive and _DESTRUCTIVE_RE.search(command):
             raise ScopeViolation(
                 "Blocked: command matches a destructive/DoS pattern and "
                 "scope.non_destructive is enabled."
             )
+        if _NET_TOOLS_RE.search(command or ""):
+            for m in _IPV4_RE.finditer(command):
+                cand = m.group(1)
+                try:
+                    ipaddress.IPv4Address(cand)
+                except ValueError:
+                    continue
+                if not self.is_in_scope(cand):
+                    raise ScopeViolation(
+                        f"Scope violation in command: {cand} is outside the authorized "
+                        f"Rules of Engagement ({', '.join(self.cfg.scope.allowed_cidrs)})."
+                    )
 
     @property
     def cidrs(self) -> list[str]:
