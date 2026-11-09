@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -27,9 +28,11 @@ from oniops.agent import run_agent
 from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
 from oniops.benchmark import run_benchmark_suite
+from oniops.cli import build_whitebox_sarif, run_doctor
 from oniops.config import apply_updates, get_config, preview_updates
 from oniops.findings import (
     FindingsLedger,
+    backup_sqlite,
     build_assessment_manifest,
     connect_sqlite,
     diff_assessments,
@@ -556,11 +559,13 @@ def _run(cmd: list[str], timeout: int) -> str:
 
 
 def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
-                    auth_header: str = "", low_priv_header: str = "") -> dict:
+                    auth_header: str = "", low_priv_header: str = "",
+                    peer_auth_header: str = "") -> dict:
     started_at = now_iso()
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) from the attack host")
     clean_auth = sanitize_auth_header(auth_header) if auth_header else ""
     clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
+    clean_peer = sanitize_auth_header(peer_auth_header) if peer_auth_header else ""
 
     commands_run, raw_sections, discovered_ports = [], [], []
     nuclei_lines: list[str] = []
@@ -651,7 +656,8 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
 
             emit_event("WAPT_API", "busy", f"[WAPT] OpenAPI & Access-Control probe {url}")
             oa = probe_openapi(target_ip, pn, scheme, _run,
-                               auth_header=clean_auth, low_priv_header=clean_low, ctl=ctl)
+                               auth_header=clean_auth, low_priv_header=clean_low,
+                               peer_auth_header=clean_peer, ctl=ctl)
             if oa["found"]:
                 raw_sections.append(oa["raw_section"])
                 finding_count += len(oa["findings"])
@@ -922,9 +928,13 @@ def api_assess():
         rt = scope.resolve(data.get("target", ""))
         auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
         low_priv_header = sanitize_auth_header(data.get("low_priv_header", "")) if data.get("low_priv_header") else ""
+        peer_auth_header = sanitize_auth_header(data.get("peer_auth_header", "")) if data.get("peer_auth_header") else ""
     except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(_run_assessment(rt.ip, rt.label, profile, auth_header=auth_header, low_priv_header=low_priv_header))
+    return jsonify(_run_assessment(
+        rt.ip, rt.label, profile,
+        auth_header=auth_header, low_priv_header=low_priv_header, peer_auth_header=peer_auth_header,
+    ))
 
 
 @app.route("/api/assess/start", methods=["POST"])
@@ -938,14 +948,17 @@ def api_assess_start():
         rt = scope.resolve(data.get("target", ""))
         auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
         low_priv_header = sanitize_auth_header(data.get("low_priv_header", "")) if data.get("low_priv_header") else ""
+        peer_auth_header = sanitize_auth_header(data.get("peer_auth_header", "")) if data.get("peer_auth_header") else ""
     except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
     ip, label = rt.ip, rt.label
     job_id = jobs.submit(
         "assessment",
         {"target": label, "ip": ip, "profile": profile},
-        lambda ctl: _run_assessment(ip, label, profile, ctl=ctl,
-                                    auth_header=auth_header, low_priv_header=low_priv_header),
+        lambda ctl: _run_assessment(
+            ip, label, profile, ctl=ctl,
+            auth_header=auth_header, low_priv_header=low_priv_header, peer_auth_header=peer_auth_header,
+        ),
     )
     return jsonify({"job_id": job_id})
 
@@ -982,6 +995,26 @@ def api_benchmark():
     return jsonify(run_benchmark_suite())
 
 
+@app.route("/api/doctor")
+def api_doctor():
+    check_runner = str(request.args.get("runner", "")).lower() in ("1", "true", "yes")
+    return jsonify(run_doctor(db_override=str(DB_PATH), check_runner=check_runner))
+
+
+@app.route("/api/backup/download")
+def api_backup_download():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dst = Path(tmpdir) / "oniops-backup.sqlite"
+        backup_sqlite(DB_PATH, dst)
+        payload = dst.read_bytes()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        payload,
+        mimetype="application/x-sqlite3",
+        headers={"Content-Disposition": f'attachment; filename="oniops-backup-{stamp}.sqlite"'},
+    )
+
+
 @app.route("/api/findings/<int:fid>/retest", methods=["POST"])
 def api_retest_finding(fid: int):
     try:
@@ -1008,7 +1041,9 @@ def api_whitebox_scan():
     source = (data.get("source") or "").strip()
     if not source:
         return jsonify({"error": "Provide a local source directory/file path or code snippet."}), 400
-    res = analyze_source_code(source)
+    use_ext = bool(data.get("use_external_sast", True))
+    res = analyze_source_code(source, run_external=use_ext)
+    res["sarif"] = build_whitebox_sarif(res)
     emit_event("WHITEBOX", "ok", f"White-box scan: {len(res['routes'])} routes, {len(res['sinks'])} sinks")
     return jsonify(res)
 

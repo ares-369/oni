@@ -50,6 +50,15 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     wb_data = r_wb.get_json()
     assert "/admin/debug" in wb_data["routes"]
     assert len(wb_data["sinks"]) >= 1
+    assert wb_data["sarif"]["version"] == "2.1.0"
+
+    r_doc = client.get("/api/doctor")
+    assert r_doc.status_code == 200
+    assert r_doc.get_json()["db_integrity"] == "ok"
+
+    r_bak = client.get("/api/backup/download")
+    assert r_bak.status_code == 200
+    assert r_bak.data.startswith(b"SQLite format 3")
 
     # 4. Findings Ledger + Retest endpoint
     fid = webui.ledger.upsert(

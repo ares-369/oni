@@ -23,6 +23,14 @@ behaviour may still change between releases.
   validation now honor the grey-box `auth_header` when testing behind login
   gates, and agent-reported findings persist secret-redacted `-H` replay
   commands and vulnerability categories.
+- **Full Backend-to-Frontend Parity**: Wired Assessment Baseline Drift Diff
+  (`/api/assessments/<id>/diff`), AI YAML Probe Packs & Crescendo toggles
+  (`/api/aisec/probes`), White-Box SARIF v2.1.0 download & Semgrep/Gitleaks
+  toggle (`/api/whitebox/scan`), Settings Self-Diagnostics (`GET /api/doctor`),
+  in-browser Verification Benchmark runner, online SQLite `.sqlite` backup
+  download (`GET /api/backup/download`), Horizontal BOLA Peer Header
+  (`peer_auth_header`), and Background Job History / Re-attach (`/api/jobs`)
+  directly into the web UI.
 
 ## [0.4.0-beta] — 2026-11-09
 

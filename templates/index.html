@@ -1255,9 +1255,10 @@
                 <option value="api_access_control">Playbook: API &amp; Microservice Exposure Audit</option>
                 <option value="tls_crypto_audit">Playbook: TLS &amp; Cryptographic Posture Audit</option>
               </select>
-              <div style="display:flex; gap:6px; margin-top:6px;">
-                <input id="wbAuthHeader" class="input" style="flex:1;" placeholder="Auth header (optional)" title="Optional grey-box auth header, e.g. Authorization: Bearer … or Cookie: sid=…" aria-label="Optional authenticated header for grey-box testing" />
-                <input id="wbLowPrivHeader" class="input" style="flex:1;" placeholder="Low-priv header (optional)" title="Optional low-privilege role header, used to diff BOLA/BFLA access" aria-label="Optional low-privilege header for BOLA/BFLA comparison" />
+              <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
+                <input id="wbAuthHeader" class="input" style="flex:1; min-width:140px;" placeholder="Auth header (optional)" title="Optional grey-box auth header, e.g. Authorization: Bearer … or Cookie: sid=…" aria-label="Optional authenticated header for grey-box testing" />
+                <input id="wbLowPrivHeader" class="input" style="flex:1; min-width:140px;" placeholder="Low-priv header (User A)" title="Optional low-privilege role header, used to diff BOLA/BFLA access" aria-label="Optional low-privilege header for BOLA/BFLA comparison" />
+                <input id="wbPeerHeader" class="input" style="flex:1; min-width:140px;" placeholder="Peer header (User B)" title="Optional peer user header (User B), used to test horizontal BOLA against User A" aria-label="Optional peer user header for horizontal BOLA comparison" />
               </div>
             </div>
             <button class="btn btn-primary" id="wbRunBtn" onclick="executeWorkbenchScan()" style="height:38px;">
@@ -1265,11 +1266,20 @@
             </button>
           </div>
           <div class="panel-body" style="border-top:1px solid var(--border-subtle); padding-top:10px;">
+            <div id="wbJobsBar" style="margin-bottom:8px; font-size:12px; color:var(--text-muted);"></div>
             <details>
               <summary style="cursor:pointer; font-size:12px; color:var(--text-muted); font-weight:600;"><i class="mdi mdi-code-tags"></i> White-Box Source / Route &amp; Sink Analyzer (optional)</summary>
-              <div style="display:flex; gap:10px; margin-top:8px; align-items:start;">
-                <textarea id="wbSourceInput" aria-label="Source code or path for white-box analysis" class="input" rows="2" style="flex:1; font-family:monospace; font-size:11.5px;" placeholder="Paste source code or a local path to extract web routes (@app.route / @router.get) and dangerous sinks..."></textarea>
-                <button class="btn btn-sm" onclick="runWhiteboxScan()" title="Scan source code"><i class="mdi mdi-magnify-scan"></i> Scan Code</button>
+              <div style="display:flex; gap:10px; margin-top:8px; align-items:start; flex-wrap:wrap;">
+                <textarea id="wbSourceInput" aria-label="Source code or path for white-box analysis" class="input" rows="2" style="flex:1; min-width:240px; font-family:monospace; font-size:11.5px;" placeholder="Paste source code or a local path to extract web routes (@app.route / @router.get) and dangerous sinks..."></textarea>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <label style="font-size:11.5px; color:var(--text-muted); display:flex; align-items:center; gap:5px;">
+                    <input type="checkbox" id="wbExternalSast" /> Run Semgrep / Gitleaks
+                  </label>
+                  <div style="display:flex; gap:6px;">
+                    <button class="btn btn-sm" onclick="runWhiteboxScan()" title="Scan source code"><i class="mdi mdi-magnify-scan"></i> Scan Code</button>
+                    <button class="btn btn-sm" id="wbSarifBtn" style="display:none;" onclick="downloadText('oniops-whitebox.sarif.json', window._lastWhiteboxSarif || '')" title="Download SARIF v2.1.0 report"><i class="mdi mdi-download"></i> .sarif</button>
+                  </div>
+                </div>
               </div>
               <div id="wbSourceResult" style="margin-top:8px; font-size:12px; color:var(--text-muted);"></div>
             </details>
@@ -1510,14 +1520,16 @@
           <div class="panel">
             <div class="panel-header">
               <div class="panel-title"><i class="mdi mdi-file-document-outline"></i> Selected Report Inspector</div>
-              <div style="display:flex; gap:8px; align-items:center;">
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <span class="badge badge-red mono" id="reportInspectorBadge">Select a scan</span>
+                <button class="btn btn-sm" onclick="loadAssessmentDiff()" title="Compare posture drift against previous assessment of this target"><i class="mdi mdi-compare-horizontal"></i> Drift Diff</button>
                 <button class="btn btn-sm" onclick="downloadText('oniops-assessment.md', window._lastScanMd || '')"><i class="mdi mdi-download"></i> .md</button>
                 <button class="btn btn-sm" onclick="downloadText('oniops-assessment.json', window._lastScanJson || '')"><i class="mdi mdi-download"></i> .json</button>
                 <button class="btn btn-sm" onclick="downloadPdf('oniops-assessment.pdf', 'ONIOPS Assessment Report', window._lastScanMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button>
               </div>
             </div>
             <div class="panel-body">
+              <div id="reportDriftBox" style="display:none; margin-bottom:12px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:12px; background:rgba(255,255,255,.015);"></div>
               <div class="report-box" id="reportInspectorBody" style="margin-bottom:12px;">
                 Click any assessment on the left to inspect its AI Red-Team report and raw sensor output.
               </div>
@@ -1596,6 +1608,14 @@
             <div style="margin-top:12px;">
               <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">SYSTEM PROMPT (optional)</label>
               <textarea id="aisecSystem" aria-label="System prompt under test" class="input" rows="2" style="width:100%; font-family:inherit; resize:vertical;" placeholder="Paste your app's system prompt to test the guardrailed app instead of the raw model."></textarea>
+            </div>
+            <div style="display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--text-muted); align-items:center;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="aisecCrescendo" checked /> Include 3-Turn Crescendo Escalation
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="aisecYamlPacks" checked /> Include YAML Probe Packs <span class="badge badge-neutral mono" id="aisecYamlCount">loading...</span>
+              </label>
             </div>
             {% raw %}
             <div id="aisecCustomFields" style="display:none; margin-top:12px;">
@@ -2173,7 +2193,7 @@
              </span></div>` +
           `<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="saveIntegrations()">Save integrations</button></div>`;
 
-        // About / instance (editable)
+        // About / instance (editable) + System Diagnostics, Benchmark & Backup
         document.getElementById('setAbout').innerHTML =
           `<div class="set-row"><span>Instance name</span><input class="input" id="instName" aria-label="Instance name" value="${esc(cfg.instance_name)}" style="width:150px; font-size:12px;"/></div>` +
           `<div class="set-row"><span>External URL</span><input class="input" id="instUrl" aria-label="External URL" value="${esc(cfg.external_url || '')}" placeholder="https://oniops.example.com" style="width:55%; font-size:12px;"/></div>` +
@@ -2184,10 +2204,38 @@
             (TERMS && TERMS.accepted_at
               ? `Accepted by <span class="mono">${esc(TERMS.user)}</span> · ${esc(String(TERMS.accepted_at).slice(0, 16).replace('T', ' '))} UTC · v${esc(TERMS.version)}`
               : 'Not yet accepted') +
-            ` · <a href="${esc((TERMS && TERMS.disclaimer_url) || 'https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md')}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">read</a></span></div>`;
+            ` · <a href="${esc((TERMS && TERMS.disclaimer_url) || 'https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md')}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">read</a></span></div>` +
+          `<div style="border-top:1px solid var(--border-subtle); margin-top:10px; padding-top:10px;">
+             <div style="font-size:11.5px; font-weight:600; color:var(--text-muted); margin-bottom:8px;">DIAGNOSTICS, BENCHMARK &amp; BACKUP</div>
+             <div style="display:flex; gap:6px; flex-wrap:wrap;">
+               <button class="btn btn-sm" type="button" onclick="runDoctorUi()"><i class="mdi mdi-stethoscope"></i> Run Doctor</button>
+               <button class="btn btn-sm" type="button" onclick="runBenchmarkUi()"><i class="mdi mdi-check-decagram-outline"></i> Run Benchmark</button>
+               <a class="btn btn-sm" href="/api/backup/download" download><i class="mdi mdi-database-export-outline"></i> Backup SQLite</a>
+             </div>
+             <div id="setDiagBox" class="mono" style="margin-top:8px; font-size:11px; color:var(--text-muted); white-space:pre-wrap;"></div>
+           </div>`;
       } catch (e) {
         document.getElementById('setHosts').innerHTML = `<div style="color:var(--danger);">Settings error: ${e}</div>`;
       }
+    }
+
+    async function runDoctorUi() {
+      const box = document.getElementById('setDiagBox');
+      if (box) box.textContent = 'Running self-diagnostics...';
+      try {
+        const d = await (await fetch('/api/doctor')).json();
+        if (box) box.textContent = `[Doctor: ${d.ok ? 'OK' : 'WARN'}] DB integrity=${d.db_integrity} | Playbooks=${d.playbooks_loaded} | AI YAML Probes=${d.ai_yaml_probes_loaded} | Auth=${d.auth_mode}`;
+      } catch (e) { if (box) box.textContent = 'Doctor error: ' + e; }
+    }
+
+    async function runBenchmarkUi() {
+      const box = document.getElementById('setDiagBox');
+      if (box) box.textContent = 'Running 17-case verification benchmark...';
+      try {
+        const b = await (await fetch('/api/benchmark')).json();
+        const m = b.metrics || {};
+        if (box) box.textContent = `[Benchmark: ${b.passed}/${b.total_cases} PASSED] Recall=${(m.recall||0).toFixed(2)} | FPR=${(m.false_positive_rate||0).toFixed(2)} | Precision=${(m.precision||0).toFixed(2)} | F1=${(m.f1_score||0).toFixed(2)}`;
+      } catch (e) { if (box) box.textContent = 'Benchmark error: ' + e; }
     }
 
     function _collectHosts() {
@@ -2303,6 +2351,8 @@
       const req_template = document.getElementById('aisecReqTemplate').value.trim();
       const resp_path = document.getElementById('aisecRespPath').value.trim();
       const converter = (document.getElementById('aisecConverter')?.value || 'none');
+      const include_crescendo = !!document.getElementById('aisecCrescendo')?.checked;
+      const include_yaml_packs = !!document.getElementById('aisecYamlPacks')?.checked;
       if (!base_url || (!model && api_type !== 'custom')) { document.getElementById('aisecPosture').textContent = 'Enter an endpoint URL (and a model, unless custom).'; return; }
       const btn = document.getElementById('aisecRunBtn'); btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('aisecStatus').textContent = 'starting';
@@ -2310,7 +2360,7 @@
       document.getElementById('aisecPosture').textContent = 'Probing the AI endpoint...';
       document.getElementById('aisecReport').innerHTML = 'Working...';
       try {
-        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type, system_prompt, req_template, resp_path, converter, include_crescendo: true})})).json();
+        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type, system_prompt, req_template, resp_path, converter, include_crescendo, include_yaml_packs})})).json();
         if (r.error) { document.getElementById('aisecPosture').textContent = 'ERROR: ' + r.error; return; }
         const jid = r.job_id; let data = null;
         renderCtl('aisecCtl', jid);
@@ -2494,11 +2544,34 @@
       switchView('reports');
       const s = SCANS_CACHE.find(item => item.id === scanId);
       if (!s) return;
+      window._activeScanId = s.id;
       document.getElementById('reportInspectorBadge').textContent = `SCAN #${s.id} // ${s.target_name} (${s.target_ip})`;
       document.getElementById('reportInspectorBody').innerHTML = renderMarkdown(s.ai_report);
       document.getElementById('reportInspectorRaw').textContent = s.raw_output || 'No raw output.';
       window._lastScanMd = s.ai_report || '';
       window._lastScanJson = JSON.stringify(s, null, 2);
+      loadAssessmentDiff(s.id);
+    }
+
+    async function loadAssessmentDiff(scanId) {
+      const aid = scanId || window._activeScanId;
+      const box = document.getElementById('reportDriftBox');
+      if (!box) return;
+      if (!aid) { toast('Select an assessment first', true); return; }
+      try {
+        const d = await (await fetch(`/api/assessments/${aid}/diff`)).json();
+        if (d.error) { box.style.display = 'none'; return; }
+        box.style.display = 'block';
+        const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+        if (!d.has_baseline) {
+          box.innerHTML = `<strong>Baseline Drift:</strong> First recorded assessment for <span class="mono">${esc(d.target_ip)}</span> (no prior baseline to diff) · Active findings: <strong>${d.active_findings}</strong> · Fixed: <strong>${d.remediated_findings}</strong>`;
+          return;
+        }
+        const delta = d.finding_count_delta > 0 ? `+${d.finding_count_delta}` : `${d.finding_count_delta}`;
+        const newP = (d.new_ports || []).length ? `<span style="color:var(--danger);">+${d.new_ports.map(esc).join(', ')}</span>` : 'none';
+        const closedP = (d.closed_ports || []).length ? `<span style="color:var(--success);">-${d.closed_ports.map(esc).join(', ')}</span>` : 'none';
+        box.innerHTML = `<strong>Posture Drift vs. Scan #${d.previous_id}:</strong> Severity <span class="mono">${esc(d.severity_change.from)} -> ${esc(d.severity_change.to)}</span> · Findings delta: <span class="mono">${delta}</span> · New ports: ${newP} · Closed ports: ${closedP} · Active/Fixed ledger findings: <strong>${d.active_findings}/${d.remediated_findings}</strong>`;
+      } catch (e) { box.style.display = 'none'; }
     }
 
     async function runQuickAssessment() {
@@ -2630,6 +2703,7 @@
       }
       const auth_header = (document.getElementById('wbAuthHeader')?.value || '').trim();
       const low_priv_header = (document.getElementById('wbLowPrivHeader')?.value || '').trim();
+      const peer_auth_header = (document.getElementById('wbPeerHeader')?.value || '').trim();
       const btn = document.getElementById('wbRunBtn');
       btn.disabled = true;
       btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
@@ -2642,7 +2716,7 @@
         // Enqueue as a background job so long WAPT/PTT runs don't block.
         const sres = await fetch('/api/assess/start', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target, profile, auth_header, low_priv_header})
+          body: JSON.stringify({target, profile, auth_header, low_priv_header, peer_auth_header})
         });
         const sdata = await sres.json();
         if (sdata.error) { wbFinish('error', `ERROR: ${sdata.error}`); toast(sdata.error, true); return; }
@@ -2918,17 +2992,62 @@
 
     async function runWhiteboxScan() {
       const src = (document.getElementById('wbSourceInput')?.value || '').trim();
+      const use_external_sast = !!document.getElementById('wbExternalSast')?.checked;
       const box = document.getElementById('wbSourceResult');
+      const sarifBtn = document.getElementById('wbSarifBtn');
       if (!src) { box.textContent = 'Enter a code snippet or local path first.'; return; }
       box.textContent = 'Scanning source...';
       try {
-        const r = await (await fetch('/api/whitebox/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source: src})})).json();
+        const r = await (await fetch('/api/whitebox/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source: src, use_external_sast})})).json();
         if (r.error) { box.textContent = r.error; return; }
+        window._lastWhiteboxSarif = r.sarif ? JSON.stringify(r.sarif, null, 2) : '';
+        if (sarifBtn) sarifBtn.style.display = window._lastWhiteboxSarif ? 'inline-flex' : 'none';
         const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
         const rts = (r.routes || []).map(x => `<code class="mono">${esc(x)}</code>`).join(', ') || 'none';
         const snks = (r.sinks || []).map(s => `<div><span class="badge badge-red">${esc(s.severity)}</span> <strong>${esc(s.type)}</strong> (${esc(s.file)}:${s.line}): <code class="mono">${esc(s.snippet)}</code></div>`).join('') || '<div>No dangerous sinks detected.</div>';
         box.innerHTML = `<div style="margin-bottom:6px;"><strong>Discovered Routes (${(r.routes||[]).length}):</strong> ${rts}</div><div><strong>Sinks (${(r.sinks||[]).length}):</strong>${snks}</div>`;
       } catch (e) { box.textContent = 'Error: ' + e; }
+    }
+
+    async function loadJobsBar() {
+      const bar = document.getElementById('wbJobsBar');
+      if (!bar) return;
+      try {
+        const d = await (await fetch('/api/jobs')).json();
+        const jobs = (d.jobs || []).slice(0, 5);
+        if (!jobs.length) { bar.innerHTML = ''; return; }
+        const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+        bar.innerHTML = `<span style="font-weight:600; margin-right:6px;"><i class="mdi mdi-progress-clock"></i> Recent Jobs:</span>` +
+          jobs.map(j => {
+            const cls = j.status === 'done' ? 'badge-green' : (j.status === 'running' || j.status === 'queued' ? 'badge-red' : 'badge-neutral');
+            const label = j.params?.target || j.params?.model || j.kind;
+            return `<span class="badge ${cls} mono" style="margin-right:6px; cursor:pointer;" onclick="attachWorkbenchJob('${esc(j.id)}')" title="Click to inspect job ${esc(j.id)}">${esc(j.kind)}:${esc(label)} (${esc(j.status)})</span>`;
+          }).join('');
+      } catch (e) {}
+    }
+
+    async function attachWorkbenchJob(jobId) {
+      try {
+        const j = await (await fetch(`/api/job/${jobId}`)).json();
+        if (j.error) { toast(j.error, true); return; }
+        window._wbEvents = j.events || [];
+        renderTimeline('wbTimeline', window._wbEvents, j.status === 'done' ? 'done' : (j.status === 'running' ? 'running' : 'stopped'));
+        document.getElementById('wbScanMeta').textContent = `Job ${j.id} // ${j.status}`;
+        if (j.result) {
+          document.getElementById('wbRawOutput').textContent = j.result.raw_output || j.result.final || JSON.stringify(j.result, null, 2);
+          if (j.result.ai_report) document.getElementById('wbAiReport').innerHTML = renderMarkdown(j.result.ai_report);
+        }
+        toast(`Loaded job ${jobId} (${j.status})`);
+      } catch (e) {}
+    }
+
+    async function loadAisecProbesMeta() {
+      const el = document.getElementById('aisecYamlCount');
+      if (!el) return;
+      try {
+        const d = await (await fetch('/api/aisec/probes')).json();
+        el.textContent = `${(d.yaml_probes || []).length} packs`;
+      } catch (e) { el.textContent = '0 packs'; }
     }
 
     function refreshAll() {
@@ -2937,6 +3056,8 @@
       loadScansHistory();
       loadKaliTools();
       loadFindingsLedger();
+      loadJobsBar();
+      loadAisecProbesMeta();
     }
 
     // ── Responsible-use terms (first run) ──────────────────────────────────
