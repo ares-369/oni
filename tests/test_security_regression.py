@@ -15,9 +15,19 @@ import pytest
 from flask import Flask
 
 from oniops.agent import compact_agent_messages
-from oniops.auth import _LOGIN_BUCKETS, hash_password, init_auth
+from oniops.auth import (
+    _LOGIN_BUCKETS,
+    _PBKDF2_ITERS,
+    check_rbac_permission,
+    hash_password,
+    init_auth,
+)
 from oniops.config import get_config
-from oniops.findings import build_assessment_manifest
+from oniops.findings import (
+    build_assessment_manifest,
+    connect_sqlite,
+    verify_assessment_manifest,
+)
 from oniops.scope import Scope, ScopeViolation
 
 
@@ -122,8 +132,44 @@ def test_reproducible_assessment_manifest():
         completed_at="2026-11-09T12:01:00Z",
         commands_run=["nmap -sV 10.0.0.150", "whatweb http://10.0.0.150:80"],
         evidence_hashes=["a" * 64],
+        signing_key="super-secret-signing-key",
     )
     assert m["assessment_id"] == "ONIOPS-42"
     assert len(m["scope_hash"]) == 16
     assert len(m["commands_hash"]) == 16
     assert m["evidence_hashes"] == ["a" * 64]
+    assert m["signature"].startswith("hmac-sha256:")
+    assert verify_assessment_manifest(m, signing_key="super-secret-signing-key") is True
+    assert verify_assessment_manifest(m, signing_key="wrong-key") is False
+    tampered = dict(m, target_ip="10.0.0.199")
+    assert verify_assessment_manifest(tampered, signing_key="super-secret-signing-key") is False
+
+
+def test_pbkdf2_owasp_600k_and_sqlite_wal(tmp_path):
+    assert _PBKDF2_ITERS == 600_000
+    h = hash_password("test-pw")
+    assert h.startswith("pbkdf2_sha256$600000$")
+
+    db_file = tmp_path / "wal_test.sqlite"
+    with connect_sqlite(db_file) as con:
+        con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+        mode = con.execute("PRAGMA journal_mode").fetchone()[0]
+        assert str(mode).lower() == "wal"
+
+
+def test_three_tier_rbac_enforcement():
+    # Viewer: GET and stateless PDF export allowed; scans and config changes blocked
+    assert check_rbac_permission("viewer", "GET", "/api/findings")[0] is True
+    assert check_rbac_permission("viewer", "POST", "/api/report/pdf")[0] is True
+    assert check_rbac_permission("viewer", "POST", "/api/assess")[0] is False
+    assert check_rbac_permission("viewer", "POST", "/api/config")[0] is False
+
+    # Operator: scans and retests allowed; config/scope and package installs blocked
+    assert check_rbac_permission("operator", "POST", "/api/assess")[0] is True
+    assert check_rbac_permission("operator", "POST", "/api/findings/retest-all")[0] is True
+    assert check_rbac_permission("operator", "POST", "/api/config")[0] is False
+    assert check_rbac_permission("operator", "POST", "/api/kali/install")[0] is False
+
+    # Admin: full access
+    assert check_rbac_permission("admin", "POST", "/api/config")[0] is True
+    assert check_rbac_permission("admin", "POST", "/api/kali/install")[0] is True

@@ -12,6 +12,7 @@ from oniops.greybox import (
     parse_external_sast_json,
     probe_openapi,
     sanitize_auth_header,
+    validate_bola_response_content,
 )
 
 
@@ -139,3 +140,16 @@ def test_parse_external_sast_json_semgrep_and_gitleaks():
     assert sinks[0]["severity"] == "HIGH"
     assert sinks[1]["type"].startswith("Gitleaks")
     assert "1234567890abcdef" not in sinks[1]["snippet"]
+
+
+def test_bola_content_diff_filters_html_shell_and_empty_json():
+    html_shell = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!doctype html><html><body>Please login</body></html>"
+    assert validate_bola_response_content(html_shell)[0] is False
+
+    empty_json = 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"data": [], "ok": true}'
+    assert validate_bola_response_content(empty_json)[0] is False
+
+    real_json = 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"tenants": [{"id": 1, "name": "acme"}]}'
+    ok, reason = validate_bola_response_content(real_json, real_json)
+    assert ok is True
+    assert "JSON" in reason

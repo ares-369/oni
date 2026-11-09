@@ -27,11 +27,46 @@ from flask import Response, redirect, render_template, request, session
 
 log = logging.getLogger("oniops.auth")
 
-_PBKDF2_ITERS = 240_000
+_PBKDF2_ITERS = 600_000
 _OPEN_PATHS = {"/login", "/auth/callback", "/logout", "/healthz"}
 _LOGIN_BUCKETS: dict[str, list[float]] = {}
 _LOGIN_MAX_ATTEMPTS = 10
 _LOGIN_WINDOW_SEC = 60.0
+_VALID_ROLES = {"viewer", "operator", "admin"}
+_ADMIN_ONLY_PATHS = {"/api/config", "/api/config/preview", "/api/kali/install", "/api/host"}
+
+
+def resolve_user_role(cfg, user: str) -> str:
+    """Resolve the effective RBAC role ('viewer', 'operator', or 'admin') for an
+    authenticated user."""
+    roles_map = getattr(cfg.auth, "roles", None) or {}
+    if user and user in roles_map:
+        r = str(roles_map[user]).lower()
+        if r in _VALID_ROLES:
+            return r
+    hdr_role = (request.headers.get("X-ONIOPS-Role") or "").strip().lower()
+    if cfg.auth.mode == "proxy" and hdr_role in _VALID_ROLES:
+        return hdr_role
+    default_role = str(getattr(cfg.auth, "default_role", "admin") or "admin").lower()
+    return default_role if default_role in _VALID_ROLES else "admin"
+
+
+def check_rbac_permission(role: str, method: str, path: str) -> tuple[bool, str]:
+    """Enforce 3-tier RBAC:
+      - viewer: read-only GET/HEAD/OPTIONS + stateless PDF export (/api/report/pdf)
+      - operator: can run assessments, agents, AIsec, and retests; cannot modify
+                  config.yaml, scope boundaries, or system packages
+      - admin: full control
+    """
+    r = (role or "admin").lower()
+    m = (method or "GET").upper()
+    if m in ("GET", "HEAD", "OPTIONS") or path in _OPEN_PATHS or path == "/api/report/pdf":
+        return True, ""
+    if r == "viewer":
+        return False, "Forbidden: role 'viewer' is read-only and cannot trigger scans or modify state."
+    if r == "operator" and path in _ADMIN_ONLY_PATHS:
+        return False, f"Forbidden: role 'operator' cannot modify administrative endpoint {path}."
+    return True, ""
 
 
 def _check_login_rate_limit(ip: str) -> bool:
@@ -138,6 +173,10 @@ def init_auth(app, cfg) -> None:
             a = request.authorization
             if (a and _verify_password(cfg, a.password or "")
                     and hmac.compare_digest(a.username or "", cfg.auth.username)):
+                role = resolve_user_role(cfg, a.username or "")
+                allowed, reason = check_rbac_permission(role, request.method, p)
+                if not allowed:
+                    return Response(reason, 403)
                 return None
             return Response("ONIOPS authentication required", 401,
                             {"WWW-Authenticate": 'Basic realm="ONIOPS"'})
@@ -148,13 +187,22 @@ def init_auth(app, cfg) -> None:
                 return Response("Forbidden: request did not arrive via a trusted proxy.", 403)
             user = request.headers.get(cfg.auth.proxy_header, "")
             if user and _user_allowed(cfg, user):
+                role = resolve_user_role(cfg, user)
+                allowed, reason = check_rbac_permission(role, request.method, p)
+                if not allowed:
+                    return Response(reason, 403)
                 return None
             return Response("Forbidden: missing or disallowed proxy auth header.", 403)
 
         # local / oidc -> session
-        if session.get("user"):
+        user = session.get("user")
+        if user:
             if request.method in ("POST", "PUT", "DELETE", "PATCH") and not _origin_matches_request(cfg):
                 return Response("Forbidden: cross-origin state-changing request blocked (CSRF guard).", 403)
+            role = session.get("role") or resolve_user_role(cfg, str(user))
+            allowed, reason = check_rbac_permission(role, request.method, p)
+            if not allowed:
+                return Response(reason, 403)
             return None
         if p.startswith("/api/"):
             return Response("Authentication required.", 401)
