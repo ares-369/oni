@@ -7,6 +7,8 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.3.3-beta] — 2026-11-09
+
 ### Added
 - `DISCLAIMER.md` responsible-use statement, also summarised in `NOTICE` and the
   README: ONIOPS is for authorized testing, is provided as-is, and the author is
@@ -21,6 +23,20 @@ behaviour may still change between releases.
   README now credits the tools and projects ONIOPS builds on.
 
 ### Fixed
+- Page load no longer waits ~6s on SSH when the attack host is down: host and
+  LLM health are checked in the background and shown as Checking / Online /
+  Offline (load time 7.2s -> 1.1s).
+- The sidebar card and AI operator greeting show the real host state instead
+  of always saying "connected".
+- Failed, stopped or timed-out Workbench runs no longer leave "Running..." on
+  screen; an empty target is caught before anything is sent.
+- Target pickers have a "Select a target" option and an empty state, and keep
+  the user's choice across refreshes.
+- An unknown `scope.mode` falls back to `active` with a warning, so Settings
+  always shows the mode actually in effect.
+- Phone: host/LLM status dots in the header and 44px touch targets.
+- Accessibility labels for icon buttons and form fields; generic "attack host"
+  wording instead of lab-specific names.
 - The CLI version test now follows the package version, so release bumps no
   longer break CI.
 
@@ -81,5 +97,6 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.3.2-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.3.3-beta...HEAD
+[0.3.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.3-beta
 [0.3.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.2-beta
