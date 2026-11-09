@@ -26,6 +26,7 @@ from oniops import __version__, cve, terms
 from oniops.agent import run_agent
 from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
+from oniops.benchmark import run_benchmark_suite
 from oniops.config import apply_updates, get_config, preview_updates
 from oniops.findings import (
     FindingsLedger,
@@ -617,7 +618,11 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
 
             emit_event("WAPT_FP", "busy", f"[WAPT] Fingerprint {url}")
             commands_run.append(f"whatweb {url}")
-            raw_sections.append(f"=== WAPT: WhatWeb ({url}) ===\n{_run(['whatweb', '--color=never', '-a', '1', url], 30)[:1000]}")
+            ww_cmd = ["whatweb", "--color=never", "-a", "1"]
+            if clean_auth:
+                ww_cmd.append(f"--header={clean_auth}")
+            ww_cmd.append(url)
+            raw_sections.append(f"=== WAPT: WhatWeb ({url}) ===\n{_run(ww_cmd, 30)[:1000]}")
 
             emit_event("WAPT_CRAWL", "busy", f"[WAPT] Crawl {url}")
             commands_run.append(f"katana {url}")
@@ -763,6 +768,12 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
                 sig = m.group(0).strip() + (f" | Server: {server}" if server else "")
                 if code in (401, 403) or re.search(r"[Ww]ww-[Aa]uthenticate:", out):
                     status = "AUTH-GATED"   # service confirmed live, access-controlled
+                    if clean_auth:
+                        auth_out = _run(["curl", "-kIsS", "--max-time", "4", "-H", clean_auth, f"{scheme}://{target_ip}:{pn}"], 8) or ""
+                        am = re.search(r"HTTP/[\d.]+\s+(\d{3})", auth_out)
+                        if am and 200 <= int(am.group(1)) < 300:
+                            status = "VERIFIED"
+                            sig += f" | Authenticated session valid (HTTP {am.group(1)})"
                 elif 200 <= code < 600:
                     status = "VERIFIED"
                 else:
@@ -956,6 +967,19 @@ def api_playbooks():
 def api_findings():
     target = (request.args.get("target") or "").strip()
     return jsonify({"findings": ledger.list_findings(target_ip=target)})
+
+
+@app.route("/api/findings/<int:fid>")
+def api_finding_detail(fid: int):
+    item = ledger.get(fid)
+    if not item:
+        return jsonify({"error": f"Finding #{fid} not found."}), 404
+    return jsonify({"finding": item})
+
+
+@app.route("/api/benchmark")
+def api_benchmark():
+    return jsonify(run_benchmark_suite())
 
 
 @app.route("/api/findings/<int:fid>/retest", methods=["POST"])

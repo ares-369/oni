@@ -116,6 +116,134 @@ def map_finding_coverage(category: str, title: str = "") -> dict[str, list[str]]
     }
 
 
+def get_remediation_guide(category: str, title: str = "") -> dict[str, object]:
+    """Return structured engineering remediation steps and CWE references for a
+    finding category and title."""
+    cat = (category or "").lower()
+    t = (title or "").lower()
+    if cat in ("api_security", "bola", "bfla") or "bola" in t or "bfla" in t or "openapi" in t:
+        if "graphql" in t:
+            return {
+                "cwe": "CWE-200",
+                "summary": "Disable GraphQL schema introspection in production and enforce resolver-level authorization.",
+                "steps": [
+                    "Disable __schema and __type introspection queries in non-development environments.",
+                    "Enforce authentication and role checks inside each GraphQL field resolver.",
+                    "Apply query depth and complexity limits to prevent resource exhaustion.",
+                ],
+                "references": ["OWASP API8:2023", "OWASP ASVS V13.4"],
+            }
+        if "mass assignment" in t or "bopla" in t or "property" in t:
+            return {
+                "cwe": "CWE-915",
+                "summary": "Bind request payloads to explicit allowlist DTOs instead of database models.",
+                "steps": [
+                    "Define strict input schemas (e.g. Pydantic/Marshmallow) that exclude privileged fields (role, is_admin).",
+                    "Reject unexpected properties in PATCH/PUT/POST bodies.",
+                    "Separate administrative state-update endpoints from user profile endpoints.",
+                ],
+                "references": ["OWASP API3:2023", "OWASP ASVS V4.2"],
+            }
+        return {
+            "cwe": "CWE-639",
+            "summary": "Enforce object-level and function-level ownership checks on every API route.",
+            "steps": [
+                "Verify that the authenticated principal owns or is authorized to access the requested resource ID.",
+                "Require valid authentication middleware on all non-public API routes.",
+                "Use indirect or scoped resource queries (WHERE id = ? AND owner_id = current_user.id).",
+            ],
+            "references": ["OWASP API1:2023", "OWASP API5:2023", "OWASP ASVS V4.1"],
+        }
+    if cat == "sqli" or "sql" in t:
+        return {
+            "cwe": "CWE-89",
+            "summary": "Replace string-concatenated SQL queries with parameterized prepared statements.",
+            "steps": [
+                "Use bound parameters (?) or ORM query builders for all user-controlled inputs.",
+                "Enforce strict type validation on numeric and enum query parameters.",
+                "Run the application database account with least-privilege permissions.",
+            ],
+            "references": ["OWASP A03:2021", "OWASP ASVS V5.3.4"],
+        }
+    if cat == "xss" or "xss" in t or "cross-site scripting" in t:
+        return {
+            "cwe": "CWE-79",
+            "summary": "Contextually encode untrusted output and deploy a strict Content-Security-Policy.",
+            "steps": [
+                "Escape HTML, attribute, and JavaScript contexts before rendering user input.",
+                "Avoid unsafe DOM sinks (innerHTML, document.write, dangerouslySetInnerHTML).",
+                "Deploy a Content-Security-Policy header restricting inline scripts.",
+            ],
+            "references": ["OWASP A03:2021", "OWASP ASVS V5.3.3"],
+        }
+    if cat == "ssrf" or "ssrf" in t:
+        return {
+            "cwe": "CWE-918",
+            "summary": "Validate outbound URLs against a strict allowlist and block RFC1918/link-local ranges.",
+            "steps": [
+                "Resolve target hostnames and block private, loopback, and cloud metadata IPs (169.254.169.254).",
+                "Disable automatic HTTP redirect following on server-side HTTP clients.",
+                "Require IMDSv2 token authentication on cloud compute instances.",
+            ],
+            "references": ["OWASP A10:2021", "OWASP ASVS V12.6"],
+        }
+    if cat in ("lfi", "rce") or "traversal" in t or "command" in t:
+        return {
+            "cwe": "CWE-22",
+            "summary": "Canonicalize file paths against a fixed base directory and never pass user input to a shell.",
+            "steps": [
+                "Resolve paths with Path.resolve() and verify they remain inside the intended root directory.",
+                "Pass command arguments as an argv list with shell=False rather than a shell string.",
+                "Map user selections to an allowlist of known file identifiers.",
+            ],
+            "references": ["OWASP A01:2021", "OWASP ASVS V12.3"],
+        }
+    if cat in ("cve", "exploitdb", "nuclei"):
+        return {
+            "cwe": "CWE-1395",
+            "summary": "Upgrade the affected service or apply the vendor security patch and harden configuration.",
+            "steps": [
+                "Verify the installed package version on the host and upgrade to the patched release.",
+                "Disable unneeded modules, default management endpoints, and verbose version banners.",
+                "Re-run ONIOPS zero-token retest after patching to confirm the signature no longer reproduces.",
+            ],
+            "references": ["OWASP A06:2021", "OWASP ASVS V14.2"],
+        }
+    if cat == "tls" or "tls" in t or "cipher" in t or "ssl" in t:
+        return {
+            "cwe": "CWE-326",
+            "summary": "Enforce TLS 1.2+ with AEAD cipher suites and enable HSTS.",
+            "steps": [
+                "Disable legacy protocols (SSLv3, TLS 1.0, TLS 1.1) and weak CBC/RC4 ciphers.",
+                "Configure TLS 1.2 and TLS 1.3 with ECDHE + AES-GCM or ChaCha20-Poly1305.",
+                "Add Strict-Transport-Security (HSTS) and renew expired or self-signed certificates.",
+            ],
+            "references": ["OWASP A02:2021", "OWASP ASVS V9.1"],
+        }
+    return {
+        "cwe": "CWE-16",
+        "summary": "Restrict network exposure to authorized subnets and require strong authentication.",
+        "steps": [
+            "Bind internal administrative services to localhost, a management VLAN, or a VPN interface.",
+            "Place exposed web services behind SSO / reverse-proxy authentication and rate limiting.",
+            "Review firewall rules and re-run ONIOPS zero-token retest to verify access controls.",
+        ],
+        "references": ["OWASP A05:2021", "OWASP ASVS V14.1"],
+    }
+
+
+def compute_priority_score(severity: str, status: str, confidence: str) -> int:
+    """Compute a deterministic 0-100 Fix-First Priority Score from severity,
+    verification status, and calibrated confidence."""
+    st = (status or "").upper()
+    if st == "FIXED":
+        return 0
+    sev_pts = {"CRITICAL": 45, "HIGH": 35, "MEDIUM": 22, "LOW": 10}.get((severity or "").upper(), 15)
+    st_pts = {"VERIFIED": 35, "AUTH-GATED": 15, "UNCONFIRMED": 5}.get(st, 5)
+    conf_pts = {"HIGH": 20, "MEDIUM": 12, "LOW": 5}.get((confidence or "").upper(), 10)
+    return min(100, sev_pts + st_pts + conf_pts)
+
+
 def dispatch_webhook_alert(
     event_type: str,
     payload: dict,
@@ -402,6 +530,22 @@ class FindingsLedger:
 
         return recorded
 
+    @staticmethod
+    def _enrich(d: dict) -> dict:
+        try:
+            cmd_list = json.loads(d.get("repro_cmd") or "[]")
+            d["repro_display"] = shlex.join(cmd_list) if cmd_list else ""
+        except Exception:
+            d["repro_display"] = ""
+        cat = d.get("category", "")
+        title = d.get("title", "")
+        d["coverage"] = map_finding_coverage(cat, title)
+        d["remediation"] = get_remediation_guide(cat, title)
+        d["priority_score"] = compute_priority_score(
+            d.get("severity", ""), d.get("status", ""), d.get("confidence", "")
+        )
+        return d
+
     def list_findings(self, target_ip: str = "", limit: int = 100) -> list[dict]:
         with self._conn() as con:
             if target_ip:
@@ -414,26 +558,14 @@ class FindingsLedger:
                     "SELECT * FROM findings ORDER BY id DESC LIMIT ?",
                     (limit,),
                 ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            try:
-                cmd_list = json.loads(d.get("repro_cmd") or "[]")
-                d["repro_display"] = shlex.join(cmd_list) if cmd_list else ""
-            except Exception:
-                d["repro_display"] = ""
-            d["coverage"] = map_finding_coverage(d.get("category", ""), d.get("title", ""))
-            out.append(d)
-        return out
+        return [self._enrich(dict(r)) for r in rows]
 
     def get(self, finding_id: int) -> dict | None:
         with self._conn() as con:
             row = con.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
         if not row:
             return None
-        d = dict(row)
-        d["coverage"] = map_finding_coverage(d.get("category", ""), d.get("title", ""))
-        return d
+        return self._enrich(dict(row))
 
     def retest(self, finding_id: int, runner, scope: Scope) -> dict:
         """Re-run a finding's deterministic PoC command on the attack host with

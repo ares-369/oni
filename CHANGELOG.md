@@ -7,6 +7,23 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+### Added
+- **Finding Detail Drawer & Fix-First Priority Score**: Clicking any finding in
+  the ledger opens a slide-over drawer showing the full captured evidence,
+  SHA-256 provenance hash, deterministic replay command (with one-click copy and
+  zero-token retest), CWE / OWASP / ATT&CK tags, step-by-step engineering
+  remediation guidance (`get_remediation_guide`), and a `0-100` Fix-First
+  Priority Score (`compute_priority_score`). Added `GET /api/findings/<id>`.
+- **Verification & False-Positive Benchmark Suite (`oniops benchmark`)**: Built-in
+  17-case benchmark suite (`oniops/benchmark.py`, `python -m oniops benchmark`, and
+  `GET /api/benchmark`) measuring true-positive recall, false-positive rate
+  (FPR), precision, and F1 score across Web/API proof validators, BOLA/BOPLA
+  analyzers, SAST sink detection, and prompt-injection quarantine.
+- **Authenticated Assessment Enhancements**: `whatweb` and PoC service
+  validation now honor the grey-box `auth_header` when testing behind login
+  gates, and agent-reported findings persist secret-redacted `-H` replay
+  commands and vulnerability categories.
+
 ## [0.4.0-beta] — 2026-11-09
 
 ### Added

@@ -896,6 +896,35 @@
     .tl-log { margin: 0; padding: 0 12px 10px 38px; font-family: var(--font-mono, monospace); font-size: 11.5px;
               color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
     .terms-actions .btn:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.4); }
+
+    /* Finding Detail Drawer + Fix-First Priority */
+    .f-row-click { cursor: pointer; transition: background .12s; }
+    .f-row-click:hover { background: rgba(239, 68, 68, 0.06); }
+    .prio-pill { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono, monospace);
+                 font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+                 border: 1px solid var(--border); background: rgba(255,255,255,.03); }
+    .prio-pill.p-high { color: #f87171; border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.1); }
+    .prio-pill.p-med { color: #fbbf24; border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); }
+    .prio-pill.p-low { color: var(--text-muted); }
+    .finding-drawer-overlay { position: fixed; inset: 0; z-index: 950; background: rgba(0, 0, 0, .65);
+                              display: flex; justify-content: flex-end; backdrop-filter: blur(2px); }
+    .finding-drawer-overlay[hidden] { display: none !important; }
+    .finding-drawer { width: min(640px, 100vw); height: 100%; background: var(--bg-panel, #11161f);
+                      border-left: 1px solid var(--border); display: flex; flex-direction: column;
+                      box-shadow: -12px 0 36px rgba(0,0,0,.5); overflow: hidden; }
+    .fd-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex;
+                 justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .fd-title { font-size: 15px; font-weight: 700; color: var(--text-main); line-height: 1.35; }
+    .fd-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .fd-body { padding: 18px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+    .fd-sec { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: rgba(255,255,255,.015); }
+    .fd-sec-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+                    color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .fd-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; font-size: 12.5px; }
+    .fd-kv div span { display: block; font-size: 11px; color: var(--text-muted); }
+    .rem-steps { margin: 8px 0 0 18px; padding: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-main); }
+    .rem-steps li { margin-bottom: 4px; }
+    .cov-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -921,6 +950,22 @@
         </button>
       </div>
       <div class="terms-note" id="termsNote" aria-live="polite"></div>
+    </div>
+  </div>
+  <!-- Finding Detail Drawer (Proof + Provenance + Remediation + Retest) -->
+  <div id="findingDrawerOverlay" class="finding-drawer-overlay" role="dialog" aria-modal="true"
+       aria-labelledby="fdTitle" hidden onclick="if(event.target===this) closeFindingDrawer()">
+    <div class="finding-drawer">
+      <div class="fd-header">
+        <div style="flex:1; min-width:0;">
+          <div class="fd-title" id="fdTitle">Finding Details</div>
+          <div class="fd-meta" id="fdBadges"></div>
+        </div>
+        <button class="icon-btn" type="button" aria-label="Close finding details" onclick="closeFindingDrawer()">
+          <i class="mdi mdi-close"></i>
+        </button>
+      </div>
+      <div class="fd-body" id="fdBody"></div>
     </div>
   </div>
   <div class="app-shell" id="appShell">
@@ -2711,13 +2756,17 @@
         const confOf = f => CONF[(f.confidence || 'MEDIUM').toUpperCase()] ? (f.confidence || 'MEDIUM').toUpperCase() : 'MEDIUM';
         const SEV = {CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1};
         const counts = {ALL: all.length, HIGH: 0, MEDIUM: 0, LOW: 0};
-        all.forEach(f => counts[confOf(f)]++);
+        window._findingsById = {};
+        all.forEach(f => {
+          counts[confOf(f)]++;
+          window._findingsById[f.id] = f;
+        });
         const sel = window._confFilter || 'ALL';
         if (filterEl) filterEl.innerHTML = ['ALL', 'HIGH', 'MEDIUM', 'LOW'].map(k =>
           `<button type="button" class="chip ${sel === k ? 'active' : ''}" aria-pressed="${sel === k}"
              onclick="window._confFilter='${k}'; loadFindingsLedger()">${k === 'ALL' ? 'All' : CONF[k][0]} (${counts[k]})</button>`).join('');
         const list = all.filter(f => sel === 'ALL' || confOf(f) === sel)
-          .sort((a, b) => (SEV[b.severity] || 0) - (SEV[a.severity] || 0) || CONF[confOf(b)][1] - CONF[confOf(a)][1]);
+          .sort((a, b) => (b.priority_score ?? 0) - (a.priority_score ?? 0) || (SEV[b.severity] || 0) - (SEV[a.severity] || 0) || CONF[confOf(b)][1] - CONF[confOf(a)][1]);
         if (!list.length) {
           tb.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:16px;">No ${CONF[sel][0].toLowerCase()} findings. <a href="#" onclick="window._confFilter='ALL'; loadFindingsLedger(); return false;" style="color:var(--primary);">Show all</a></td></tr>`;
           return;
@@ -2726,19 +2775,122 @@
           const stBadge = f.status === 'FIXED' ? 'badge-green' : (f.status === 'VERIFIED' || f.status === 'AUTH-GATED' ? 'badge-red' : 'badge-orange');
           const sevBadge = (f.severity === 'CRITICAL' || f.severity === 'HIGH') ? 'badge-red' : 'badge-neutral';
           const [cName, cLvl, cTip] = CONF[confOf(f)];
-          return `<tr>
+          const pScore = f.priority_score ?? 50;
+          const pCls = pScore >= 75 ? 'p-high' : (pScore >= 45 ? 'p-med' : 'p-low');
+          return `<tr class="f-row-click" onclick="openFindingDrawer(${f.id})" title="Click to inspect full proof, SHA-256 hash, and remediation steps">
             <td class="mono">#${f.id}</td>
             <td class="mono">${esc(f.target_ip)}${f.port ? ':' + f.port : ''}</td>
             <td><strong>${esc(f.title)}</strong></td>
-            <td><span class="badge ${sevBadge}">${esc(f.severity)}</span></td>
+            <td><span class="badge ${sevBadge}">${esc(f.severity)}</span> <span class="prio-pill ${pCls}" title="Fix-First Priority Score (${pScore}/100)">P:${pScore}</span></td>
             <td><span class="conf c${cLvl}" title="${cTip}"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>${cName}</span></td>
             <td><span class="badge ${stBadge}" id="fstatus_${f.id}">${esc(f.status)}</span></td>
             <td class="mono" style="font-size:11px; max-width:340px; overflow:hidden; text-overflow:ellipsis;" title="${esc(f.repro_display)}">${esc(f.evidence.slice(0, 120))}</td>
-            <td>${f.repro_display ? `<button class="btn btn-sm" onclick="retestFinding(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest</button>` : '&mdash;'}</td>
+            <td onclick="event.stopPropagation()" style="white-space:nowrap;">
+              <button class="btn btn-sm" onclick="openFindingDrawer(${f.id})" aria-label="Inspect finding #${f.id}"><i class="mdi mdi-eye-outline"></i> Inspect</button>
+              ${f.repro_display ? `<button class="btn btn-sm" onclick="retestFinding(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest</button>` : ''}
+            </td>
           </tr>`;
         }).join('');
       } catch (e) {}
     }
+
+    async function openFindingDrawer(fid) {
+      const ov = document.getElementById('findingDrawerOverlay');
+      if (!ov) return;
+      let f = (window._findingsById || {})[fid];
+      if (!f || !f.remediation) {
+        try {
+          const r = await (await fetch(`/api/findings/${fid}`)).json();
+          if (r.finding) f = r.finding;
+        } catch (e) {}
+      }
+      if (!f) { toast(`Finding #${fid} not found`, true); return; }
+      window._activeFinding = f;
+      const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+      const CONF = {HIGH: 'Certain', MEDIUM: 'Firm', LOW: 'Tentative'};
+      const stBadge = f.status === 'FIXED' ? 'badge-green' : (f.status === 'VERIFIED' || f.status === 'AUTH-GATED' ? 'badge-red' : 'badge-orange');
+      const sevBadge = (f.severity === 'CRITICAL' || f.severity === 'HIGH') ? 'badge-red' : 'badge-neutral';
+      const pScore = f.priority_score ?? 50;
+      const pCls = pScore >= 75 ? 'p-high' : (pScore >= 45 ? 'p-med' : 'p-low');
+
+      document.getElementById('fdTitle').textContent = `#${f.id} — ${f.title}`;
+      document.getElementById('fdBadges').innerHTML = `
+        <span class="badge ${sevBadge}">${esc(f.severity)}</span>
+        <span class="badge ${stBadge}">${esc(f.status)}</span>
+        <span class="badge badge-neutral">Confidence: ${esc(CONF[(f.confidence || 'MEDIUM').toUpperCase()] || 'Firm')}</span>
+        <span class="prio-pill ${pCls}">Priority: ${pScore}/100</span>
+      `;
+
+      const rem = f.remediation || {};
+      const stepsHtml = (rem.steps || []).map(s => `<li>${esc(s)}</li>`).join('');
+      const cov = f.coverage || {};
+      const covTags = [
+        ...(rem.cwe ? [rem.cwe] : []),
+        ...(cov.owasp_api || []),
+        ...(cov.owasp_wstg || []),
+        ...(cov.owasp_asvs || []).map(x => 'ASVS ' + x),
+        ...(cov.mitre_attack || []).map(x => 'ATT&CK ' + x),
+      ].map(t => `<span class="badge badge-neutral mono">${esc(t)}</span>`).join('');
+
+      document.getElementById('fdBody').innerHTML = `
+        <div class="fd-sec">
+          <div class="fd-sec-title"><i class="mdi mdi-target"></i> Target &amp; Timestamps</div>
+          <div class="fd-kv">
+            <div><span>Target</span><strong class="mono">${esc(f.target_ip)}${f.port ? ':' + f.port : ''}</strong></div>
+            <div><span>Category</span><strong class="mono">${esc(f.category)}</strong></div>
+            <div><span>First Seen</span><strong class="mono">${esc((f.first_seen || '').slice(0, 19).replace('T', ' '))}</strong></div>
+            <div><span>Last Retest</span><strong class="mono">${esc((f.last_retest || 'Never').slice(0, 19).replace('T', ' '))}</strong></div>
+          </div>
+        </div>
+        <div class="fd-sec">
+          <div class="fd-sec-title" style="justify-content:space-between;">
+            <span><i class="mdi mdi-console-line"></i> Proof &amp; Deterministic Replay</span>
+            <div style="display:flex; gap:6px;">
+              ${f.repro_display ? `<button class="btn btn-sm" type="button" onclick="copyFindingRepro()"><i class="mdi mdi-content-copy"></i> Copy Command</button>` : ''}
+              ${f.repro_display ? `<button class="btn btn-sm btn-primary" type="button" onclick="retestFromDrawer(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest Now (0 Tokens)</button>` : ''}
+            </div>
+          </div>
+          <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:4px;">Replay Command:</div>
+          <div class="terminal-box mono" style="font-size:11.5px; padding:8px 10px; margin-bottom:10px;">${esc(f.repro_display || '(no deterministic replay command stored)')}</div>
+          <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:4px;">Captured Evidence (Secret-Redacted):</div>
+          <div class="terminal-box mono" style="font-size:11.5px; max-height:200px; overflow:auto;">${esc(f.evidence || '(no evidence output)')}</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:8px;" class="mono">
+            SHA-256 Provenance: ${esc(f.evidence_sha256 || 'n/a')}
+          </div>
+        </div>
+        <div class="fd-sec">
+          <div class="fd-sec-title"><i class="mdi mdi-wrench-check-outline"></i> Engineering Remediation &amp; Framework Mapping</div>
+          <div style="font-size:13px; font-weight:600; color:var(--text-main);">${esc(rem.summary || 'Review service configuration and restrict unauthorized access.')}</div>
+          ${stepsHtml ? `<ol class="rem-steps">${stepsHtml}</ol>` : ''}
+          <div class="cov-tags">${covTags}</div>
+        </div>
+      `;
+      ov.hidden = false;
+    }
+
+    function closeFindingDrawer() {
+      const ov = document.getElementById('findingDrawerOverlay');
+      if (ov) ov.hidden = true;
+    }
+
+    function copyFindingRepro() {
+      const cmd = window._activeFinding?.repro_display || '';
+      if (!cmd) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).then(() => toast('Replay command copied'));
+      } else {
+        toast(cmd);
+      }
+    }
+
+    async function retestFromDrawer(fid, btn) {
+      await retestFinding(fid, btn);
+      await openFindingDrawer(fid);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeFindingDrawer();
+    });
 
     async function retestFinding(fid, btn) {
       const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i>';

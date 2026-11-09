@@ -39,7 +39,12 @@ def _nmap(runner, ip, args):
 def _whatweb(runner, ip, args):
     port = args.get("port")
     url = f"http://{ip}:{port}" if port else f"http://{ip}"
-    return runner.run(["whatweb", "--color=never", "-a", "1", url], timeout=35).out
+    cmd = ["whatweb", "--color=never", "-a", "1"]
+    hdr = args.get("_auth_header") or ""
+    if hdr:
+        cmd.append(f"--header={hdr}")
+    cmd.append(url)
+    return runner.run(cmd, timeout=35).out
 
 
 def _httpx(runner, ip, args):
@@ -135,6 +140,7 @@ def _report_finding(runner, ip, args):
     persisting it to the FindingsLedger."""
     port = int(args.get("port") or 80)
     title = str(args.get("title") or "Agent-reported finding").strip()[:180]
+    category = str(args.get("category") or "agent_validation").strip().lower()[:60] or "agent_validation"
     severity = str(args.get("severity") or "MEDIUM").upper()
     if severity not in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
         severity = "MEDIUM"
@@ -147,10 +153,12 @@ def _report_finding(runner, ip, args):
     # GET with -i (headers + body) so an expected_indicator in the response BODY
     # can match, not just response headers. Bounded, non-destructive.
     repro_cmd = ["curl", "-kisS", "--max-time", "5", url]
+    stored_repro = ["curl", "-kisS", "--max-time", "5", url]
     if args.get("_auth_header"):
         repro_cmd = ["curl", "-kisS", "--max-time", "5", "-H", args["_auth_header"], url]
+        stored_repro = ["curl", "-kisS", "--max-time", "5", "-H", redact_secrets(args["_auth_header"]), url]
     probe_out = runner.run(repro_cmd, timeout=10).out or ""
-    status = validate_evidence(probe_out, expected_indicator=indicator, category="agent_validation")
+    status = validate_evidence(probe_out, expected_indicator=indicator, category=category)
     db_path = args.get("_db_path")
     if db_path:
         try:
@@ -159,11 +167,11 @@ def _report_finding(runner, ip, args):
                 target_ip=ip,
                 port=port,
                 title=title,
-                category="agent_validation",
+                category=category,
                 severity=severity,
                 status=status,
                 evidence=probe_out[:800] or f"Indicator '{indicator}' not matched",
-                repro_cmd=["curl", "-kisS", "--max-time", "5", url],
+                repro_cmd=stored_repro,
             )
         except Exception:
             pass

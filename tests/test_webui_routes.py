@@ -65,6 +65,24 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     r_find = client.get("/api/findings")
     assert r_find.status_code == 200
     assert len(r_find.get_json()["findings"]) == 1
+    first_item = r_find.get_json()["findings"][0]
+    assert "remediation" in first_item and first_item["remediation"]["cwe"]
+    assert first_item["priority_score"] > 0
+
+    r_fdetail = client.get(f"/api/findings/{fid}")
+    assert r_fdetail.status_code == 200
+    fdetail = r_fdetail.get_json()["finding"]
+    assert fdetail["id"] == fid
+    assert "steps" in fdetail["remediation"]
+    assert fdetail["repro_display"].startswith("curl")
+    assert client.get("/api/findings/999999").status_code == 404
+
+    r_bench = client.get("/api/benchmark")
+    assert r_bench.status_code == 200
+    bdata = r_bench.get_json()
+    assert bdata["failed"] == 0
+    assert bdata["metrics"]["recall"] == 1.0
+    assert bdata["metrics"]["false_positive_rate"] == 0.0
 
     # Mock active_runner for deterministic retest
     class _MockRunner:

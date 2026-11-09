@@ -74,3 +74,17 @@ def test_cli_doctor_and_sqlite_backup_restore(cfg_path, tmp_path, capsys):
     res_out = json.loads(capsys.readouterr().out)
     assert res_out["ok"] is True
     assert restored.exists()
+
+
+def test_cli_benchmark_suite(capsys):
+    assert cli_main(["benchmark", "--json"]) == 0
+    res = json.loads(capsys.readouterr().out)
+    assert res["failed"] == 0
+    assert res["metrics"]["recall"] == 1.0
+    assert res["metrics"]["false_positive_rate"] == 0.0
+    assert res["metrics"]["f1_score"] == 1.0
+
+    assert cli_main(["benchmark"]) == 0
+    text_out = capsys.readouterr().out
+    assert "[ONIOPS Benchmark]" in text_out
+    assert "Recall=1.00" in text_out
