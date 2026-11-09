@@ -7,6 +7,8 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.0-beta] — 2026-11-09
+
 ### Added
 - **Confidence column** on findings (Certain / Firm / Tentative, inspired by
   Burp Suite), with filter chips and sorting by severity then confidence.
@@ -113,6 +115,7 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.3.3-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.0-beta...HEAD
+[0.4.0-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.0-beta
 [0.3.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.3-beta
 [0.3.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.2-beta
