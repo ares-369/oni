@@ -66,4 +66,7 @@ runs Python 3.10+ and can reach your Kali host and model endpoint:
    and `kali.host` to your attack box.
 2. Put the Kali SSH **private** key in `secrets/` and point `config.yaml` at it.
 3. Add cloud API keys to `.env` only for providers you use (Ollama needs none).
-4. Open the UI on port `8501`.
+4. Open the UI on port `8501`. It listens on `127.0.0.1` by default; to reach it
+   from other machines set `oniops.bind_host: "0.0.0.0"` and enable a login
+   (`auth.mode`). ONIOPS refuses to start on a network address without a login,
+   and refuses `auth.mode: proxy` without `auth.proxy_trusted_ips`.

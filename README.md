@@ -148,9 +148,13 @@ mkdir -p secrets && cp /path/to/kali_key secrets/kali_id_rsa && chmod 600 secret
 # 6. Start it
 docker compose up -d
 
-# 7. Open the UI
-#    http://localhost:8501   (or your Docker host's IP)
+# 7. Open the UI (published on this machine only)
+#    http://localhost:8501
 ```
+
+To reach it from other machines, change the port mapping in `docker-compose.yml`,
+remove the `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK` line there, and enable a login
+(`auth.mode`) in `config.yaml`. ONIOPS refuses to start exposed without a login.
 
 If your attack host / LLM are on the same LAN as the Docker host, uncomment
 `network_mode: host` in `docker-compose.yml`.
@@ -166,8 +170,13 @@ CTID=950 bash deploy/proxmox-lxc.sh
 # Then, inside the container:
 #   edit /opt/oniops/config.yaml, drop your SSH key in /opt/oniops/secrets/, and:
 pct exec 950 -- systemctl start oniops
-# UI is on the container's IP, port 8501
+# UI on the container's IP, port 8501 - set bind_host: "0.0.0.0" and a login first
 ```
+
+By default ONIOPS listens on `127.0.0.1` only. To open it from other machines, set
+`oniops.bind_host: "0.0.0.0"` **and** a login (`auth.mode`: basic, local, oidc or
+proxy) in `config.yaml`. ONIOPS refuses to start on a network address without a login,
+and refuses proxy mode without `auth.proxy_trusted_ips`.
 
 ### Option C — Windows (native, no WSL)
 
@@ -189,8 +198,13 @@ nano config.yaml                       # set scope + attack host + LLM
 mkdir -p secrets data                   # add your SSH key to secrets/
 sudo cp deploy/systemd/oniops.service /etc/systemd/system/
 sudo systemctl enable --now oniops
-# UI on http://<host>:8501
+# UI on http://127.0.0.1:8501 (see below to open it to your network)
 ```
+
+By default ONIOPS listens on `127.0.0.1` only. To open it from other machines, set
+`oniops.bind_host: "0.0.0.0"` **and** a login (`auth.mode`: basic, local, oidc or
+proxy) in `config.yaml`. ONIOPS refuses to start on a network address without a login,
+and refuses proxy mode without `auth.proxy_trusted_ips`.
 
 More targets (pipx, WSL2, Raspberry Pi, cloud VM, Kubernetes, Unraid,
 air-gapped) are covered in [`docs/INSTALL.md`](docs/INSTALL.md).

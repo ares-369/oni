@@ -14,9 +14,11 @@ enumeration only — nothing destructive runs autonomously.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import sqlite3
+import unicodedata
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -209,11 +211,56 @@ TOOLS: dict[str, dict] = {
 
 # ───────────────────────── Output Condenser & Quarantine ─────────────────────────
 _INJECTION_PATTERNS = [
+    # Fake privileged markers and chat-template / role tags.
     re.compile(r"(?i)\[\[\s*(?:system|admin|override)\b.*?\]\]"),
-    re.compile(r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|rules|prompts)"),
-    re.compile(r"<\|im_(start|end)\|>"),
+    re.compile(r"<\|\s*(?:im_start|im_end|system|user|assistant|endoftext)\s*\|>", re.I),
+    re.compile(r"(?i)</?\s*(?:system|assistant|instructions?)\s*>"),
+    re.compile(r"(?i)\[/?INST\]|<<\s*/?SYS\s*>>"),
+    re.compile(r"(?im)^\s*#{2,}\s*(?:system|instructions?)\s*:"),
     re.compile(r"(?i)</?untrusted_tool_output[^>]*>"),
+    # "ignore / disregard / forget ... previous instructions" and friends.
+    re.compile(r"(?i)\b(?:ignore|disregard|forget|override|bypass)\s+(?:(?:all|any|the|your|my|of)\s+){0,3}"
+               r"(?:previous|prior|above|earlier|preceding|original)\b"),
+    re.compile(r"(?i)\b(?:ignore|disregard|forget)\s+(?:everything|all)\s+(?:above|before|prior|previous|you\s+were\s+told)\b"),
+    re.compile(r"(?i)\b(?:ignore|disregard|forget|override|bypass|disable)\s+(?:(?:the|your|all|any|its)\s+){0,2}"
+               r"(?:scope|rules|instructions|guidelines|safety|restrictions|guard|guardrails|system\s+prompt)\b"),
+    # Role reassignment / new instructions aimed at the model.
+    re.compile(r"(?i)\byou\s+are\s+now\s+(?:dan\b|an?\s+(?:ai|assistant|model|unrestricted|jailbroken|uncensored)\b"
+               r"|in\s+(?:developer|god|jailbreak)\s+mode|free\b|unrestricted\b)"),
+    re.compile(r"(?i)\bnew\s+(?:instructions?|task|rules|system\s+prompt)\s*:"),
+    re.compile(r"(?i)\b(?:note|message|instructions?)\s+(?:to|for)\s+(?:the\s+)?"
+               r"(?:ai|assistant|agent|llm|model|chatbot|bot|gpt)\b"),
 ]
+
+# Invisible characters used to split keywords past filters (zero-width, BOM,
+# bidirectional overrides, word joiners).
+_INVISIBLE = re.compile("[​-‏‪-‮⁠-⁤﻿]")
+_B64_TOKEN = re.compile(r"\b[A-Za-z0-9+/]{24,}={0,2}")
+
+
+def _normalize_for_injection_scan(text: str) -> str:
+    """Fold look-alike Unicode (e.g. full-width letters) to plain text and drop
+    invisible characters, so obfuscated keywords match the patterns."""
+    return _INVISIBLE.sub("", unicodedata.normalize("NFKC", text or ""))
+
+
+def _filter_injections(text: str) -> str:
+    out = _normalize_for_injection_scan(text)
+    for pat in _INJECTION_PATTERNS:
+        out = pat.sub("[FILTERED-PROMPT-INJECTION]", out)
+
+    # Base64-encoded instructions: decode candidate blobs and filter the blob
+    # only if the decoded text is itself an injection (harmless base64 stays).
+    def _b64(m: re.Match) -> str:
+        tok = m.group(0)
+        try:
+            dec = base64.b64decode(tok + "=" * (-len(tok) % 4), validate=False).decode("utf-8")
+        except Exception:
+            return tok
+        dec = _normalize_for_injection_scan(dec)
+        return "[FILTERED-PROMPT-INJECTION]" if any(p.search(dec) for p in _INJECTION_PATTERNS) else tok
+
+    return _B64_TOKEN.sub(_b64, out)
 
 
 def summarize_tool_output(tool: str, raw: str) -> str:
@@ -250,9 +297,7 @@ def quarantine_output(tool: str, raw: str) -> str:
     """Sanitize secrets, neutralize indirect prompt-injection payloads planted in
     target banners/HTML, and wrap in explicit untrusted-data delimiters."""
     condensed = summarize_tool_output(tool, raw)
-    redacted = redact_secrets(condensed)
-    for pat in _INJECTION_PATTERNS:
-        redacted = pat.sub("[FILTERED-PROMPT-INJECTION]", redacted)
+    redacted = _filter_injections(redact_secrets(condensed))
     return f'<untrusted_tool_output tool="{tool}">\n{redacted[:1800]}\n</untrusted_tool_output>'
 
 

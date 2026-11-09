@@ -192,7 +192,12 @@ def init_auth(app, cfg) -> None:
 
         if mode == "proxy":
             # Anti-forgery: only a trusted proxy IP may assert the identity header.
-            if cfg.auth.proxy_trusted_ips and request.remote_addr not in cfg.auth.proxy_trusted_ips:
+            # Fail CLOSED: with no trusted-proxy list, anyone could send the
+            # header and log in as any user, so refuse every request instead.
+            if not cfg.auth.proxy_trusted_ips:
+                return Response("Forbidden: auth.mode=proxy requires auth.proxy_trusted_ips "
+                                "(the reverse proxy's IP). Refusing to trust the identity header.", 403)
+            if request.remote_addr not in cfg.auth.proxy_trusted_ips:
                 return Response("Forbidden: request did not arrive via a trusted proxy.", 403)
             user = request.headers.get(cfg.auth.proxy_header, "")
             if user and _user_allowed(cfg, user):

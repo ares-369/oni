@@ -50,4 +50,6 @@ echo
 echo "[ONIOPS] LXC ${CTID} ready."
 echo "  Next: edit /opt/oniops/config.yaml (scope + Kali host), drop your SSH key"
 echo "  in /opt/oniops/secrets/, then:  pct exec ${CTID} -- systemctl start oniops"
-echo "  Web UI on the container IP, port 8501."
+echo "  To open the UI from your network: set oniops.bind_host: \"0.0.0.0\" AND a login"
+echo "  (auth.mode) in config.yaml - ONIOPS refuses to start exposed without one."
+echo "  Then browse to the container IP, port 8501."

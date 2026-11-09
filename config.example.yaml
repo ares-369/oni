@@ -6,8 +6,14 @@
 
 oniops:
   instance_name: "ONIOPS"
-  bind_host: "0.0.0.0"        # listen address for the web UI
+  # Listen address for the web UI. 127.0.0.1 = this machine only (safe default).
+  # To reach ONIOPS from other machines, set 0.0.0.0 AND enable a login below
+  # (auth.mode) - ONIOPS refuses to start on a network address with no login.
+  bind_host: "127.0.0.1"
   bind_port: 8501
+  # Only set this if access is already restricted another way (e.g. Docker
+  # publishing the port on 127.0.0.1 only). Never on an open network.
+  # allow_unauthenticated_network: false
   # Public base URL when behind a reverse proxy (used for OIDC redirect URIs).
   # external_url: "https://oniops.example.com"
 
@@ -65,21 +71,23 @@ kali:
 #  (e.g. Authentik), or "oidc" to let ONIOPS do SSO itself.
 #
 #  mode: none | basic | local | oidc | proxy
-#    none   - no login (default)
+#    none   - no login (default; only allowed while bind_host is 127.0.0.1)
 #    basic  - HTTP Basic (single operator)
 #    local  - built-in login page + session (set password_hash, or
 #             ONIOPS_AUTH_PASSWORD in .env; and ONIOPS_SECRET_KEY in .env)
 #    oidc   - SSO via ANY OpenID Connect provider (Authentik, Keycloak,
 #             Google, Azure AD, Okta...). Needs: pip install 'oniops[oidc]'
 #    proxy  - trust a reverse-proxy forward-auth header
+#             (REQUIRES proxy_trusted_ips, or ONIOPS refuses to start)
 # ---------------------------------------------------------------------
 auth:
   mode: "none"
   username: "oniops"
   # password_hash: "pbkdf2_sha256$..."   # generate: python -c "from oniops.auth import hash_password;print(hash_password('yourpw'))"
   proxy_header: "X-Forwarded-User"        # for mode: proxy (e.g. X-authentik-username)
-  proxy_trusted_ips: []                    # for mode: proxy — only these source IPs may assert the header
-                                           # (anti-forgery; set to your reverse proxy's IP, e.g. ["10.0.0.151"])
+  proxy_trusted_ips: []                    # REQUIRED for mode: proxy — only these source IPs may assert the
+                                           # header (your reverse proxy's IP, e.g. ["10.0.0.151"]). Empty =
+                                           # ONIOPS refuses to start, because anyone could forge the header.
   allowed_users: []                        # optional allowlist (oidc/proxy); empty = any authenticated
   oidc:                                    # for mode: oidc
     issuer: ""                             # e.g. https://auth.example.com/application/o/oniops/

@@ -115,6 +115,10 @@ class Config:
     llm: dict[str, Any]
     integrations: dict[str, Any]
     path: Path
+    # Explicit opt-in to serve the UI on a network address WITHOUT a login.
+    # Only safe when something else restricts access (e.g. Docker publishing
+    # the port on 127.0.0.1 only). Default False: ONIOPS refuses to start.
+    allow_unauthenticated_network: bool = False
 
     # -- secrets (from .env) --
     def secret(self, name: str) -> str:
@@ -218,7 +222,9 @@ def load_config() -> Config:
         raw=data,
         instance_name=str(oniops.get("instance_name", "ONIOPS")),
         external_url=str(oniops.get("external_url", "")).rstrip("/"),
-        bind_host=str(oniops.get("bind_host", "0.0.0.0")),
+        # Secure default: listen on loopback only. ONIOPS_BIND_HOST overrides the
+        # file (used by Docker to listen inside its container).
+        bind_host=str(os.getenv("ONIOPS_BIND_HOST") or oniops.get("bind_host", "127.0.0.1")),
         bind_port=int(oniops.get("bind_port", 8501)),
         scope=scope,
         kali=active_host,
@@ -227,6 +233,10 @@ def load_config() -> Config:
         llm=data.get("llm", {}) or {},
         integrations=data.get("integrations", {}) or {},
         path=path,
+        allow_unauthenticated_network=(
+            str(os.getenv("ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK", "")).strip().lower() in ("1", "true", "yes")
+            or bool(oniops.get("allow_unauthenticated_network", False))
+        ),
     )
 
 

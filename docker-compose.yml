@@ -5,7 +5,16 @@ services:
     container_name: oniops
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      # Published on THIS machine only. Open http://localhost:8501
+      - "127.0.0.1:8501:8501"
+    environment:
+      # Inside the container ONIOPS must listen on 0.0.0.0 for the port mapping
+      # above to reach it. That is safe ONLY because the port is published on
+      # 127.0.0.1. If you publish it on your network (e.g. "8501:8501") or use
+      # network_mode: host, DELETE the next line and set auth.mode in
+      # config.yaml - ONIOPS will then refuse to start without a login.
+      ONIOPS_BIND_HOST: "0.0.0.0"
+      ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK: "1"
     volumes:
       # Your environment-specific files (kept out of the image / git):
       - ./config.yaml:/app/config.yaml:ro
@@ -13,5 +22,6 @@ services:
       - ./secrets:/app/secrets:ro
       - ./data:/app/data
     # ONIOPS reaches your Kali host and LLMs over the network; if those live on
-    # the Docker host's LAN, host networking is often simplest:
+    # the Docker host's LAN, host networking is often simplest
+    # (remove ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK and enable a login first):
     # network_mode: host
