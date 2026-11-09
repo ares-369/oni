@@ -12,5 +12,6 @@ Describe the offensive testing, AI red-team, or GRC workflow this feature suppor
 ## Proposed solution
 How should it work within ONIOPS's scope-locked, non-destructive-by-default architecture?
 
-## Note on project name
-Per `CONTRIBUTING.md`, the project name is fixed as **ONIOPS**.
+## Anything else?
+Links, examples from other tools, or screenshots that would help. Rough ideas
+are welcome too — thank you for suggesting this!

@@ -1,6 +1,11 @@
 # ONIOPS — Offensive Neural Intelligence
 
-**An open-source, provider-agnostic, autonomous red-team framework (`v0.3.1-beta`).**
+[![CI](https://github.com/ares-369/oniops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oniops/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.10–3.12](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![Release](https://img.shields.io/github/v/release/ares-369/oniops?include_prereleases&sort=semver)](https://github.com/ares-369/oniops/releases)
+
+**An open-source, provider-agnostic, autonomous red-team framework.**
 
 ONIOPS drives a Kali (or any tooled Linux) toolchain over SSH, reasons with the
 LLM(s) of your choice — local or cloud — and runs scope-locked offensive
@@ -267,27 +272,48 @@ python -m oniops restore ./backups/oniops-snapshot.sqlite
 
 ---
 
-## How ONIOPS Compares
+## Where ONIOPS Fits
 
-| Capability | ONIOPS (`v0.3.1-beta`) | PentAGI / Strix | Garak / Promptfoo | Commercial SaaS (NodeZero / XBOW) |
-| --- | --- | --- | --- | --- |
-| **Deployment Footprint** | Single Python process + SQLite + SSH to your Kali box | Heavy Docker-in-Docker + Postgres/pgvector | CLI-only LLM scanner | Cloud SaaS ($30k–$100k+/yr) |
-| **Network + Web/API Pentesting** | Built-in (`nmap`, `nuclei`, `ffuf`, `nikto`, 3-tier BOLA/BFLA, JS route discovery) | Built-in | None | Built-in |
-| **AI / LLM Red-Teaming & GRC** | Built-in (14 probes + YAML packs + 6 converters + 3-turn Crescendo) | None | Built-in | Separate product |
-| **Zero-Token PoC Retest** | Built-in (`POST /api/findings/<id>/retest` & `oniops retest --all`) | Re-runs LLM agent | Re-runs LLM probes | Built-in |
-| **7B Local Model Optimization** | Built-in (`summarize_tool_output` + `<untrusted_tool_output>` quarantine) | Often overflows context | N/A | Cloud-locked |
-| **Evidence Provenance** | SHA-256 digest + calibrated confidence + pre-LLM secret redaction | Raw logs | JSON logs | Proprietary cloud |
+There are excellent tools in this space, and ONIOPS borrows ideas from many of
+them. It is not trying to replace any of them — it aims to be a small,
+self-hostable option that combines classic pentest tooling with an AI operator
+and LLM red-teaming in one place.
+
+| If you want… | Also look at | What ONIOPS tries to add |
+| --- | --- | --- |
+| A mature autonomous pentest agent | [PentAGI](https://github.com/vxcontrol/pentagi), [Strix](https://github.com/usestrix/strix) | A lightweight single-process deploy (Python + SQLite + SSH to your own Kali box) |
+| Dedicated LLM vulnerability scanning | [garak](https://github.com/NVIDIA/garak), [promptfoo](https://github.com/promptfoo/promptfoo), [PyRIT](https://github.com/Azure/PyRIT) | LLM probes side by side with network/web testing, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI RMF |
+| Enterprise autonomous pentesting | Commercial platforms such as NodeZero or XBOW | A free, open-source, homelab-to-small-team option you fully control |
+
+ONIOPS is **beta** software. Many features are unit-tested but have had limited
+real-world testing — please treat findings as leads to verify, and
+[open an issue](https://github.com/ares-369/oniops/issues) when something is wrong.
+
+## Acknowledgements
+
+ONIOPS stands on the shoulders of the open-source security community. It
+orchestrates tools such as [Nmap](https://nmap.org),
+[Nuclei](https://github.com/projectdiscovery/nuclei),
+[httpx](https://github.com/projectdiscovery/httpx),
+[ffuf](https://github.com/ffuf/ffuf), [Nikto](https://github.com/sullo/nikto),
+[WhatWeb](https://github.com/urbanadventurer/WhatWeb) and
+[Exploit-DB / searchsploit](https://www.exploit-db.com), and its AI red-team
+probes were informed by the research behind garak, PyRIT, promptfoo and
+DeepTeam. Thank you to everyone who builds and maintains them.
 
 ---
 
 ## Security
 
-ONIOPS is itself hardened to the frameworks it tests against — see
-[`SECURITY.md`](SECURITY.md). Report vulnerabilities privately.
+ONIOPS tries to follow the same security guidance it tests for — see
+[`SECURITY.md`](SECURITY.md). If you find a vulnerability in ONIOPS itself,
+please report it privately.
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The project name is fixed as **ONIOPS**.
+Contributions of all sizes are welcome — bug reports, ideas, docs and code.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) to get started, and
+[`CHANGELOG.md`](CHANGELOG.md) for what has changed between releases.
 
 ## License
 
