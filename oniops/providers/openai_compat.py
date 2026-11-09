@@ -53,7 +53,7 @@ class OpenAICompatProvider(LLMProvider):
                 max_tokens=max_tokens,
             )
             return LLMResult(text=(resp.choices[0].message.content or "").strip(), model=use_model)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return LLMResult(text="", model=use_model, error=f"{self.name} error: {exc}")
 
     def health(self) -> bool:

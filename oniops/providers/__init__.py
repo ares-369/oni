@@ -81,7 +81,7 @@ class LLM:
         for name in self.configured_providers():
             try:
                 out[name] = self.provider(name).health()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 out[name] = False
         return out
 

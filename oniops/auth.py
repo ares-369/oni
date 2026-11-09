@@ -20,7 +20,7 @@ import hmac
 import logging
 import secrets
 
-from flask import (Response, redirect, render_template, request, session)
+from flask import Response, redirect, render_template, request, session
 
 log = logging.getLogger("oniops.auth")
 
@@ -76,8 +76,8 @@ def init_auth(app, cfg) -> None:
     if mode == "oidc":
         try:
             from authlib.integrations.flask_client import OAuth  # optional dep
-        except ImportError:
-            raise RuntimeError("auth.mode=oidc requires the 'oidc' extra: pip install 'oniops[oidc]'")
+        except ImportError as err:
+            raise RuntimeError("auth.mode=oidc requires the 'oidc' extra: pip install 'oniops[oidc]'") from err
         o = cfg.auth.oidc
         if not (o.get("issuer") and o.get("client_id")):
             raise RuntimeError("auth.mode=oidc requires auth.oidc.issuer and client_id")
@@ -162,7 +162,7 @@ def init_auth(app, cfg) -> None:
         try:
             token = oauth.oniops_sso.authorize_access_token()
             info = token.get("userinfo") or {}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("OIDC callback exchange failed: %s", exc)
             return _fail("Could not complete sign-in. Please try again.")
         claim = cfg.auth.oidc.get("username_claim", "email")

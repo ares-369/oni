@@ -30,3 +30,4 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+.venv-test/

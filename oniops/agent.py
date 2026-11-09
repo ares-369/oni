@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable
+from collections.abc import Callable
 
 from .scope import Scope, ScopeViolation
 
@@ -37,7 +37,14 @@ def _whatweb(runner, ip, args):
 
 
 def _httpx(runner, ip, args):
-    return runner.run(["httpx", "-u", f"http://{ip}", "-status-code", "-title",
+    # Honour a discovered port and path (e.g. probe /login or /_adm found by
+    # ffuf), not just the host root.
+    port = args.get("port")
+    path = str(args.get("path") or "").lstrip("/")
+    scheme = "https" if str(port) in ("443", "8443", "9443") else "http"
+    base = f"{scheme}://{ip}:{port}" if port else f"{scheme}://{ip}"
+    url = f"{base}/{path}" if path else base
+    return runner.run(["httpx", "-u", url, "-status-code", "-title",
                        "-tech-detect", "-silent"], timeout=40).out
 
 
@@ -77,7 +84,7 @@ TOOLS: dict[str, dict] = {
     "whatweb": {"needs_target": True,
                 "desc": "Fingerprint a web app. args: {target, port?}", "fn": _whatweb},
     "httpx": {"needs_target": True,
-              "desc": "Probe HTTP: status, title, tech. args: {target}", "fn": _httpx},
+              "desc": "Probe HTTP: status, title, tech. args: {target, port?, path?} — pass a path you discovered (e.g. /login) to probe it, not just the root", "fn": _httpx},
     "nuclei": {"needs_target": True,
                "desc": "CVE/misconfig scan of a web service. args: {target, port?}", "fn": _nuclei},
     "ffuf": {"needs_target": True,
@@ -149,6 +156,7 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     transcript: list[dict] = []
     seen: set[str] = set()
+    stall = 0  # consecutive non-advancing turns (bad JSON / repeat / unknown tool)
     bound = llm.for_role("planner")
 
     emit("AGENT_START", "busy", f"Autonomous agent: {objective[:80]}")
@@ -164,6 +172,10 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
                     "final": f"Agent stopped: LLM error ({res.error}).", "completed": False}
         act = _extract_json(reply)
         if not act:
+            stall += 1
+            if stall >= 3:
+                emit("AGENT_WRAP", "warn", "Agent stalled on invalid output; summarizing")
+                break
             messages.append({"role": "assistant", "content": reply[:600]})
             messages.append({"role": "user", "content": "That was not valid JSON. Reply with ONLY one JSON action or a final object."})
             continue
@@ -178,11 +190,14 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
 
         call_key = f"{tool}:{json.dumps(targs, sort_keys=True)}"
         if tool not in TOOLS:
+            stall += 1
             obs = f"Unknown tool '{tool}'. Available: {', '.join(TOOLS)}."
         elif call_key in seen:
+            stall += 1
             obs = ("You already ran this exact call and it did not advance the assessment. "
                    "Choose a DIFFERENT tool or arguments, or return a final summary now.")
         else:
+            stall = 0
             seen.add(call_key)
             spec = TOOLS[tool]
             try:
@@ -199,13 +214,16 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
                     obs = spec["fn"](runner, None, targs)
             except ScopeViolation as exc:
                 obs = f"Scope violation: {exc}"
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 obs = f"Tool error: {exc}"
 
         obs = (obs or "(no output)")[:2000]
         transcript.append({"step": step, "thought": thought, "tool": tool, "args": targs, "observation": obs})
         messages.append({"role": "assistant", "content": reply[:600]})
         messages.append({"role": "user", "content": f"Observation from {tool}:\n{obs}\n\nNext JSON action, or a final object if done."})
+        if stall >= 3:
+            emit("AGENT_WRAP", "warn", "Agent stalled (repeated/invalid calls); summarizing")
+            break
 
     # Budget exhausted — ask for a wrap-up.
     emit("AGENT_WRAP", "busy", "Step budget reached; summarizing")

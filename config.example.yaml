@@ -124,3 +124,11 @@ integrations:
   caldera:
     enabled: false
     host: ""                 # e.g. http://caldera.local:8888  (CALDERA_API_KEY in .env)
+  nvd:
+    # CVE enrichment. searchsploit (Exploit-DB, on the attack host) is used
+    # offline regardless. Enabling this additionally resolves detected
+    # product+version into CVE IDs + CVSS via the free public NVD API
+    # (nvd.nist.gov). No MISP / threat-intel server required. Best-effort:
+    # if NVD is unreachable, results fall back to offline searchsploit only.
+    enabled: false
+    api_key: ""              # optional; only raises NVD rate limits

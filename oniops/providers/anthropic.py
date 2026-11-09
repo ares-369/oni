@@ -39,7 +39,7 @@ class AnthropicProvider(LLMProvider):
             )
             text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
             return LLMResult(text=text.strip(), model=use_model)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return LLMResult(text="", model=use_model, error=f"Anthropic error: {exc}")
 
     def health(self) -> bool:

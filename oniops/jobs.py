@@ -14,9 +14,10 @@ import sqlite3
 import time
 import traceback
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 
 def _now() -> str:
@@ -27,7 +28,7 @@ class JobControl:
     """Passed into a job's function so it can be paused/stopped cooperatively.
     The function calls checkpoint() at safe boundaries (between tools/steps)."""
 
-    def __init__(self, mgr: "JobManager", job_id: str):
+    def __init__(self, mgr: JobManager, job_id: str):
         self.mgr = mgr
         self.job_id = job_id
 
@@ -48,6 +49,7 @@ class JobManager:
         self.pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="oniops-job")
         self._control: dict[str, str] = {}
         self._init_db()
+        self._reconcile_orphans()
 
     def _conn(self):
         return sqlite3.connect(self.db_path, timeout=30)
@@ -67,13 +69,27 @@ class JobManager:
             )""")
             conn.commit()
 
+    def _reconcile_orphans(self):
+        """On startup the thread pool is empty, so any job still marked
+        queued/running in SQLite is a ghost from a previous process (crash,
+        reboot, redeploy). Mark them interrupted so the UI never shows a job
+        that will never finish."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE jobs SET status='interrupted', finished=?, "
+                "error='Process restarted before this job completed.' "
+                "WHERE status IN ('queued','running')",
+                (_now(),),
+            )
+            conn.commit()
+
     def _set(self, job_id: str, **fields):
         cols = ", ".join(f"{k}=?" for k in fields)
         with self._conn() as conn:
             conn.execute(f"UPDATE jobs SET {cols} WHERE id=?", (*fields.values(), job_id))
             conn.commit()
 
-    def submit(self, kind: str, meta: dict[str, Any], fn: Callable[["JobControl"], dict]) -> str:
+    def submit(self, kind: str, meta: dict[str, Any], fn: Callable[[JobControl], dict]) -> str:
         job_id = uuid.uuid4().hex[:12]
         self._control[job_id] = "run"
         with self._conn() as conn:
@@ -85,14 +101,14 @@ class JobManager:
         self.pool.submit(self._run, job_id, fn)
         return job_id
 
-    def _run(self, job_id: str, fn: Callable[["JobControl"], dict]):
+    def _run(self, job_id: str, fn: Callable[[JobControl], dict]):
         self._set(job_id, status="running")
         ctl = JobControl(self, job_id)
         try:
             result = fn(ctl)
             status = "cancelled" if self._control.get(job_id) == "cancel" else "done"
             self._set(job_id, status=status, finished=_now(), result=json.dumps(result))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._set(job_id, status="error", finished=_now(),
                       error=f"{exc}\n{traceback.format_exc()[-800:]}")
         finally:

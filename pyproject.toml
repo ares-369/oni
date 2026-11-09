@@ -38,7 +38,32 @@ all = ["anthropic>=0.40", "google-genai>=0.3", "openai>=1.40", "authlib>=1.3"]
 oniops = "oniops.server:main"
 
 [project.urls]
-Homepage = "https://github.com/oniops/oniops"
+Homepage = "https://github.com/ares-369/oniops"
+Repository = "https://github.com/ares-369/oniops"
+Issues = "https://github.com/ares-369/oniops/issues"
 
 [tool.setuptools.packages.find]
 include = ["oniops*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",   # line length handled pragmatically (prompts/templates)
+    "E402",   # module-level imports after dotenv/config bootstrap in webui.py
+    "E701",   # compact single-line statements in parsers
+    "E702",   # compact semicolon statements
+    "E741",   # short comprehension loop vars
+    "RUF005", # list concatenation in prompt assembly
+    "RUF012", # lightweight stub classes in tests
+    "SIM105", # contextlib.suppress vs explicit try/except
+    "SIM108", # ternary operator preference
+]
+

@@ -92,7 +92,7 @@ class KaliRunner:
 
         try:
             client = self._client()
-        except Exception as exc:  # noqa: BLE001 - surface any SSH/connect error
+        except Exception as exc:
             return CmdResult(rc=1, out=f"SSH connection error: {exc}")
 
         # TOFU: persist newly-accepted host keys so a later change is caught.
@@ -110,7 +110,7 @@ class KaliRunner:
             rc = stdout.channel.recv_exit_status()
             combined = out + (("\n" + err) if err.strip() else "")
             return CmdResult(rc=rc, out=combined.strip())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return CmdResult(rc=124, out=f"Command error/timeout: {exc}")
         finally:
             client.close()
