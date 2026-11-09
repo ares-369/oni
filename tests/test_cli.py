@@ -10,7 +10,7 @@ from oniops.findings import FindingsLedger
 def test_cli_version_and_playbooks(capsys):
     assert cli_main(["version"]) == 0
     out = capsys.readouterr().out
-    assert "ONIOPS 0.3.0-beta" in out
+    assert "ONIOPS 0.3.1-beta" in out
 
     assert cli_main(["playbooks"]) == 0
     pb_out = json.loads(capsys.readouterr().out)
@@ -49,3 +49,25 @@ def test_cli_findings_list(tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert len(data["findings"]) == 1
     assert len(data["findings"][0]["evidence_sha256"]) == 64
+    assert data["findings"][0]["confidence"] in ("HIGH", "MEDIUM")
+
+
+def test_cli_doctor_and_sqlite_backup_restore(cfg_path, tmp_path, capsys):
+    db = tmp_path / "oniops.sqlite"
+    bak = tmp_path / "oniops.backup.sqlite"
+    restored = tmp_path / "oniops.restored.sqlite"
+
+    assert cli_main(["doctor", "--db", str(db)]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert doc["ok"] is True
+    assert doc["db_integrity"] == "ok"
+
+    assert cli_main(["backup", str(bak), "--db", str(db)]) == 0
+    bak_res = json.loads(capsys.readouterr().out)
+    assert bak_res["ok"] is True
+    assert bak.exists()
+
+    assert cli_main(["restore", str(bak), "--db", str(restored)]) == 0
+    res_out = json.loads(capsys.readouterr().out)
+    assert res_out["ok"] is True
+    assert restored.exists()

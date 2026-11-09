@@ -1,6 +1,6 @@
 # ONIOPS — Offensive Neural Intelligence
 
-**An open-source, provider-agnostic, autonomous red-team framework (`v0.3.0-beta`).**
+**An open-source, provider-agnostic, autonomous red-team framework (`v0.3.1-beta`).**
 
 ONIOPS drives a Kali (or any tooled Linux) toolchain over SSH, reasons with the
 LLM(s) of your choice — local or cloud — and runs scope-locked offensive
@@ -228,6 +228,46 @@ Traefik/NPM). See the Authentication section of `config.example.yaml`.
 - **Tooling Arsenal** — see/install tools on the attack host.
 - **AI / LLM Red Team & GRC** — red-team an LLM endpoint and get a posture report.
 - **Settings** — edit scope, hosts, providers and integrations live.
+
+---
+
+## CLI & CI/CD Security Gate
+
+ONIOPS can be driven headlessly from a terminal, cron job, or CI/CD pipeline:
+
+```bash
+# Self-diagnostics (config, scope, SQLite integrity, playbooks, attack runner)
+python -m oniops doctor --check-runner
+
+# White-Box source & sink scan with SARIF v2.1.0 output and CI exit gate
+python -m oniops whitebox ./src --fail-on HIGH --sarif results.sarif
+
+# Run a scoped assessment from the CLI
+python -m oniops assess 192.168.1.50 --profile web_app_pt
+
+# Zero-token deterministic SSH PoC retest (single finding or batch)
+python -m oniops retest --all --target 192.168.1.50
+
+# Compare an assessment against its previous baseline
+python -m oniops diff 2
+
+# Online SQLite backup and verified restore
+python -m oniops backup ./backups/oniops-snapshot.sqlite
+python -m oniops restore ./backups/oniops-snapshot.sqlite
+```
+
+---
+
+## How ONIOPS Compares
+
+| Capability | ONIOPS (`v0.3.1-beta`) | PentAGI / Strix | Garak / Promptfoo | Commercial SaaS (NodeZero / XBOW) |
+| --- | --- | --- | --- | --- |
+| **Deployment Footprint** | Single Python process + SQLite + SSH to your Kali box | Heavy Docker-in-Docker + Postgres/pgvector | CLI-only LLM scanner | Cloud SaaS ($30k–$100k+/yr) |
+| **Network + Web/API Pentesting** | Built-in (`nmap`, `nuclei`, `ffuf`, `nikto`, 3-tier BOLA/BFLA, JS route discovery) | Built-in | None | Built-in |
+| **AI / LLM Red-Teaming & GRC** | Built-in (14 probes + YAML packs + 6 converters + 3-turn Crescendo) | None | Built-in | Separate product |
+| **Zero-Token PoC Retest** | Built-in (`POST /api/findings/<id>/retest` & `oniops retest --all`) | Re-runs LLM agent | Re-runs LLM probes | Built-in |
+| **7B Local Model Optimization** | Built-in (`summarize_tool_output` + `<untrusted_tool_output>` quarantine) | Often overflows context | N/A | Cloud-locked |
+| **Evidence Provenance** | SHA-256 digest + calibrated confidence + pre-LLM secret redaction | Raw logs | JSON logs | Proprietary cloud |
 
 ---
 
