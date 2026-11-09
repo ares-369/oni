@@ -86,6 +86,8 @@ class AuthConfig:
     proxy_trusted_ips: list = field(default_factory=list)  # only these source IPs may assert the header (anti-forgery)
     allowed_users: list = field(default_factory=list)  # allowlist (oidc/proxy); empty = any authenticated
     oidc: dict = field(default_factory=dict)  # issuer, client_id, client_secret, scopes, username_claim
+    default_role: str = "admin"               # admin | operator | viewer
+    roles: dict[str, str] = field(default_factory=dict)  # username -> role mapping
 
     @property
     def enabled(self) -> bool:
@@ -195,6 +197,8 @@ def load_config() -> Config:
         proxy_trusted_ips=list(auth_raw.get("proxy_trusted_ips", []) or []),
         allowed_users=list(auth_raw.get("allowed_users", []) or []),
         oidc=oidc,
+        default_role=str(auth_raw.get("default_role", "admin")).lower(),
+        roles={str(k): str(v).lower() for k, v in (auth_raw.get("roles") or {}).items()},
     )
 
     return Config(

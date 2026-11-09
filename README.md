@@ -24,18 +24,21 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 - **Any LLM** — Ollama (local), Anthropic Claude, Google Gemini, OpenAI, Azure
   OpenAI, or any OpenAI-compatible endpoint. Per-role model selection.
-- **Black-Box, Grey-Box (3-Tier BOLA/BFLA) & Lightweight White-Box** — run
+- **Black-Box, Grey-Box (3-Tier BOLA/BFLA with JSON Content-Diffing) & Lightweight White-Box** — run
   unauthenticated recon, pass primary + low-privilege auth headers (`Authorization`
   / `Cookie`) to WAPT and the AI Agent, auto-discover OpenAPI/Swagger specs for
-  3-tier `Unauth vs. Low-Priv vs. Admin` BOLA/BFLA differential checks, extract
+  3-tier `Unauth vs. Low-Priv vs. Admin` BOLA/BFLA differential checks (with response
+  body & JSON schema validation to filter out HTML SPA shells and empty `{}` stubs), extract
   hidden API routes from SPA JavaScript bundles, and scan source code for routes
   and dangerous sinks.
-- **Autonomous ReAct Agent with Independent Validator, Graph Memory & Quarantine** —
-  plans and executes 12 scoped tools (`nmap`, `whatweb`, `httpx`, `nuclei`,
+- **41 Kali Arsenal Tools + 12 Bounded ReAct Agent Tools** — manages and executes a
+  full catalog of **41 offensive tools** across YAML Playbooks, scan profiles, and the
+  Arsenal UI, while restricting the autonomous LLM ReAct loop to a curated subset of
+  **12 deterministic tools** (`nmap`, `whatweb`, `httpx`, `nuclei`,
   `ffuf`, `nikto`, `wafw00f`, `sslscan`, `openapi_probe`, `report_finding`,
-  `enum4linux`, `searchsploit`), independently verifies agent-submitted findings
-  against live HTTP indicators before persisting to the ledger, condenses noisy
-  tool output for local 7B models, wraps target responses in
+  `enum4linux`, `searchsploit`) so local 7B models never hallucinate flags. Independently
+  verifies agent-submitted findings against live HTTP indicators before persisting to
+  the ledger, condenses noisy tool output, wraps target responses in
   `<untrusted_tool_output>` delimiters, and syncs discovered ports with the
   Attack-Surface Graph.
 - **Proof-First Evidence Ledger, Batch Zero-Token Retest & Drift Diffing** —
@@ -62,7 +65,9 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 - **Safe & reproducible by design** — explicit CIDR/host scope allow-list with
   multi-record DNS rebinding and embedded command IP verification,
   non-destructive command guard, SHA-256 cryptographic evidence provenance,
-  reproducible execution manifests, login brute-force rate limiting, CSRF
+  HMAC-SHA256 signed execution manifests, SQLite WAL concurrent persistence,
+  OWASP-compliant 600,000-iteration PBKDF2 password hashing, 3-tier RBAC
+  (`viewer` / `operator` / `admin`), login brute-force rate limiting, CSRF
   same-origin protection, pause/stop on running jobs, and pluggable auth (`none`
   / `basic` / `local` / **OIDC SSO** / reverse-proxy).
 - **Editable config in the UI** (with unified YAML diff preview before save),

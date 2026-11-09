@@ -10,6 +10,7 @@ with:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 import shlex
@@ -18,6 +19,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .scope import Scope
+
+
+def connect_sqlite(db_path: str | Path, timeout: float = 30.0) -> sqlite3.Connection:
+    """Open a SQLite connection configured with Write-Ahead Logging (WAL) and a
+    5-second busy timeout for lock-free concurrent reads and background writes."""
+    con = sqlite3.connect(str(db_path), timeout=timeout)
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        pass
+    return con
 
 # Patterns for automatic secret redaction in evidence and reports.
 _REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
@@ -104,9 +118,7 @@ class FindingsLedger:
         self._init()
 
     def _conn(self) -> sqlite3.Connection:
-        con = sqlite3.connect(self.db_path)
-        con.row_factory = sqlite3.Row
-        return con
+        return connect_sqlite(self.db_path)
 
     def _init(self) -> None:
         with self._conn() as con:
@@ -431,8 +443,7 @@ def diff_assessments(db_path: str | Path, assessment_id: int) -> dict:
     """Compare an assessment against the immediately preceding assessment for the
     same target IP to surface posture drift (new/closed ports, severity shifts,
     and active vs. remediated findings)."""
-    con = sqlite3.connect(str(db_path))
-    con.row_factory = sqlite3.Row
+    con = connect_sqlite(db_path)
     curr = con.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
     if not curr:
         con.close()
@@ -514,14 +525,15 @@ def build_assessment_manifest(
     completed_at: str,
     commands_run: list[str],
     evidence_hashes: list[str],
+    signing_key: str = "",
 ) -> dict:
-    """Create a secret-free, cryptographically verifiable execution manifest
-    for assessment reproducibility."""
+    """Create a secret-free, HMAC-SHA256 cryptographically signed execution manifest
+    for assessment reproducibility and tamper detection."""
     scope_canonical = ",".join(sorted(scope_cidrs))
     scope_hash = hashlib.sha256(scope_canonical.encode("utf-8")).hexdigest()[:16]
     cmds_canonical = "\n".join(commands_run)
     commands_hash = hashlib.sha256(cmds_canonical.encode("utf-8")).hexdigest()[:16]
-    return {
+    core = {
         "assessment_id": f"ONIOPS-{assessment_id}",
         "oniops_version": oniops_version,
         "target_ip": target_ip,
@@ -533,3 +545,32 @@ def build_assessment_manifest(
         "completed_at": completed_at,
         "evidence_hashes": evidence_hashes[:25],
     }
+    canonical = json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    manifest_sha256 = hashlib.sha256(canonical).hexdigest()
+    key_bytes = (signing_key or "oniops-default-manifest-key").encode("utf-8")
+    sig = hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
+    return {
+        **core,
+        "manifest_sha256": manifest_sha256,
+        "signature": f"hmac-sha256:{sig}",
+    }
+
+
+def verify_assessment_manifest(manifest: dict, signing_key: str = "") -> bool:
+    """Verify the SHA-256 integrity and HMAC-SHA256 signature of an assessment manifest."""
+    if not isinstance(manifest, dict):
+        return False
+    core_keys = (
+        "assessment_id", "oniops_version", "target_ip", "profile", "scope_hash",
+        "commands_hash", "model", "started_at", "completed_at", "evidence_hashes",
+    )
+    if not all(k in manifest for k in core_keys):
+        return False
+    core = {k: manifest[k] for k in core_keys}
+    canonical = json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    expected_sha = hashlib.sha256(canonical).hexdigest()
+    if not hmac.compare_digest(str(manifest.get("manifest_sha256", "")), expected_sha):
+        return False
+    key_bytes = (signing_key or "oniops-default-manifest-key").encode("utf-8")
+    expected_sig = "hmac-sha256:" + hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(str(manifest.get("signature", "")), expected_sig)

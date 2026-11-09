@@ -25,7 +25,13 @@ from oniops.agent import run_agent
 from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
 from oniops.config import apply_updates, get_config, preview_updates
-from oniops.findings import FindingsLedger, build_assessment_manifest, diff_assessments, redact_secrets
+from oniops.findings import (
+    FindingsLedger,
+    build_assessment_manifest,
+    connect_sqlite,
+    diff_assessments,
+    redact_secrets,
+)
 from oniops.graph import build_graph
 from oniops.greybox import analyze_source_code, discover_js_endpoints, probe_openapi, sanitize_auth_header
 from oniops.jobs import JobManager
@@ -72,7 +78,7 @@ RUNTIME_MODEL: str | None = None
 # PERSISTENCE
 # ═══════════════════════════════════════════════════════
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
+    with connect_sqlite(DB_PATH) as conn:
         conn.execute("""
         CREATE TABLE IF NOT EXISTS assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -785,6 +791,7 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
         completed_at=ts,
         commands_run=commands_run,
         evidence_hashes=ev_hashes,
+        signing_key=str(cfg.auth.secret_key or app.secret_key or "oniops-default-manifest-key"),
     )
     return {
         "id": aid, "timestamp": ts, "target_ip": target_ip, "target_name": hostname,

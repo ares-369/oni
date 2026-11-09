@@ -52,7 +52,13 @@ class JobManager:
         self._reconcile_orphans()
 
     def _conn(self):
-        return sqlite3.connect(self.db_path, timeout=30)
+        con = sqlite3.connect(self.db_path, timeout=30)
+        try:
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("PRAGMA busy_timeout=5000")
+        except Exception:
+            pass
+        return con
 
     def _init_db(self):
         with self._conn() as conn:

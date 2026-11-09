@@ -83,6 +83,62 @@ def extract_openapi_endpoints(spec: dict) -> list[dict]:
     return endpoints[:30]
 
 
+def _split_http_body(raw: str) -> tuple[str, str]:
+    """Split a `curl -i` or `curl -I` response into `(headers, body)`."""
+    if not raw:
+        return "", ""
+    for sep in ("\r\n\r\n", "\n\n"):
+        if sep in raw:
+            hdrs, body = raw.split(sep, 1)
+            if body.strip():
+                return hdrs, body.strip()
+    return raw, ""
+
+
+def validate_bola_response_content(raw_resp: str, admin_resp: str = "") -> tuple[bool, str]:
+    """Verify that an HTTP 200 response on a sensitive API route contains actual
+    structured API content rather than an HTML login shell or an empty JSON stub."""
+    hdrs, body = _split_http_body(raw_resp)
+    hdr_lower = hdrs.lower()
+    if "content-type: text/html" in hdr_lower:
+        return False, "HTML content-type (likely SPA shell or login redirect)"
+    if not body:
+        # Headers-only probe (`curl -I` or empty body with JSON content-type)
+        return True, "HTTP 200 API response headers confirmed"
+
+    body_lower = body.lower()
+    if body_lower.startswith(("<!doctype html", "<html")) or "<form" in body_lower:
+        return False, "HTML login/shell body rather than structured API data"
+
+    if body.startswith(("{", "[")):
+        try:
+            parsed = json.loads(body)
+            if parsed in ({}, []):
+                return False, "empty JSON body"
+            if isinstance(parsed, dict):
+                # Reject trivial status-only or empty-list wrappers
+                non_empty_vals = [
+                    v for k, v in parsed.items()
+                    if k not in ("ok", "status", "success", "code", "message", "error")
+                    and v not in (None, "", [], {})
+                ]
+                if not non_empty_vals and any(k in parsed for k in ("data", "items", "results", "error", "ok")):
+                    return False, "JSON wrapper contains no non-empty records"
+                if admin_resp:
+                    _, adm_body = _split_http_body(admin_resp)
+                    if adm_body.startswith("{"):
+                        try:
+                            adm_json = json.loads(adm_body)
+                            if isinstance(adm_json, dict) and set(parsed.keys()) & set(adm_json.keys()):
+                                return True, f"JSON schema overlap ({len(parsed)} keys match privileged baseline)"
+                        except Exception:
+                            pass
+            return True, f"non-empty JSON payload ({len(body)} bytes)"
+        except Exception:
+            pass
+    return True, f"API payload ({len(body)} bytes)"
+
+
 def probe_openapi(
     ip: str,
     port: int,
@@ -131,48 +187,58 @@ def probe_openapi(
         if ctl is not None and not ctl.checkpoint():
             break
         u = f"{base}{ep['concrete_path']}"
-        unauth_out = run_fn(["curl", "-kIsS", "--max-time", "4", u], 6) or ""
+        unauth_out = run_fn(["curl", "-kisS", "--max-time", "4", u], 6) or ""
         m_un = re.search(r"HTTP/[\d.]+\s+(\d{3})", unauth_out)
         un_code = int(m_un.group(1)) if m_un else 0
 
+        low_out = ""
         low_code = 0
         if clean_low:
-            low_out = run_fn(["curl", "-kIsS", "--max-time", "4", "-H", clean_low, u], 6) or ""
+            low_out = run_fn(["curl", "-kisS", "--max-time", "4", "-H", clean_low, u], 6) or ""
             m_lo = re.search(r"HTTP/[\d.]+\s+(\d{3})", low_out)
             low_code = int(m_lo.group(1)) if m_lo else 0
 
+        auth_out = ""
         auth_code = 0
         if clean_hdr:
-            auth_out = run_fn(["curl", "-kIsS", "--max-time", "4", "-H", clean_hdr, u], 6) or ""
+            auth_out = run_fn(["curl", "-kisS", "--max-time", "4", "-H", clean_hdr, u], 6) or ""
             m_au = re.search(r"HTTP/[\d.]+\s+(\d{3})", auth_out)
             auth_code = int(m_au.group(1)) if m_au else 0
 
         sensitive_route = bool(re.search(r"admin|user|config|secret|token|internal|debug|export|key|role|tenant|billing", ep["path"], re.I))
         if un_code == 200 and (ep["auth_declared"] or sensitive_route):
+            valid_body, body_reason = validate_bola_response_content(unauth_out, auth_out)
+            if not valid_body:
+                lines.append(f"- [FALSE-POSITIVE-FILTERED] {ep['path']}: HTTP 200 ignored ({body_reason})")
+                continue
             sev = "HIGH" if sensitive_route else "MEDIUM"
             title = f"Unauthenticated API access on {ep['path']} (HTTP 200)"
-            ev = f"GET {u} returned HTTP 200 without credentials (auth_declared={ep['auth_declared']})"
+            ev = f"GET {u} returned HTTP 200 without credentials (auth_declared={ep['auth_declared']}, {body_reason})"
             findings.append({
                 "port": port,
                 "title": title,
                 "severity": sev,
                 "status": "VERIFIED",
                 "evidence": ev,
-                "repro_cmd": ["curl", "-kIsS", "--max-time", "5", u],
+                "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
             })
-            lines.append(f"- [VULNERABLE/{sev}] {ep['path']}: HTTP 200 unauthenticated")
+            lines.append(f"- [VULNERABLE/{sev}] {ep['path']}: HTTP 200 unauthenticated ({body_reason})")
         elif clean_low and low_code == 200 and un_code in (401, 403) and sensitive_route:
+            valid_body, body_reason = validate_bola_response_content(low_out, auth_out)
+            if not valid_body:
+                lines.append(f"- [FALSE-POSITIVE-FILTERED] {ep['path']}: low-priv HTTP 200 ignored ({body_reason})")
+                continue
             title = f"BOLA/BFLA privilege boundary bypass on {ep['path']} (low-priv HTTP 200)"
-            ev = f"GET {u} blocked unauthenticated ({un_code}) but returned HTTP 200 to low-privilege role on sensitive route"
+            ev = f"GET {u} blocked unauthenticated ({un_code}) but returned HTTP 200 to low-privilege role on sensitive route ({body_reason})"
             findings.append({
                 "port": port,
                 "title": title,
                 "severity": "HIGH",
                 "status": "VERIFIED",
                 "evidence": ev,
-                "repro_cmd": ["curl", "-kIsS", "--max-time", "5", u],
+                "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
             })
-            lines.append(f"- [VULNERABLE/HIGH BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200}")
+            lines.append(f"- [VULNERABLE/HIGH BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200} ({body_reason})")
         elif clean_hdr and un_code in (401, 403) and auth_code == 200:
             lines.append(f"- [AUTH-ENFORCED] {ep['path']}: unauth={un_code} -> auth={auth_code}")
         elif un_code:
