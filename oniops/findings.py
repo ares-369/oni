@@ -9,6 +9,7 @@ with:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shlex
@@ -100,12 +101,17 @@ class FindingsLedger:
                 severity TEXT NOT NULL,
                 status TEXT NOT NULL,
                 evidence TEXT NOT NULL,
+                evidence_sha256 TEXT DEFAULT '',
                 repro_cmd TEXT NOT NULL,
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
                 last_retest TEXT DEFAULT '',
                 UNIQUE(target_ip, port, title)
             )""")
+            # Auto-migrate older SQLite schemas missing evidence_sha256.
+            cols = {r["name"] for r in con.execute("PRAGMA table_info(findings)").fetchall()}
+            if "evidence_sha256" not in cols:
+                con.execute("ALTER TABLE findings ADD COLUMN evidence_sha256 TEXT DEFAULT ''")
             con.commit()
 
     def upsert(
@@ -120,9 +126,11 @@ class FindingsLedger:
         evidence: str,
         repro_cmd: list[str] | str,
     ) -> int:
-        """Insert or update a deduplicated finding with secret-redacted evidence."""
+        """Insert or update a deduplicated finding with secret-redacted evidence
+        and SHA-256 cryptographic provenance."""
         ts = _now_iso()
         clean_evidence = redact_secrets(evidence)[:1500]
+        ev_hash = hashlib.sha256(clean_evidence.encode("utf-8")).hexdigest()
         if isinstance(repro_cmd, list):
             cmd_str = json.dumps(repro_cmd)
         else:
@@ -132,17 +140,18 @@ class FindingsLedger:
             cur = con.execute(
                 """
                 INSERT INTO findings
-                    (target_ip, port, title, category, severity, status, evidence, repro_cmd, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (target_ip, port, title, category, severity, status, evidence, evidence_sha256, repro_cmd, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(target_ip, port, title) DO UPDATE SET
                     severity = excluded.severity,
                     status = excluded.status,
                     evidence = excluded.evidence,
+                    evidence_sha256 = excluded.evidence_sha256,
                     repro_cmd = CASE WHEN excluded.repro_cmd != '[]' THEN excluded.repro_cmd ELSE findings.repro_cmd END,
                     last_seen = excluded.last_seen
                 """,
                 (target_ip, int(port or 0), title[:200], category[:60],
-                 severity.upper(), status.upper(), clean_evidence, cmd_str, ts, ts),
+                 severity.upper(), status.upper(), clean_evidence, ev_hash, cmd_str, ts, ts),
             )
             con.commit()
             if cur.lastrowid:
@@ -322,10 +331,11 @@ class FindingsLedger:
             new_status = "VERIFIED" if (res.ok and out) else "FIXED"
 
         new_ev = f"[Retest {ts[:19]}] {out[:400] or '(no output — appears remediated/closed)'}"
+        new_hash = hashlib.sha256(new_ev.encode("utf-8")).hexdigest()
         with self._conn() as con:
             con.execute(
-                "UPDATE findings SET status = ?, evidence = ?, last_retest = ?, last_seen = ? WHERE id = ?",
-                (new_status, new_ev, ts, ts, finding_id),
+                "UPDATE findings SET status = ?, evidence = ?, evidence_sha256 = ?, last_retest = ?, last_seen = ? WHERE id = ?",
+                (new_status, new_ev, new_hash, ts, ts, finding_id),
             )
             con.commit()
         return {
@@ -335,6 +345,7 @@ class FindingsLedger:
             "previous_status": f["status"],
             "status": new_status,
             "evidence": new_ev,
+            "evidence_sha256": new_hash,
             "repro_cmd": shlex.join(cmd),
             "last_retest": ts,
         }
