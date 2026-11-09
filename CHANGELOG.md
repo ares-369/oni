@@ -11,6 +11,10 @@ behaviour may still change between releases.
 - `DISCLAIMER.md` responsible-use statement, also summarised in `NOTICE` and the
   README: ONIOPS is for authorized testing, is provided as-is, and the author is
   not responsible for misuse or for modified versions made by others.
+- First-run "Authorized use only" dialog in the web UI. Each user must confirm
+  authorized use and accept the terms before any scan, agent, AI test or
+  retest can start; the server enforces this and records who accepted which
+  version and when (shown in Settings -> About).
 
 ### Changed
 - CONTRIBUTING and README rewritten to be friendlier for new contributors; the

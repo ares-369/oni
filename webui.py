@@ -20,9 +20,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, session
 
-from oniops import __version__, cve
+from oniops import __version__, cve, terms
 from oniops.agent import run_agent
 from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
@@ -43,6 +43,7 @@ from oniops.playbooks import load_playbooks, render_step_cmd
 from oniops.providers import get_llm
 from oniops.scope import Scope, ScopeViolation
 from oniops.targets import discover as discover_hosts
+from oniops.terms import TermsStore
 
 cfg = get_config()
 scope = Scope(cfg)
@@ -173,6 +174,51 @@ ALLOWED_PROFILES = {"fast_recon", "deep_service", "web_tls_audit", "web_app_pt",
 
 # Authentication: none | basic | local | oidc | proxy (configured in oniops.auth).
 init_auth(app, cfg)
+
+# ── Responsible-use terms (first-run acceptance, recorded per user) ────────
+# Registered AFTER init_auth, so the auth check always runs first.
+terms_store = TermsStore(DB_PATH)
+
+
+def _current_user() -> str:
+    """Who is making this request, in whatever auth mode ONIOPS runs."""
+    mode = cfg.auth.mode
+    if mode == "proxy":
+        return request.headers.get(cfg.auth.proxy_header, "") or "anonymous"
+    if mode == "basic":
+        a = request.authorization
+        return (a.username if a and a.username else "") or "basic-user"
+    return str(session.get("user") or "local")
+
+
+@app.before_request
+def require_terms_acceptance():
+    if not terms.is_gated(request.method, request.path):
+        return None
+    if terms_store.has_accepted(_current_user()):
+        return None
+    return jsonify({"error": "Please accept the responsible-use terms before running tests.",
+                    "terms_required": True}), 403
+
+
+@app.route("/api/terms")
+def api_terms():
+    user = _current_user()
+    return jsonify({"version": terms.TERMS_VERSION, "user": user,
+                    "accepted": terms_store.has_accepted(user),
+                    "accepted_at": terms_store.accepted_at(user),
+                    "summary": terms.SUMMARY, "disclaimer_url": terms.DISCLAIMER_URL})
+
+
+@app.route("/api/terms/accept", methods=["POST"])
+def api_terms_accept():
+    data = request.get_json(silent=True) or {}
+    if data.get("confirm") is not True or data.get("version") != terms.TERMS_VERSION:
+        return jsonify({"error": "Explicit confirmation of the current terms version is required."}), 400
+    user = _current_user()
+    ts = terms_store.record(user, request.remote_addr or "", request.headers.get("User-Agent", ""))
+    emit_event("TERMS", "ok", f"Responsible-use terms {terms.TERMS_VERSION} accepted by {user}")
+    return jsonify({"ok": True, "user": user, "accepted_at": ts, "version": terms.TERMS_VERSION})
 
 
 @app.after_request

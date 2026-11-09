@@ -14,8 +14,13 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     monkeypatch.setattr(webui, "DB_PATH", test_db)
     webui.init_db()
     webui.ledger = webui.FindingsLedger(test_db)
+    monkeypatch.setattr(webui, "terms_store", webui.TermsStore(test_db))
 
     client = webui.app.test_client()
+    # Active-testing endpoints require the responsible-use terms first.
+    assert client.post("/api/findings/retest-all", json={}).status_code == 403
+    assert client.post("/api/terms/accept",
+                       json={"confirm": True, "version": webui.terms.TERMS_VERSION}).status_code == 200
 
     # 1. Health & Index UI
     r_health = client.get("/healthz")

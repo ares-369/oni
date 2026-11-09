@@ -813,9 +813,61 @@
       .app-shell.mobile-nav-open .mobile-backdrop,
       .app-shell.mobile-drawer-open .mobile-backdrop { display: block; }
     }
+    /* Responsible-use terms dialog (first run, blocking) */
+    .terms-overlay {
+      position: fixed; inset: 0; z-index: 300;
+      background: rgba(5, 8, 12, .78); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center; padding: 18px;
+    }
+    .terms-overlay[hidden] { display: none; }
+    .terms-card {
+      width: min(560px, 100%); max-height: calc(100dvh - 36px); overflow-y: auto;
+      background: var(--bg-panel, #111827); border: 1px solid var(--border);
+      border-top: 3px solid var(--primary); border-radius: 12px;
+      padding: 22px 22px 18px; box-shadow: 0 24px 60px rgba(0,0,0,.6);
+    }
+    .terms-title { font-size: 18px; font-weight: 700; display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .terms-title .mdi { color: var(--primary); font-size: 22px; }
+    .terms-lead { color: var(--text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+    .terms-list { margin: 0 0 14px; padding-left: 18px; font-size: 13px; line-height: 1.55; }
+    .terms-list li { margin-bottom: 6px; }
+    .terms-check {
+      display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45;
+      padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+      background: var(--bg-elevated, rgba(255,255,255,.03));
+    }
+    .terms-check input { margin-top: 2px; width: 18px; height: 18px; flex: 0 0 auto; }
+    .terms-check a { color: var(--primary); }
+    .terms-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+    .terms-note { font-size: 12px; color: var(--warning); margin-top: 10px; min-height: 16px; }
+    .terms-actions .btn:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.4); }
   </style>
 </head>
 <body>
+  <!-- Responsible-use terms: shown until the current user accepts. The server
+       also refuses to start any test until acceptance is recorded. -->
+  <div id="termsOverlay" class="terms-overlay" role="dialog" aria-modal="true"
+       aria-labelledby="termsTitle" aria-describedby="termsLead" hidden>
+    <div class="terms-card">
+      <div class="terms-title" id="termsTitle"><i class="mdi mdi-shield-alert-outline"></i> Authorized use only</div>
+      <p class="terms-lead" id="termsLead">
+        ONIOPS performs active, intrusive security testing. Before you start, please confirm how you will use it.
+      </p>
+      <ul class="terms-list" id="termsList"></ul>
+      <label class="terms-check" for="termsConfirm">
+        <input type="checkbox" id="termsConfirm" onchange="document.getElementById('termsAcceptBtn').disabled = !this.checked" />
+        <span>I will only use ONIOPS on systems I own or have explicit written permission to test, and I accept the
+          <a id="termsLink" href="https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">responsible-use terms and disclaimer</a>.</span>
+      </label>
+      <div class="terms-actions">
+        <button class="btn" type="button" onclick="declineTerms()">Decline</button>
+        <button class="btn btn-primary" type="button" id="termsAcceptBtn" disabled onclick="acceptTerms()">
+          <i class="mdi mdi-check"></i> Accept and continue
+        </button>
+      </div>
+      <div class="terms-note" id="termsNote" aria-live="polite"></div>
+    </div>
+  </div>
   <div class="app-shell" id="appShell">
     <div class="mobile-backdrop" id="mobileBackdrop"></div>
     <!-- Top Header -->
@@ -2001,7 +2053,12 @@
           `<div class="set-row"><span>External URL</span><input class="input" id="instUrl" aria-label="External URL" value="${esc(cfg.external_url || '')}" placeholder="https://oniops.example.com" style="width:55%; font-size:12px;"/></div>` +
           `<div style="margin:9px 0;"><button class="btn btn-sm btn-primary" onclick="saveInstance()">Save</button></div>` +
           `<div class="set-row"><span>Version</span><span class="mono">ONIOPS ${s.version}</span></div>` +
-          `<div class="set-row"><span>License</span><span class="mono">Apache-2.0</span></div>`;
+          `<div class="set-row"><span>License</span><span class="mono">Apache-2.0</span></div>` +
+          `<div class="set-row"><span>Responsible-use terms</span><span style="font-size:12px; text-align:right;">` +
+            (TERMS && TERMS.accepted_at
+              ? `Accepted by <span class="mono">${esc(TERMS.user)}</span> · ${esc(String(TERMS.accepted_at).slice(0, 16).replace('T', ' '))} UTC · v${esc(TERMS.version)}`
+              : 'Not yet accepted') +
+            ` · <a href="${esc((TERMS && TERMS.disclaimer_url) || 'https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md')}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">read</a></span></div>`;
       } catch (e) {
         document.getElementById('setHosts').innerHTML = `<div style="color:var(--danger);">Settings error: ${e}</div>`;
       }
@@ -2519,6 +2576,46 @@
       loadKaliTools();
       loadFindingsLedger();
     }
+
+    // ── Responsible-use terms (first run) ──────────────────────────────────
+    let TERMS = null;
+    async function checkTerms() {
+      try {
+        TERMS = await (await fetch('/api/terms')).json();
+        if (TERMS.accepted) return;
+        document.getElementById('termsList').innerHTML =
+          (TERMS.summary || []).map(t => `<li>${String(t).replace(/</g, '&lt;')}</li>`).join('');
+        if (TERMS.disclaimer_url) document.getElementById('termsLink').href = TERMS.disclaimer_url;
+        document.getElementById('termsOverlay').hidden = false;
+        setTimeout(() => document.getElementById('termsConfirm').focus(), 50);
+      } catch (e) { console.error('terms check failed', e); }
+    }
+    async function acceptTerms() {
+      const note = document.getElementById('termsNote');
+      if (!document.getElementById('termsConfirm').checked) { note.textContent = 'Please tick the box to confirm.'; return; }
+      try {
+        const r = await (await fetch('/api/terms/accept', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({confirm: true, version: TERMS && TERMS.version})})).json();
+        if (r.error) { note.textContent = r.error; return; }
+        Object.assign(TERMS, {accepted: true, accepted_at: r.accepted_at, user: r.user});
+        document.getElementById('termsOverlay').hidden = true;
+        toast('Thanks — terms accepted. Happy (authorized) testing.');
+      } catch (e) { note.textContent = 'Could not save your acceptance: ' + e; }
+    }
+    function declineTerms() {
+      document.getElementById('termsNote').textContent =
+        'ONIOPS can only be used after accepting these terms. You can close this tab, or accept to continue.';
+    }
+    // Keep keyboard focus inside the dialog while it is open.
+    document.addEventListener('keydown', e => {
+      const ov = document.getElementById('termsOverlay');
+      if (ov.hidden || e.key !== 'Tab') return;
+      const f = [...ov.querySelectorAll('input,button,a[href]')].filter(x => !x.disabled);
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    });
+    checkTerms();
 
     refreshAll();
     const _qp = new URLSearchParams(window.location.search);
