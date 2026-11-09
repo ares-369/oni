@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from oniops import __version__
 from oniops.cli import cli_main
 from oniops.findings import FindingsLedger
 
@@ -10,7 +11,9 @@ from oniops.findings import FindingsLedger
 def test_cli_version_and_playbooks(capsys):
     assert cli_main(["version"]) == 0
     out = capsys.readouterr().out
-    assert "ONIOPS 0.3.1-beta" in out
+    # Track the package version instead of a hardcoded string so a release
+    # bump never breaks this test.
+    assert f"ONIOPS {__version__}" in out
 
     assert cli_main(["playbooks"]) == 0
     pb_out = json.loads(capsys.readouterr().out)
