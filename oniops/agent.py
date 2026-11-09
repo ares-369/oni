@@ -21,7 +21,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .findings import redact_secrets
+from .findings import FindingsLedger, redact_secrets, validate_evidence
 from .greybox import probe_openapi, sanitize_auth_header
 from .scope import Scope, ScopeViolation
 
@@ -130,6 +130,44 @@ def _openapi_probe(runner, ip, args):
     return res["raw_section"]
 
 
+def _report_finding(runner, ip, args):
+    """Independently verify a candidate finding reported by the agent before
+    persisting it to the FindingsLedger."""
+    port = int(args.get("port") or 80)
+    title = str(args.get("title") or "Agent-reported finding").strip()[:180]
+    severity = str(args.get("severity") or "MEDIUM").upper()
+    if severity not in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+        severity = "MEDIUM"
+    path = str(args.get("path") or "/").strip()
+    if not path.startswith("/"):
+        path = "/" + path
+    indicator = str(args.get("expected_indicator") or "").strip()
+    scheme = "https" if port in (443, 8443, 9443) else "http"
+    url = f"{scheme}://{ip}:{port}{path}"
+    repro_cmd = ["curl", "-kIsS", "--max-time", "5", url]
+    if args.get("_auth_header"):
+        repro_cmd = ["curl", "-kIsS", "--max-time", "5", "-H", args["_auth_header"], url]
+    probe_out = runner.run(repro_cmd, timeout=10).out or ""
+    status = validate_evidence(probe_out, expected_indicator=indicator, category="agent_validation")
+    db_path = args.get("_db_path")
+    if db_path:
+        try:
+            ledger = FindingsLedger(db_path)
+            ledger.upsert(
+                target_ip=ip,
+                port=port,
+                title=title,
+                category="agent_validation",
+                severity=severity,
+                status=status,
+                evidence=probe_out[:800] or f"Indicator '{indicator}' not matched",
+                repro_cmd=["curl", "-kIsS", "--max-time", "5", url],
+            )
+        except Exception:
+            pass
+    return f"Independent validator result for '{title}' on {url}: status={status}\n{probe_out[:600]}"
+
+
 TOOLS: dict[str, dict] = {
     "nmap": {"needs_target": True,
              "desc": "Port & service scan. args: {target, mode: fast|full}", "fn": _nmap},
@@ -149,6 +187,8 @@ TOOLS: dict[str, dict] = {
                 "desc": "Audit TLS certificate and cipher suites on a TLS port. args: {target, port?}", "fn": _sslscan},
     "openapi_probe": {"needs_target": True,
                       "desc": "Discover OpenAPI/Swagger specs and test unauthenticated vs authenticated API routes. args: {target, port?}", "fn": _openapi_probe},
+    "report_finding": {"needs_target": True,
+                       "desc": "Submit a discovered HTTP/service finding for independent verification & ledger persistence. args: {target, port, path, title, severity, expected_indicator}", "fn": _report_finding},
     "enum4linux": {"needs_target": True,
                    "desc": "Enumerate SMB/Samba shares & users. args: {target}", "fn": _enum4linux},
     "searchsploit": {"needs_target": False,
@@ -391,6 +431,8 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
             exec_args = dict(targs)
             if clean_auth:
                 exec_args["_auth_header"] = clean_auth
+            if db_path:
+                exec_args["_db_path"] = str(db_path)
             try:
                 if spec["needs_target"]:
                     raw = targs.get("target") or target

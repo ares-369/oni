@@ -74,12 +74,24 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     assert r_retest.status_code == 200
     assert r_retest.get_json()["status"] == "AUTH-GATED"
 
-    # 5. Attack Graph includes the structured finding
+    # 5. Attack Graph includes the structured finding and correlated attack path
     r_graph = client.get("/api/graph")
     assert r_graph.status_code == 200
     g_data = r_graph.get_json()
     assert g_data["stats"]["verified_findings"] == 1
+    assert g_data["stats"]["attack_paths"] >= 1
+    assert g_data["stats"]["max_blast_radius"] > 0
     assert any(n["type"] == "finding" for n in g_data["nodes"])
+    assert len(g_data["attack_paths"]) >= 1
+
+    # 5b. Batch retest-all endpoint & AI YAML probe packs endpoint
+    r_batch = client.post("/api/findings/retest-all", json={"target": "10.0.0.150"})
+    assert r_batch.status_code == 200
+    assert r_batch.get_json()["total_retested"] == 1
+
+    r_aip = client.get("/api/aisec/probes")
+    assert r_aip.status_code == 200
+    assert len(r_aip.get_json()["yaml_probes"]) >= 3
 
     # 6. PDF Export endpoint
     r_pdf = client.post(

@@ -22,12 +22,12 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from oniops import __version__, cve
 from oniops.agent import run_agent
-from oniops.aisec import CONVERTERS, run_aisec
+from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
 from oniops.config import apply_updates, get_config, preview_updates
-from oniops.findings import FindingsLedger, redact_secrets
+from oniops.findings import FindingsLedger, diff_assessments, redact_secrets
 from oniops.graph import build_graph
-from oniops.greybox import analyze_source_code, probe_openapi, sanitize_auth_header
+from oniops.greybox import analyze_source_code, discover_js_endpoints, probe_openapi, sanitize_auth_header
 from oniops.jobs import JobManager
 from oniops.kali import KaliRunner
 from oniops.pdf import markdown_to_pdf
@@ -453,9 +453,11 @@ def _run(cmd: list[str], timeout: int) -> str:
     return active_runner().run(cmd, timeout=timeout).out
 
 
-def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None, auth_header: str = "") -> dict:
+def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
+                    auth_header: str = "", low_priv_header: str = "") -> dict:
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) via Kali")
     clean_auth = sanitize_auth_header(auth_header) if auth_header else ""
+    clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
 
     commands_run, raw_sections, discovered_ports = [], [], []
     nuclei_lines: list[str] = []
@@ -541,11 +543,17 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None, auth_
                 )
 
             emit_event("WAPT_API", "busy", f"[WAPT] OpenAPI & Access-Control probe {url}")
-            oa = probe_openapi(target_ip, pn, scheme, _run, auth_header=clean_auth, ctl=ctl)
+            oa = probe_openapi(target_ip, pn, scheme, _run,
+                               auth_header=clean_auth, low_priv_header=clean_low, ctl=ctl)
             if oa["found"]:
                 raw_sections.append(oa["raw_section"])
                 finding_count += len(oa["findings"])
                 openapi_findings.extend(oa["findings"])
+
+            emit_event("WAPT_JS", "busy", f"[WAPT] SPA / JS bundle route extraction {url}")
+            js_disc = discover_js_endpoints(target_ip, pn, scheme, _run, ctl=ctl)
+            if js_disc["raw_section"]:
+                raw_sections.append(js_disc["raw_section"])
 
             emit_event("WAPT_VULN", "busy", f"[WAPT] OWASP checks {url}")
             commands_run.append(f"nuclei {url} (web)")
@@ -785,9 +793,10 @@ def api_assess():
     try:
         rt = scope.resolve(data.get("target", ""))
         auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
+        low_priv_header = sanitize_auth_header(data.get("low_priv_header", "")) if data.get("low_priv_header") else ""
     except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(_run_assessment(rt.ip, rt.label, profile, auth_header=auth_header))
+    return jsonify(_run_assessment(rt.ip, rt.label, profile, auth_header=auth_header, low_priv_header=low_priv_header))
 
 
 @app.route("/api/assess/start", methods=["POST"])
@@ -800,12 +809,25 @@ def api_assess_start():
     try:
         rt = scope.resolve(data.get("target", ""))
         auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
+        low_priv_header = sanitize_auth_header(data.get("low_priv_header", "")) if data.get("low_priv_header") else ""
     except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
     ip, label = rt.ip, rt.label
-    job_id = jobs.submit("assessment", {"target": label, "ip": ip, "profile": profile},
-                         lambda ctl: _run_assessment(ip, label, profile, ctl=ctl, auth_header=auth_header))
+    job_id = jobs.submit(
+        "assessment",
+        {"target": label, "ip": ip, "profile": profile},
+        lambda ctl: _run_assessment(ip, label, profile, ctl=ctl,
+                                    auth_header=auth_header, low_priv_header=low_priv_header),
+    )
     return jsonify({"job_id": job_id})
+
+
+@app.route("/api/assessments/<int:aid>/diff")
+def api_assessment_diff(aid: int):
+    try:
+        return jsonify(diff_assessments(DB_PATH, aid))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
 
 
 @app.route("/api/playbooks")
@@ -827,6 +849,16 @@ def api_retest_finding(fid: int):
         return jsonify(res)
     except (ScopeViolation, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/findings/retest-all", methods=["POST"])
+def api_retest_all_findings():
+    data = request.get_json(silent=True) or {}
+    target = (data.get("target") or "").strip()
+    res = ledger.retest_all(active_runner(), scope, target_ip=target)
+    emit_event("RETEST_ALL", "ok",
+               f"Batch PoC retest: {res['total_retested']} checked ({res['verified']} verified, {res['fixed']} fixed)")
+    return jsonify(res)
 
 
 @app.route("/api/whitebox/scan", methods=["POST"])
@@ -868,6 +900,16 @@ def api_agent_start():
     return jsonify({"job_id": job_id})
 
 
+@app.route("/api/aisec/probes")
+def api_aisec_probes():
+    yaml_probes = [
+        {"id": p["id"], "name": p["name"], "owasp": p["owasp"],
+         "atlas": p["atlas"], "severity": p["severity"], "source": p.get("source", "yaml")}
+        for p in load_yaml_probes()
+    ]
+    return jsonify({"yaml_probes": yaml_probes, "converters": list(CONVERTERS)})
+
+
 @app.route("/api/aisec/start", methods=["POST"])
 def api_aisec_start():
     """Run an AI-security + GRC assessment against an LLM/AI chat endpoint."""
@@ -882,6 +924,7 @@ def api_aisec_start():
     if converter not in CONVERTERS:
         converter = "none"
     include_crescendo = bool(data.get("include_crescendo", True))
+    include_yaml_packs = bool(data.get("include_yaml_packs", False))
     if not re.match(r"^https?://", base_url):
         return jsonify({"error": "Provide an http(s) AI endpoint base_url."}), 400
     if api_type not in ("ollama", "openai", "custom"):
@@ -894,7 +937,8 @@ def api_aisec_start():
                          judge=llm.for_role("reporter"), ctl=ctl,
                          system_prompt=system_prompt, req_template=req_template,
                          resp_path=resp_path, converter=converter,
-                         include_crescendo=include_crescendo)
+                         include_crescendo=include_crescendo,
+                         include_yaml_packs=include_yaml_packs)
 
     job_id = jobs.submit("aisec", {"model": model, "target": base_url}, _job)
     return jsonify({"job_id": job_id})

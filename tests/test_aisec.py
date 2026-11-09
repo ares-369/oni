@@ -1,7 +1,7 @@
 """Tests for AI Red Team prompt converters, probes, and multi-turn Crescendo."""
 from __future__ import annotations
 
-from oniops.aisec import CONVERTERS, PROBES, apply_converter
+from oniops.aisec import CONVERTERS, PROBES, apply_converter, get_all_probes, load_yaml_probes
 
 
 def test_converters_preserve_canary_and_transform_prompt():
@@ -25,3 +25,14 @@ def test_rag_and_mcp_probes_registered():
     rag = next(p for p in PROBES if p["id"] == "rag_poisoning")
     assert rag["detect"]("Here is your token: ONIOPS-RAG-POISON-OK") is True
     assert rag["detect"]("The refund window is 30 days.") is False
+
+
+def test_declarative_yaml_ai_probe_pack_loading():
+    yaml_probes = load_yaml_probes()
+    yaml_ids = {p["id"] for p in yaml_probes}
+    assert {"rag_citation_override", "mcp_schema_shadowing", "markdown_exfil_link"}.issubset(yaml_ids)
+    merged = get_all_probes(include_yaml=True)
+    assert len(merged) >= len(PROBES) + 3
+    p_cit = next(p for p in yaml_probes if p["id"] == "rag_citation_override")
+    assert p_cit["detect"]("ONIOPS-RAG-CITATION-BYPASS") is True
+    assert p_cit["detect"]("Normal summary.") is False

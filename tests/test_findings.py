@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from oniops.findings import FindingsLedger, redact_secrets
+from oniops.findings import FindingsLedger, diff_assessments, redact_secrets, validate_evidence
 from oniops.scope import ScopeViolation
 
 
@@ -87,3 +87,58 @@ def test_ledger_retest_enforces_scope(tmp_path, scope):
     )
     with pytest.raises(ScopeViolation):
         ledger.retest(fid, None, scope)
+
+
+def test_validate_evidence_and_batch_retest_and_diff(tmp_path, scope):
+    import sqlite3
+    assert validate_evidence("HTTP/1.1 200 OK\r\nX-Admin: enabled", expected_indicator="X-Admin: enabled") == "VERIFIED"
+    assert validate_evidence("HTTP/1.1 404 Not Found\r\n", expected_indicator="X-Admin: enabled") == "UNCONFIRMED"
+    assert validate_evidence("HTTP/1.1 401 Unauthorized\r\n", category="service_exposure") == "AUTH-GATED"
+
+    db = tmp_path / "oniops.sqlite"
+    ledger = FindingsLedger(db)
+    ledger.upsert(
+        target_ip="10.0.0.150",
+        port=8080,
+        title="Unauthenticated API access on /api/admin",
+        category="api_security",
+        severity="HIGH",
+        status="FIXED",
+        evidence="HTTP/1.1 403 Forbidden",
+        repro_cmd=["curl", "-kIsS", "http://10.0.0.150:8080/api/admin"],
+    )
+
+    class _RegressedRunner:
+        def run(self, cmd, timeout=30):
+            class _R:
+                ok = True
+                out = "HTTP/1.1 200 OK\r\n"
+            return _R()
+
+    batch = ledger.retest_all(_RegressedRunner(), scope, target_ip="10.0.0.150")
+    assert batch["total_retested"] == 1
+    assert batch["verified"] == 1
+    assert batch["regressed"] == 1
+
+    with sqlite3.connect(db) as con:
+        con.execute("""CREATE TABLE assessments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_ip TEXT, severity TEXT, finding_count INTEGER, raw_output TEXT
+        )""")
+        con.execute(
+            "INSERT INTO assessments (target_ip, severity, finding_count, raw_output) VALUES (?, ?, ?, ?)",
+            ("10.0.0.150", "LOW", 1, "22/tcp open ssh\n80/tcp open http\n"),
+        )
+        con.execute(
+            "INSERT INTO assessments (target_ip, severity, finding_count, raw_output) VALUES (?, ?, ?, ?)",
+            ("10.0.0.150", "HIGH", 3, "22/tcp open ssh\n8080/tcp open http-proxy\n"),
+        )
+        con.commit()
+
+    diff = diff_assessments(db, 2)
+    assert diff["has_baseline"] is True
+    assert diff["severity_change"] == {"from": "LOW", "to": "HIGH"}
+    assert diff["finding_count_delta"] == 2
+    assert "8080/tcp (http-proxy)" in diff["new_ports"]
+    assert "80/tcp (http)" in diff["closed_ports"]
+    assert diff["active_findings"] == 1

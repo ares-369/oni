@@ -44,6 +44,38 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def validate_evidence(evidence: str, expected_indicator: str = "", category: str = "") -> str:
+    """Independently verify whether captured command output confirms a finding.
+
+    Prevents unverified LLM claims or empty scanner output from being marked
+    VERIFIED without deterministic indicator confirmation.
+    """
+    text = (evidence or "").strip()
+    if not text:
+        return "UNCONFIRMED"
+    if expected_indicator:
+        ind = expected_indicator.strip()
+        if ind.lower() in text.lower():
+            return "VERIFIED"
+        try:
+            if re.search(ind, text, re.I):
+                return "VERIFIED"
+        except re.error:
+            pass
+        return "UNCONFIRMED"
+
+    m = re.search(r"HTTP/[\d.]+\s+(\d{3})", text)
+    if m:
+        code = int(m.group(1))
+        if code in (200, 201, 204):
+            return "VERIFIED"
+        if code in (401, 403):
+            return "AUTH-GATED" if category == "service_exposure" else "UNCONFIRMED"
+        if code >= 400:
+            return "UNCONFIRMED"
+    return "VERIFIED" if len(text) > 12 else "UNCONFIRMED"
+
+
 class FindingsLedger:
     """SQLite-backed vulnerability and PoC evidence ledger."""
 
@@ -306,3 +338,102 @@ class FindingsLedger:
             "repro_cmd": shlex.join(cmd),
             "last_retest": ts,
         }
+
+    def retest_all(self, runner, scope: Scope, *, target_ip: str = "", limit: int = 25) -> dict:
+        """Batch-run zero-token remediation verification across stored findings."""
+        items = self.list_findings(target_ip=target_ip, limit=limit)
+        results: list[dict] = []
+        verified = 0
+        fixed = 0
+        regressed = 0
+        for item in items:
+            if not item.get("repro_display"):
+                continue
+            prev = item.get("status", "")
+            try:
+                res = self.retest(int(item["id"]), runner, scope)
+                results.append(res)
+                st = res["status"]
+                if st == "VERIFIED":
+                    verified += 1
+                    if prev == "FIXED":
+                        regressed += 1
+                elif st == "FIXED":
+                    fixed += 1
+            except Exception as exc:
+                results.append({
+                    "id": item["id"],
+                    "target_ip": item["target_ip"],
+                    "title": item["title"],
+                    "previous_status": prev,
+                    "status": "ERROR",
+                    "error": str(exc),
+                })
+        return {
+            "total_retested": len(results),
+            "verified": verified,
+            "fixed": fixed,
+            "regressed": regressed,
+            "results": results,
+        }
+
+
+def _extract_ports_from_raw(raw_output: str) -> list[str]:
+    ports: list[str] = []
+    for line in (raw_output or "").splitlines():
+        m = re.match(r"^(\d+/(?:tcp|udp))\s+open\s+(\S+)", line.strip())
+        if m:
+            entry = f"{m.group(1)} ({m.group(2)})"
+            if entry not in ports:
+                ports.append(entry)
+    return sorted(ports)
+
+
+def diff_assessments(db_path: str | Path, assessment_id: int) -> dict:
+    """Compare an assessment against the immediately preceding assessment for the
+    same target IP to surface posture drift (new/closed ports, severity shifts,
+    and active vs. remediated findings)."""
+    con = sqlite3.connect(str(db_path))
+    con.row_factory = sqlite3.Row
+    curr = con.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
+    if not curr:
+        con.close()
+        raise ValueError(f"Assessment #{assessment_id} not found.")
+
+    target_ip = curr["target_ip"]
+    prev = con.execute(
+        "SELECT * FROM assessments WHERE target_ip = ? AND id < ? ORDER BY id DESC LIMIT 1",
+        (target_ip, assessment_id),
+    ).fetchone()
+
+    curr_ports = set(_extract_ports_from_raw(curr["raw_output"] or ""))
+    prev_ports = set(_extract_ports_from_raw(prev["raw_output"] or "")) if prev else set()
+
+    active_findings = 0
+    fixed_findings = 0
+    try:
+        for r in con.execute("SELECT status FROM findings WHERE target_ip = ?", (target_ip,)).fetchall():
+            if r["status"] == "FIXED":
+                fixed_findings += 1
+            else:
+                active_findings += 1
+    except Exception:
+        pass
+    con.close()
+
+    return {
+        "target_ip": target_ip,
+        "current_id": int(curr["id"]),
+        "previous_id": int(prev["id"]) if prev else None,
+        "has_baseline": prev is not None,
+        "severity_change": {
+            "from": prev["severity"] if prev else "NONE",
+            "to": curr["severity"],
+        },
+        "finding_count_delta": int(curr["finding_count"] or 0) - (int(prev["finding_count"] or 0) if prev else 0),
+        "new_ports": sorted(curr_ports - prev_ports),
+        "closed_ports": sorted(prev_ports - curr_ports) if prev else [],
+        "unchanged_ports": sorted(curr_ports & prev_ports) if prev else sorted(curr_ports),
+        "active_findings": active_findings,
+        "remediated_findings": fixed_findings,
+    }

@@ -24,25 +24,34 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 - **Any LLM** — Ollama (local), Anthropic Claude, Google Gemini, OpenAI, Azure
   OpenAI, or any OpenAI-compatible endpoint. Per-role model selection.
-- **Black-Box, Grey-Box & Lightweight White-Box** — run unauthenticated recon,
-  pass authenticated headers/cookies (`Authorization: Bearer …` / `Cookie: …`) to
-  WAPT and the AI Agent, auto-discover OpenAPI/Swagger specs for unauth-vs-auth
-  access-control diffs, and scan source code for routes and dangerous sinks.
-- **Autonomous ReAct Agent with Graph Memory & Indirect-Injection Quarantine** —
-  plans and executes 11 scoped tools (`nmap`, `whatweb`, `httpx`, `nuclei`,
-  `ffuf`, `nikto`, `wafw00f`, `sslscan`, `openapi_probe`, `enum4linux`,
-  `searchsploit`), condenses noisy tool output for local 7B models, wraps
-  target responses in `<untrusted_tool_output>` delimiters, and syncs discovered
-  ports with the Attack-Surface Graph.
-- **Proof-First Evidence Ledger & Zero-Token PoC Retest** — stores structured
-  findings with automatic secret redaction and a 1-click deterministic SSH
-  replay (`VERIFIED` / `AUTH-GATED` / `FIXED`) that requires zero LLM tokens.
+- **Black-Box, Grey-Box (3-Tier BOLA/BFLA) & Lightweight White-Box** — run
+  unauthenticated recon, pass primary + low-privilege auth headers (`Authorization`
+  / `Cookie`) to WAPT and the AI Agent, auto-discover OpenAPI/Swagger specs for
+  3-tier `Unauth vs. Low-Priv vs. Admin` BOLA/BFLA differential checks, extract
+  hidden API routes from SPA JavaScript bundles, and scan source code for routes
+  and dangerous sinks.
+- **Autonomous ReAct Agent with Independent Validator, Graph Memory & Quarantine** —
+  plans and executes 12 scoped tools (`nmap`, `whatweb`, `httpx`, `nuclei`,
+  `ffuf`, `nikto`, `wafw00f`, `sslscan`, `openapi_probe`, `report_finding`,
+  `enum4linux`, `searchsploit`), independently verifies agent-submitted findings
+  against live HTTP indicators before persisting to the ledger, condenses noisy
+  tool output for local 7B models, wraps target responses in
+  `<untrusted_tool_output>` delimiters, and syncs discovered ports with the
+  Attack-Surface Graph.
+- **Proof-First Evidence Ledger, Batch Zero-Token Retest & Drift Diffing** —
+  stores structured findings with automatic secret redaction, 1-click single or
+  batch deterministic SSH replay (`POST /api/findings/retest-all`: `VERIFIED` /
+  `AUTH-GATED` / `FIXED` / `regressed`) with zero LLM tokens, and assessment
+  posture drift diffing (`GET /api/assessments/<id>/diff`).
+- **Correlated Attack Paths & Blast Radius** — correlates open services,
+  verified findings, and high-value internal ports into multi-stage attack paths
+  with a `0–100` Blast Radius score.
 - **Offline-first CVE & exploit intelligence** — maps detected service banners
   to local Exploit-DB (`searchsploit`) advisories on your attack host with zero
   external dependencies, plus optional online NVD CVE/CVSS enrichment.
-- **Declarative YAML Playbooks** — drop `.yaml` playbooks into `playbooks/`
-  (ships with Identity/AD/SMB, API Exposure, and TLS Crypto audits) without
-  touching Python code.
+- **Declarative YAML Playbooks & AI Probe Packs** — drop `.yaml` network/WAPT
+  playbooks into `playbooks/` and custom AI safety probe packs into
+  `playbooks/ai_probes/` without touching Python code.
 - **AI / LLM Red Team & GRC** — probe any LLM endpoint across **14 single-turn
   probes** (incl. RAG context poisoning, MCP tool-description poisoning, and
   cross-tenant leakage), **6 composable prompt converters** (`leetspeak`,

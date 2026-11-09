@@ -5,7 +5,13 @@ import json
 
 import pytest
 
-from oniops.greybox import analyze_source_code, extract_openapi_endpoints, probe_openapi, sanitize_auth_header
+from oniops.greybox import (
+    analyze_source_code,
+    discover_js_endpoints,
+    extract_openapi_endpoints,
+    probe_openapi,
+    sanitize_auth_header,
+)
 
 
 def test_sanitize_auth_header():
@@ -70,3 +76,42 @@ def users():
     # Verify the secret itself was redacted in the snippet
     for s in res["sinks"]:
         assert "1234567890abcdef" not in s["snippet"]
+
+
+def test_bola_bfla_low_priv_diff_and_js_discovery():
+    spec = {
+        "openapi": "3.0.0",
+        "security": [{"bearerAuth": []}],
+        "paths": {
+            "/api/admin/tenants": {"get": {"summary": "Admin tenant list"}},
+        },
+    }
+
+    def _bola_runner(cmd, timeout):
+        url = cmd[-1]
+        if url.endswith("/openapi.json"):
+            return json.dumps(spec)
+        if "-H" in cmd and "Bearer lowpriv" in " ".join(cmd):
+            return "HTTP/1.1 200 OK\r\n"
+        if "-H" in cmd and "Bearer admin" in " ".join(cmd):
+            return "HTTP/1.1 200 OK\r\n"
+        return "HTTP/1.1 403 Forbidden\r\n"
+
+    res = probe_openapi(
+        "10.0.0.150", 8080, "http", _bola_runner,
+        auth_header="Bearer admin", low_priv_header="Bearer lowpriv",
+    )
+    assert res["found"] is True
+    assert len(res["findings"]) == 1
+    assert "BOLA/BFLA" in res["findings"][0]["title"]
+
+    def _js_runner(cmd, timeout):
+        url = cmd[-1]
+        if url.endswith(".js"):
+            return 'fetch("/api/v1/internal/keys"); axios.post("/graphql");'
+        return '<html><head><script src="/static/app.bundle.js"></script></head></html>'
+
+    js_res = discover_js_endpoints("10.0.0.150", 8080, "http", _js_runner)
+    assert "http://10.0.0.150:8080/static/app.bundle.js" in js_res["scripts"]
+    assert "/api/v1/internal/keys" in js_res["routes"]
+    assert "/graphql" in js_res["routes"]
