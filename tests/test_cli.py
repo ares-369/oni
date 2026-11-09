@@ -76,15 +76,19 @@ def test_cli_doctor_and_sqlite_backup_restore(cfg_path, tmp_path, capsys):
     assert restored.exists()
 
 
-def test_cli_benchmark_suite(capsys):
-    assert cli_main(["benchmark", "--json"]) == 0
+def test_cli_validator_selftest(capsys):
+    assert cli_main(["selftest", "--json"]) == 0
     res = json.loads(capsys.readouterr().out)
-    assert res["failed"] == 0
-    assert res["metrics"]["recall"] == 1.0
-    assert res["metrics"]["false_positive_rate"] == 0.0
-    assert res["metrics"]["f1_score"] == 1.0
+    assert res["failed"] == 0 and res["passed"] == res["total_cases"]
+    # Honest output: pass/fail per kind and an explicit note, no accuracy metrics.
+    assert set(res["by_kind"]) == {"should_confirm", "should_reject", "ranking"}
+    assert "not a measure of detection accuracy" in res["note"]
+    assert "metrics" not in res and "recall" not in json.dumps(res).lower()
 
-    assert cli_main(["benchmark"]) == 0
+    assert cli_main(["selftest"]) == 0
     text_out = capsys.readouterr().out
-    assert "[ONIOPS Benchmark]" in text_out
-    assert "Recall=1.00" in text_out
+    assert "[ONIOPS validator self-test]" in text_out and "Recall" not in text_out
+
+    # Old command name still works for existing scripts.
+    assert cli_main(["benchmark", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["name"] == "ONIOPS validator self-test"

@@ -153,10 +153,11 @@ def _report_finding(runner, ip, args):
     # GET with -i (headers + body) so an expected_indicator in the response BODY
     # can match, not just response headers. Bounded, non-destructive.
     repro_cmd = ["curl", "-kisS", "--max-time", "5", url]
-    stored_repro = ["curl", "-kisS", "--max-time", "5", url]
     if args.get("_auth_header"):
         repro_cmd = ["curl", "-kisS", "--max-time", "5", "-H", args["_auth_header"], url]
-        stored_repro = ["curl", "-kisS", "--max-time", "5", "-H", redact_secrets(args["_auth_header"]), url]
+    # The ledger stores the real command (needed for authenticated retests) and
+    # masks secrets whenever it returns a finding to a client.
+    stored_repro = list(repro_cmd)
     probe_out = runner.run(repro_cmd, timeout=10).out or ""
     status = validate_evidence(probe_out, expected_indicator=indicator, category=category)
     db_path = args.get("_db_path")

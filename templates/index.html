@@ -2208,10 +2208,10 @@
               : 'Not yet accepted') +
             ` · <a href="${esc((TERMS && TERMS.disclaimer_url) || 'https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md')}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">read</a></span></div>` +
           `<div style="border-top:1px solid var(--border-subtle); margin-top:10px; padding-top:10px;">
-             <div style="font-size:11.5px; font-weight:600; color:var(--text-muted); margin-bottom:8px;">DIAGNOSTICS, BENCHMARK &amp; BACKUP</div>
+             <div style="font-size:11.5px; font-weight:600; color:var(--text-muted); margin-bottom:8px;">DIAGNOSTICS, SELF-TEST &amp; BACKUP</div>
              <div style="display:flex; gap:6px; flex-wrap:wrap;">
                <button class="btn btn-sm" type="button" onclick="runDoctorUi()"><i class="mdi mdi-stethoscope"></i> Run Doctor</button>
-               <button class="btn btn-sm" type="button" onclick="runBenchmarkUi()"><i class="mdi mdi-check-decagram-outline"></i> Run Benchmark</button>
+               <button class="btn btn-sm" type="button" onclick="runBenchmarkUi()" title="Checks ONIOPS's own validators on built-in examples. Not a measure of detection accuracy on real targets."><i class="mdi mdi-check-decagram-outline"></i> Run self-test</button>
                <a class="btn btn-sm" href="/api/backup/download" download><i class="mdi mdi-database-export-outline"></i> Backup SQLite</a>
              </div>
              <div id="setDiagBox" class="mono" style="margin-top:8px; font-size:11px; color:var(--text-muted); white-space:pre-wrap;"></div>
@@ -2232,12 +2232,12 @@
 
     async function runBenchmarkUi() {
       const box = document.getElementById('setDiagBox');
-      if (box) box.textContent = 'Running 17-case verification benchmark...';
+      if (box) box.textContent = 'Running validator self-test...';
       try {
-        const b = await (await fetch('/api/benchmark')).json();
-        const m = b.metrics || {};
-        if (box) box.textContent = `[Benchmark: ${b.passed}/${b.total_cases} PASSED] Recall=${(m.recall||0).toFixed(2)} | FPR=${(m.false_positive_rate||0).toFixed(2)} | Precision=${(m.precision||0).toFixed(2)} | F1=${(m.f1_score||0).toFixed(2)}`;
-      } catch (e) { if (box) box.textContent = 'Benchmark error: ' + e; }
+        const b = await (await fetch('/api/selftest')).json();
+        const kinds = Object.values(b.by_kind || {}).map(k => `${k.label}: ${k.passed}/${k.total}`).join('\n');
+        if (box) box.textContent = `[Validator self-test] ${b.passed}/${b.total_cases} checks passed\n${kinds}\n\n${b.note || ''}`;
+      } catch (e) { if (box) box.textContent = 'Self-test error: ' + e; }
     }
 
     function _collectHosts() {

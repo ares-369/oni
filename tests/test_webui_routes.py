@@ -86,12 +86,12 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     assert fdetail["repro_display"].startswith("curl")
     assert client.get("/api/findings/999999").status_code == 404
 
-    r_bench = client.get("/api/benchmark")
-    assert r_bench.status_code == 200
-    bdata = r_bench.get_json()
-    assert bdata["failed"] == 0
-    assert bdata["metrics"]["recall"] == 1.0
-    assert bdata["metrics"]["false_positive_rate"] == 0.0
+    for route in ("/api/selftest", "/api/benchmark"):   # new name + old alias
+        r_st = client.get(route)
+        assert r_st.status_code == 200
+        sdata = r_st.get_json()
+        assert sdata["failed"] == 0 and "metrics" not in sdata
+        assert "not a measure of detection accuracy" in sdata["note"]
 
     # Mock active_runner for deterministic retest
     class _MockRunner:

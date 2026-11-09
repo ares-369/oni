@@ -400,10 +400,13 @@ class FindingsLedger:
         clean_evidence = redact_secrets(evidence)[:1500]
         ev_hash = hashlib.sha256(clean_evidence.encode("utf-8")).hexdigest()
         conf = (confidence or evaluate_finding_confidence(category, status, clean_evidence)).upper()
+        # Store the replay command UNREDACTED: retesting an authenticated finding
+        # needs the real credential. Secrets are masked wherever a finding leaves
+        # the server (see _enrich and retest), never in the stored argv.
         if isinstance(repro_cmd, list):
-            cmd_str = json.dumps([redact_secrets(str(x)) for x in repro_cmd])
+            cmd_str = json.dumps([str(x) for x in repro_cmd])
         else:
-            cmd_str = json.dumps([redact_secrets(x) for x in shlex.split(repro_cmd)]) if repro_cmd else "[]"
+            cmd_str = json.dumps(shlex.split(repro_cmd)) if repro_cmd else "[]"
 
         with self._conn() as con:
             cur = con.execute(
@@ -535,8 +538,10 @@ class FindingsLedger:
         try:
             cmd_list = json.loads(d.get("repro_cmd") or "[]")
             d["repro_display"] = redact_secrets(shlex.join(cmd_list)) if cmd_list else ""
+            d["repro_cmd"] = json.dumps([redact_secrets(str(x)) for x in cmd_list])
         except Exception:
             d["repro_display"] = ""
+            d["repro_cmd"] = "[]"
         cat = d.get("category", "")
         title = d.get("title", "")
         d["coverage"] = map_finding_coverage(cat, title)
@@ -567,10 +572,16 @@ class FindingsLedger:
             return None
         return self._enrich(dict(row))
 
+    def _get_raw(self, finding_id: int) -> dict | None:
+        """Unredacted row, for internal replay only. Never return this to a client."""
+        with self._conn() as con:
+            row = con.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
+        return dict(row) if row else None
+
     def retest(self, finding_id: int, runner, scope: Scope) -> dict:
         """Re-run a finding's deterministic PoC command on the attack host with
         ZERO LLM tokens, updating status to VERIFIED, AUTH-GATED, or FIXED."""
-        f = self.get(finding_id)
+        f = self._get_raw(finding_id)
         if not f:
             raise ValueError(f"Finding #{finding_id} not found.")
         # Enforce scope before running any retest command.
@@ -581,11 +592,31 @@ class FindingsLedger:
             cmd = []
         if not cmd or not isinstance(cmd, list):
             raise ValueError(f"Finding #{finding_id} has no deterministic replay command.")
+        # Findings saved by v0.4.1-0.4.2 had their credentials masked in storage.
+        # Replaying a masked token would get a 401/empty reply and wrongly mark a
+        # live issue as fixed, so refuse instead of guessing.
+        if any("[REDACTED" in str(x) or "sk-[REDACTED]" in str(x) or "gh_[REDACTED]" in str(x) for x in cmd):
+            raise ValueError(
+                f"Finding #{finding_id}'s replay command lost its credentials (saved by v0.4.1-0.4.2). "
+                "Re-run the assessment with the auth header to retest it."
+            )
         scope.guard_command(" ".join(cmd))
 
         res = runner.run(cmd, timeout=30)
-        out = redact_secrets((res.out or "").strip())
+        raw_out = (res.out or "").strip()
+        # If the replay could not run at all (attack host unreachable, timeout,
+        # scope refusal) we learned nothing about the target: never call it FIXED.
+        if getattr(res, "rc", 0) == 126 or raw_out.startswith(("SSH connection error", "Command error/timeout")):
+            raise ValueError(
+                f"Retest of finding #{finding_id} could not run on the attack host "
+                f"({raw_out[:120]}). Status left unchanged."
+            )
+        out = redact_secrets(raw_out)
         ts = _now_iso()
+        # Was this finding made with credentials? Then a 401 on replay usually
+        # means the credential expired, not that the issue was fixed.
+        authed = any(re.match(r"(?i)\s*(authorization|cookie|x-api-key|x-auth-token)\s*:", str(x)) for x in cmd)
+        note = ""
 
         # Determine whether the issue still reproduces.
         cat = f.get("category", "")
@@ -600,16 +631,20 @@ class FindingsLedger:
             new_status = "VERIFIED" if out and f["target_ip"] in out else "FIXED"
         elif cat in ("api_security", "bola", "bola_horizontal", "bfla") or "bola" in cat or "bfla" in cat:
             m = re.search(r"HTTP/[\d.]+\s+(\d{3})", out)
-            if m and int(m.group(1)) in (200, 201, 204):
+            code = int(m.group(1)) if m else None
+            if code in (200, 201, 204):
                 new_status = "VERIFIED"
-            elif m and int(m.group(1)) in (401, 403, 404):
+            elif code == 401 and authed:
+                new_status = "UNCONFIRMED"
+                note = "credential rejected (401) — it may have expired; retest with a fresh token. "
+            elif code in (401, 403, 404):
                 new_status = "FIXED"
             else:
                 new_status = "UNCONFIRMED"
         else:
             new_status = "VERIFIED" if (res.ok and out) else "FIXED"
 
-        new_ev = f"[Retest {ts[:19]}] {out[:400] or '(no output — appears remediated/closed)'}"
+        new_ev = f"[Retest {ts[:19]}] {note}{out[:400] or '(no output — appears remediated/closed)'}"
         new_hash = hashlib.sha256(new_ev.encode("utf-8")).hexdigest()
         new_conf = evaluate_finding_confidence(cat, new_status, out)
         with self._conn() as con:
@@ -627,7 +662,7 @@ class FindingsLedger:
             "confidence": new_conf,
             "evidence": new_ev,
             "evidence_sha256": new_hash,
-            "repro_cmd": shlex.join(cmd),
+            "repro_cmd": redact_secrets(shlex.join(cmd)),
             "last_retest": ts,
         }
 

@@ -25,7 +25,7 @@ from pathlib import Path
 
 from . import __version__
 from .aisec import load_yaml_probes
-from .benchmark import run_benchmark_suite
+from .benchmark import run_selftest
 from .config import get_config
 from .findings import FindingsLedger, backup_sqlite, diff_assessments, restore_sqlite
 from .greybox import analyze_source_code
@@ -161,8 +161,9 @@ def cli_main(argv: list[str] | None = None) -> int:
     df.add_argument("assessment_id", type=int, help="Assessment ID to diff")
     df.add_argument("--db", default="", help="Path to oniops.sqlite")
 
-    bm = sub.add_parser("benchmark", help="Run deterministic verification & false-positive benchmark suite")
-    bm.add_argument("--json", action="store_true", help="Print raw JSON benchmark results")
+    for name in ("selftest", "benchmark"):   # "benchmark" kept as an alias for old scripts
+        st = sub.add_parser(name, help="Check ONIOPS's own validators on built-in examples (not a detection-accuracy benchmark)")
+        st.add_argument("--json", action="store_true", help="Print raw JSON results")
 
     ns = parser.parse_args(args_list)
 
@@ -257,15 +258,15 @@ def cli_main(argv: list[str] | None = None) -> int:
         print(json.dumps(diff_assessments(db_path, ns.assessment_id), indent=2))
         return 0
 
-    if ns.cmd == "benchmark":
-        res = run_benchmark_suite()
+    if ns.cmd in ("selftest", "benchmark"):
+        res = run_selftest()
         if ns.json:
             print(json.dumps(res, indent=2))
         else:
-            m = res["metrics"]
-            print(f"[ONIOPS Benchmark] {res['passed']}/{res['total_cases']} passed | "
-                  f"Recall={m['recall']:.2f} | FPR={m['false_positive_rate']:.2f} | "
-                  f"Precision={m['precision']:.2f} | F1={m['f1_score']:.2f}")
+            print(f"[ONIOPS validator self-test] {res['passed']}/{res['total_cases']} checks passed")
+            for k in res["by_kind"].values():
+                print(f"  {k['label']}: {k['passed']}/{k['total']}")
+            print(f"  Note: {res['note']}")
             for c in res["cases"]:
                 mark = "PASS" if c["passed"] else "FAIL"
                 print(f"  [{mark}] {c['id']} ({c['domain']}): {c['name']} -> {c['actual']}")

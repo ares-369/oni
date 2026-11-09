@@ -1,6 +1,8 @@
 """Tests for the Proof-First Findings Ledger, secret redaction, and zero-token PoC retest."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from oniops.findings import (
@@ -212,3 +214,96 @@ def test_observed_vs_inferred_identity_attack_graph_and_idempotent_jobs(tmp_path
     j2 = jm.submit("assessment", {"ip": "10.0.0.150", "profile": "fast_recon"}, lambda ctl: {"ok": True})
     assert j1 == j2
     ev.set()
+
+
+class _AuthAPI:
+    """Fake target: the real token gets the leaked record (vuln still present);
+    anything else gets 401. Records what was actually sent."""
+    def __init__(self, token, vulnerable=True):
+        self.token, self.vulnerable, self.sent = token, vulnerable, None
+
+    def run(self, cmd, timeout=30):
+        self.sent = cmd
+        ok_auth = any(f"Bearer {self.token}" in c for c in cmd)
+
+        class _R:
+            ok = True
+        if ok_auth and self.vulnerable:
+            _R.out = 'HTTP/1.1 200 OK\r\n\r\n{"id":2,"email":"b@x"}'
+        elif ok_auth:
+            _R.out = "HTTP/1.1 404 Not Found\r\n"
+        else:
+            _R.out = "HTTP/1.1 401 Unauthorized\r\n"
+        return _R()
+
+
+def _authed_finding(ledger, token="REALTOKEN-abcdef1234567890"):
+    return ledger.upsert(
+        target_ip="10.0.0.150", port=8080, title="BOLA on /api/users/{id}",
+        category="api_security", severity="HIGH", status="VERIFIED",
+        evidence="200 with another user's record",
+        repro_cmd=["curl", "-kisS", "-H", f"Authorization: Bearer {token}", "http://10.0.0.150:8080/api/users/2"],
+        confidence="HIGH",
+    )
+
+
+def test_authenticated_retest_uses_real_credentials(tmp_path, scope):
+    # Regression: v0.4.1-0.4.2 masked the token in storage, so a retest sent
+    # "[REDACTED-TOKEN]", got 401, and marked a still-present BOLA as FIXED.
+    ledger = FindingsLedger(tmp_path / "oniops.sqlite")
+    fid = _authed_finding(ledger)
+    api = _AuthAPI("REALTOKEN-abcdef1234567890", vulnerable=True)
+    res = ledger.retest(fid, api, scope)
+    assert any("Bearer REALTOKEN-abcdef1234567890" in c for c in api.sent)
+    assert res["status"] == "VERIFIED"          # still vulnerable -> NOT "FIXED"
+    assert "REALTOKEN" not in res["repro_cmd"]  # response to client stays masked
+
+
+def test_secrets_never_leave_the_ledger(tmp_path, scope):
+    ledger = FindingsLedger(tmp_path / "oniops.sqlite")
+    fid = _authed_finding(ledger)
+    for item in (ledger.get(fid), *ledger.list_findings()):
+        blob = json.dumps(item)
+        assert "REALTOKEN" not in blob
+        assert "[REDACTED" in item["repro_display"]
+
+
+def test_legacy_masked_replay_refuses_instead_of_guessing_fixed(tmp_path, scope):
+    ledger = FindingsLedger(tmp_path / "oniops.sqlite")
+    fid = _authed_finding(ledger, token="[REDACTED-TOKEN]")   # as saved by v0.4.1-0.4.2
+    with pytest.raises(ValueError, match="lost its credentials"):
+        ledger.retest(fid, _AuthAPI("anything"), scope)
+    assert ledger.get(fid)["status"] == "VERIFIED"           # unchanged, not FIXED
+
+
+def test_authenticated_401_is_not_reported_as_fixed(tmp_path, scope):
+    # A 401 on an authenticated replay usually means the token expired.
+    ledger = FindingsLedger(tmp_path / "oniops.sqlite")
+    fid = _authed_finding(ledger)
+    res = ledger.retest(fid, _AuthAPI("SOME-OTHER-TOKEN"), scope)   # server rejects our token
+    assert res["status"] == "UNCONFIRMED"
+    assert "credential rejected" in res["evidence"]
+
+
+def test_unauthenticated_finding_still_fixed_when_auth_is_enforced(tmp_path, scope):
+    ledger = FindingsLedger(tmp_path / "oniops.sqlite")
+    fid = ledger.upsert(target_ip="10.0.0.150", port=8080, title="Unauthenticated API access on /api/admin",
+                        category="api_security", severity="HIGH", status="VERIFIED", evidence="200 without auth",
+                        repro_cmd=["curl", "-kisS", "http://10.0.0.150:8080/api/admin"], confidence="HIGH")
+    res = ledger.retest(fid, _AuthAPI("x"), scope)    # now returns 401 -> auth enforced
+    assert res["status"] == "FIXED"
+
+
+def test_unreachable_attack_host_never_marks_fixed(tmp_path, scope):
+    class _Down:
+        def run(self, cmd, timeout=30):
+            class _R:
+                rc = 1
+                ok = False
+                out = "SSH connection error: timed out"
+            return _R()
+    ledger = FindingsLedger(tmp_path / "oniops.sqlite")
+    fid = _authed_finding(ledger)
+    with pytest.raises(ValueError, match="could not run"):
+        ledger.retest(fid, _Down(), scope)
+    assert ledger.get(fid)["status"] == "VERIFIED"

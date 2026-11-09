@@ -34,6 +34,9 @@ _LOGIN_MAX_ATTEMPTS = 10
 _LOGIN_WINDOW_SEC = 60.0
 _VALID_ROLES = {"viewer", "operator", "admin"}
 _ADMIN_ONLY_PATHS = {"/api/config", "/api/config/preview", "/api/kali/install", "/api/host"}
+# Reads that are NOT safe for every role: the full database export (findings,
+# evidence, stored replay credentials, terms-acceptance log) is admin-only.
+_ADMIN_ONLY_READ_PATHS = {"/api/backup/download"}
 
 
 def resolve_user_role(cfg, user: str) -> str:
@@ -51,7 +54,7 @@ def resolve_user_role(cfg, user: str) -> str:
     return default_role if default_role in _VALID_ROLES else "admin"
 
 
-def check_rbac_permission(role: str, method: str, path: str) -> tuple[bool, str]:
+def check_rbac_permission(role: str, method: str, path: str, args=None) -> tuple[bool, str]:
     """Enforce 3-tier RBAC:
       - viewer: read-only GET/HEAD/OPTIONS + stateless PDF export (/api/report/pdf)
       - operator: can run assessments, agents, AIsec, and retests; cannot modify
@@ -60,6 +63,12 @@ def check_rbac_permission(role: str, method: str, path: str) -> tuple[bool, str]
     """
     r = (role or "admin").lower()
     m = (method or "GET").upper()
+    args = args or {}
+    # Admin-only reads: checked BEFORE the general "GET is read-only" rule.
+    sensitive_read = path in _ADMIN_ONLY_READ_PATHS or (
+        path == "/api/doctor" and str(args.get("runner", "")).lower() in ("1", "true", "yes"))
+    if sensitive_read and r != "admin":
+        return False, f"Forbidden: {path} is restricted to the admin role."
     if m in ("GET", "HEAD", "OPTIONS") or path in _OPEN_PATHS or path == "/api/report/pdf":
         return True, ""
     if r == "viewer":
@@ -174,7 +183,7 @@ def init_auth(app, cfg) -> None:
             if (a and _verify_password(cfg, a.password or "")
                     and hmac.compare_digest(a.username or "", cfg.auth.username)):
                 role = resolve_user_role(cfg, a.username or "")
-                allowed, reason = check_rbac_permission(role, request.method, p)
+                allowed, reason = check_rbac_permission(role, request.method, p, request.args)
                 if not allowed:
                     return Response(reason, 403)
                 return None
@@ -188,7 +197,7 @@ def init_auth(app, cfg) -> None:
             user = request.headers.get(cfg.auth.proxy_header, "")
             if user and _user_allowed(cfg, user):
                 role = resolve_user_role(cfg, user)
-                allowed, reason = check_rbac_permission(role, request.method, p)
+                allowed, reason = check_rbac_permission(role, request.method, p, request.args)
                 if not allowed:
                     return Response(reason, 403)
                 return None
@@ -200,7 +209,7 @@ def init_auth(app, cfg) -> None:
             if request.method in ("POST", "PUT", "DELETE", "PATCH") and not _origin_matches_request(cfg):
                 return Response("Forbidden: cross-origin state-changing request blocked (CSRF guard).", 403)
             role = session.get("role") or resolve_user_role(cfg, str(user))
-            allowed, reason = check_rbac_permission(role, request.method, p)
+            allowed, reason = check_rbac_permission(role, request.method, p, request.args)
             if not allowed:
                 return Response(reason, 403)
             return None

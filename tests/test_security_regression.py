@@ -173,3 +173,18 @@ def test_three_tier_rbac_enforcement():
     # Admin: full access
     assert check_rbac_permission("admin", "POST", "/api/config")[0] is True
     assert check_rbac_permission("admin", "POST", "/api/kali/install")[0] is True
+
+
+def test_sensitive_reads_are_admin_only():
+    # Regression: every GET used to pass for every role, so a read-only viewer
+    # could download the whole database (findings, evidence, stored replay
+    # credentials, terms log) and make the server SSH into the attack host.
+    from oniops.auth import check_rbac_permission as rbac
+    for role in ("viewer", "operator"):
+        assert rbac(role, "GET", "/api/backup/download")[0] is False
+        assert rbac(role, "GET", "/api/doctor", {"runner": "1"})[0] is False
+    assert rbac("admin", "GET", "/api/backup/download")[0] is True
+    assert rbac("admin", "GET", "/api/doctor", {"runner": "true"})[0] is True
+    # Ordinary reads stay open to viewers.
+    assert rbac("viewer", "GET", "/api/doctor")[0] is True
+    assert rbac("viewer", "GET", "/api/findings")[0] is True

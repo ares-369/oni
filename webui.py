@@ -27,7 +27,7 @@ from oniops import __version__, cve, terms
 from oniops.agent import run_agent
 from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
-from oniops.benchmark import run_benchmark_suite
+from oniops.benchmark import run_selftest
 from oniops.cli import build_whitebox_sarif, run_doctor
 from oniops.config import apply_updates, get_config, preview_updates
 from oniops.findings import (
@@ -990,9 +990,10 @@ def api_finding_detail(fid: int):
     return jsonify({"finding": item})
 
 
-@app.route("/api/benchmark")
-def api_benchmark():
-    return jsonify(run_benchmark_suite())
+@app.route("/api/selftest")
+@app.route("/api/benchmark")   # old name, kept for compatibility
+def api_selftest():
+    return jsonify(run_selftest())
 
 
 @app.route("/api/doctor")
