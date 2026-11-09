@@ -7,6 +7,32 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.4-beta] — 2026-11-10
+
+### Security
+- **Reverse-proxy login could be forged.** With `auth.mode: proxy` and an empty
+  `proxy_trusted_ips` (the example config's default), any client could send the
+  identity header and log in as any user. Proxy mode now fails closed: ONIOPS
+  refuses to start without a trusted-proxy list, and the request handler also
+  rejects the header when no list is set.
+- **Secure defaults.** The web UI now listens on `127.0.0.1` by default, and ONIOPS
+  **refuses to start** when exposed on a network address without a login,
+  unless you explicitly set `oniops.allow_unauthenticated_network: true` (or
+  `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK=1`). Docker Compose now publishes the port
+  on `127.0.0.1` only. New `ONIOPS_BIND_HOST` environment override.
+- **Prompt-injection filter strengthened.** Tool output is now Unicode-normalised
+  and stripped of invisible characters before scanning, base64-encoded
+  instructions are decoded and checked, and many more phrasings and fake role
+  tags are caught (17 of 17 adversarial cases, up from 6). A new test suite also
+  verifies that a model which fully obeys an injection still cannot scan out of
+  scope or run arbitrary or destructive commands.
+
+### Upgrade notes
+- If you reach ONIOPS from other machines, make sure `oniops.bind_host` is set
+  (e.g. `"0.0.0.0"`) **and** a login is enabled (`auth.mode`), or ONIOPS will not
+  start. If you use `auth.mode: proxy`, set `auth.proxy_trusted_ips` to your
+  reverse proxy's IP.
+
 ## [0.4.3-beta] — 2026-11-10
 
 ### Fixed
@@ -178,7 +204,8 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.3-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.4-beta...HEAD
+[0.4.4-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.4-beta
 [0.4.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.3-beta
 [0.4.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.2-beta
 [0.4.1-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.1-beta
