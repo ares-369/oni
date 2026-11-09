@@ -15,6 +15,8 @@ import json
 import logging
 import re
 import sqlite3
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -194,21 +196,62 @@ def index():
     return render_template("index.html")
 
 
+# ── Health cache ──────────────────────────────────────────────────────────
+# Pinging the attack host over SSH (and an LLM that is down) can take the full
+# connect timeout. Doing that inline made every page load wait ~6s whenever
+# the attack host was off. Instead, health is checked in a background thread
+# and the last result is served instantly; None means "still checking".
+_HEALTH: dict = {"kali": None, "llm": None, "providers": {}, "models": None,
+                 "ts": 0.0, "busy": False}
+_HEALTH_LOCK = threading.Lock()
+_HEALTH_TTL = 20  # seconds before a background re-check is triggered
+
+
+def _refresh_health() -> None:
+    try:
+        kali_ok = False
+        try:
+            kali_ok = active_runner().ping()
+        except Exception:
+            pass
+        try:
+            providers = llm.health()
+        except Exception:
+            providers = {}
+        try:
+            models = llm.for_role("reporter").provider.available_models() or [active_model_name()]
+        except Exception:
+            models = [active_model_name()]
+        with _HEALTH_LOCK:
+            _HEALTH.update(kali=kali_ok, llm=any(providers.values()) if providers else False,
+                           providers=providers, models=models, ts=time.time())
+    finally:
+        with _HEALTH_LOCK:
+            _HEALTH["busy"] = False
+
+
+def health_snapshot(force: bool = False) -> dict:
+    """Return the latest health result immediately; refresh in the background
+    when stale (or when forced, e.g. after switching attack host)."""
+    with _HEALTH_LOCK:
+        if force:
+            _HEALTH.update(kali=None, llm=None)
+        stale = force or (time.time() - _HEALTH["ts"] > _HEALTH_TTL)
+        start = stale and not _HEALTH["busy"]
+        if start:
+            _HEALTH["busy"] = True
+        snap = dict(_HEALTH)
+    if start:
+        threading.Thread(target=_refresh_health, daemon=True, name="oniops-health").start()
+    return snap
+
+
 @app.route("/api/status")
 def api_status():
-    kali_ok = False
-    try:
-        kali_ok = active_runner().ping()
-    except Exception:
-        pass
-
-    provider_health = llm.health()
-    # Collect model list from the planner/reporter provider for the UI dropdown.
-    try:
-        rprov = llm.for_role("reporter").provider
-        models = rprov.available_models() or [active_model_name()]
-    except Exception:
-        models = [active_model_name()]
+    h = health_snapshot()
+    kali_ok = h["kali"]                      # True / False / None (checking)
+    provider_health = h["providers"] or {}
+    models = h["models"] or [active_model_name()]
 
     with sqlite3.connect(DB_PATH) as conn:
         total = conn.execute("SELECT count(*) FROM assessments").fetchone()[0]
@@ -229,8 +272,9 @@ def api_status():
                 pass
 
     return jsonify({
-        "health": {"kali": kali_ok, "llm": any(provider_health.values()),
-                   "providers": provider_health},
+        "health": {"kali": kali_ok, "llm": h["llm"],
+                   "providers": provider_health,
+                   "host_name": getattr(active_runner().host, "label", "") or ACTIVE_HOST},
         "current_model": active_model_name(),
         "models": models,
         "scope": scope.cidrs,
@@ -289,6 +333,7 @@ def _reload_config():
     HOST_RUNNERS = {h.name: KaliRunner(h, scope, cfg) for h in cfg.hosts}
     ACTIVE_HOST = cfg.kali.name
     llm = get_llm(reload=True)
+    health_snapshot(force=True)  # hosts/LLM may have changed: re-check now
 
 
 @app.route("/api/config")
@@ -361,6 +406,7 @@ def api_set_host():
     if name not in HOST_RUNNERS:
         return jsonify({"error": f"Unknown attack host '{name}'."}), 400
     ACTIVE_HOST = name
+    health_snapshot(force=True)
     emit_event("CONFIG", "ok", f"Switched active attack host to {name}")
     return jsonify({"ok": True, "active_host": ACTIVE_HOST})
 
@@ -1082,6 +1128,11 @@ KALI_TOOL_CATALOG = [
 
 @app.route("/api/kali/tools")
 def api_kali_tools():
+    # Don't hang the Arsenal view on an SSH timeout when we already know the
+    # attack host is unreachable; report every tool as unknown instead.
+    if health_snapshot()["kali"] is False:
+        return jsonify({"kali_online": False,
+                        "tools": [{**item, "installed": False} for item in KALI_TOOL_CATALOG]})
     bins = [t["bin"] for t in KALI_TOOL_CATALOG]
     script = ("export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; "
               "for b in " + " ".join(bins) + "; do if command -v $b >/dev/null 2>&1; then echo \"$b:1\"; else echo \"$b:0\"; fi; done")

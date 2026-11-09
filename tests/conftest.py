@@ -13,7 +13,7 @@ MINIMAL_CONFIG = textwrap.dedent("""
     scope:
       allowed_cidrs: ["10.0.0.0/24", "192.168.50.0/24"]
       exclude: ["10.0.0.1"]
-      mode: strict
+      mode: active
       non_destructive: true
       rate_limit_per_min: 60
     attack_hosts:

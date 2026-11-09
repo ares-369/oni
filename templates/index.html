@@ -753,7 +753,22 @@
     .set-row:last-child { border-bottom: none; }
     .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
     @media (max-width: 1024px) { .set-grid { grid-template-columns: 1fr; } }
+    /* Compact host/LLM status for phones (the header pills are hidden there). */
+    .mobile-status { display: none; gap: 5px; }
+    .mobile-status .status-dot { width: 9px; height: 9px; }
+
     @media (max-width: 1024px) {
+      .mobile-status { display: inline-flex; align-items: center; justify-content: center; }
+
+      /* Touch targets: Apple HIG asks for 44pt, Material for 48dp. */
+      .btn, .btn-sm, .icon-btn, .nav-item, .select, .input,
+      .set-row button, .drawer-input-bar button { min-height: 44px; }
+      .icon-btn { min-width: 44px; }
+      .btn-sm { padding: 10px 14px; }
+      input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+      label:has(input[type="checkbox"]), label:has(input[type="radio"]),
+      .set-row:has(> input[type="checkbox"]) { min-height: 44px; display: flex; align-items: center; }
+
       .app-shell, .app-shell.sidebar-collapsed {
         grid-template-columns: 1fr;
         grid-template-areas: "header" "main";
@@ -806,7 +821,7 @@
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-left">
-        <button class="icon-btn" id="sidebarToggle" title="Toggle Navigation">
+        <button class="icon-btn" id="sidebarToggle" title="Toggle Navigation" aria-label="Open or close navigation">
           <i class="mdi mdi-menu"></i>
         </button>
         <div class="brand">
@@ -835,7 +850,7 @@
       </div>
 
       <div class="header-center">
-        <div class="status-pill" title="Kali Attack Host (SSH)">
+        <div class="status-pill" title="Attack host (SSH)">
           <span class="status-dot" id="kaliDot"></span>
           <span>Host: <strong id="kaliStatusText" class="mono">Checking...</strong></span>
         </div>
@@ -846,10 +861,15 @@
       </div>
 
       <div class="header-right">
-        <button class="icon-btn" id="themeToggle" title="Toggle Dark/Light Theme">
+        <!-- Phones hide the status pills; this keeps host/LLM health visible. -->
+        <button class="icon-btn mobile-status" id="mobileStatus" type="button"
+                aria-label="Attack host and LLM status" title="Status" onclick="showStatusToast()">
+          <span class="status-dot" id="mKaliDot"></span><span class="status-dot" id="mLlmDot"></span>
+        </button>
+        <button class="icon-btn" id="themeToggle" title="Toggle Dark/Light Theme" aria-label="Toggle dark or light theme">
           <i class="mdi mdi-weather-night" id="themeIcon"></i>
         </button>
-        <button class="icon-btn" id="drawerToggle" title="Toggle Red Team AI Operator">
+        <button class="icon-btn" id="drawerToggle" title="Toggle Red Team AI Operator" aria-label="Open or close the AI operator">
           <i class="mdi mdi-robot-outline"></i>
         </button>
       </div>
@@ -903,11 +923,11 @@
       </div>
 
       <div class="sidebar-footer-card">
-        <div class="sidebar-footer-title">
-          <i class="mdi mdi-console-network" style="color: var(--primary);"></i> Attack Host Connected
+        <div class="sidebar-footer-title" id="hostCardTitle">
+          <i class="mdi mdi-console-network" style="color: var(--text-dim);"></i> Checking attack host…
         </div>
-        <div style="color: var(--text-muted); line-height: 1.4;">
-          Scope-locked SSH execution on your attack host. Add more hosts in Settings.
+        <div style="color: var(--text-muted); line-height: 1.4;" id="hostCardText">
+          Testing SSH to your attack host. Add more hosts in Settings.
         </div>
       </div>
     </aside>
@@ -956,19 +976,19 @@
           <div class="kpi-card">
             <div class="kpi-top"><span>Assessments Executed</span><i class="mdi mdi-radar"></i></div>
             <div class="kpi-value" id="kpiTotalScans">0</div>
-            <div class="kpi-sub">Kali recon &amp; service audits</div>
+            <div class="kpi-sub">Recon &amp; service audits</div>
           </div>
         </div>
 
         <!-- Quick Launch Bar -->
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title"><i class="mdi mdi-flash"></i> Quick-Launch Homelab Assessment</div>
-            <span class="badge badge-red">KALI ATTACK HOST</span>
+            <div class="panel-title"><i class="mdi mdi-flash"></i> Quick-Launch Assessment</div>
+            <span class="badge badge-red">ATTACK HOST</span>
           </div>
           <div class="panel-body" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-            <select id="quickTargetSelect" class="select" style="min-width:250px;"></select>
-            <select id="quickProfileSelect" class="select" style="min-width:240px;">
+            <select id="quickTargetSelect" aria-label="Target" class="select" style="min-width:250px;"></select>
+            <select id="quickProfileSelect" aria-label="Assessment profile" class="select" style="min-width:240px;">
               <option value="fast_recon">Fast Tactical Recon (Top 100 TCP + Banners)</option>
               <option value="deep_service">Deep Service &amp; Exploit-DB Audit (-sV -sC)</option>
               <option value="web_tls_audit">Web Security Headers &amp; TLS Cipher Audit</option>
@@ -1010,7 +1030,7 @@
           <!-- Top Exposed Hosts -->
           <div class="panel">
             <div class="panel-header">
-              <div class="panel-title"><i class="mdi mdi-fire"></i> Highest Priority Homelab Surface</div>
+              <div class="panel-title"><i class="mdi mdi-fire"></i> Highest-Priority Attack Surface</div>
               <button class="btn btn-sm" onclick="switchView('targets')">Full Matrix</button>
             </div>
             <div class="table-wrap">
@@ -1042,7 +1062,7 @@
               Offensive Recon &amp; Validation Workbench
             </div>
             <div class="page-subtitle">
-              Execute scoped Nmap service fingerprinting via Kali, HTTP header/TLS audits, and AI adversary analysis
+              Execute scoped Nmap service fingerprinting on your attack host, HTTP header/TLS audits, and AI adversary analysis
             </div>
           </div>
         </div>
@@ -1050,17 +1070,17 @@
         <div class="panel">
           <div class="panel-header">
             <div class="panel-title"><i class="mdi mdi-tune-variant"></i> Assessment Parameters</div>
-            <span class="badge badge-red">Kali attack host</span>
+            <span class="badge badge-red">Attack host</span>
           </div>
           <div class="panel-body" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:12px; align-items:end;">
             <div>
               <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">TARGET (IN SCOPE)</label>
-              <select id="wbTargetSelect" class="select" style="width:100%;"></select>
-              <input id="wbTargetInput" class="input" style="width:100%; margin-top:6px;" placeholder="…or type any in-scope IP or domain to attack" />
+              <select id="wbTargetSelect" aria-label="Target" class="select" style="width:100%;"></select>
+              <input id="wbTargetInput" class="input" style="width:100%; margin-top:6px;" placeholder="…or type an in-scope IP / domain" aria-label="Target IP or domain" />
             </div>
             <div>
               <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">ASSESSMENT PROFILE</label>
-              <select id="wbProfileSelect" class="select" style="width:100%;">
+              <select id="wbProfileSelect" aria-label="Assessment profile" class="select" style="width:100%;">
                 <option value="autonomous_ai">Autonomous AI Red-Team Playbook (Nmap + Web + Exploit-DB + LLM)</option>
                 <option value="fast_recon">Fast Tactical Recon (Top 100 TCP Ports + Service Detection)</option>
                 <option value="deep_service">Deep Service &amp; Banner Discovery (-sV -sC + searchsploit)</option>
@@ -1071,8 +1091,8 @@
                 <option value="tls_crypto_audit">Playbook: TLS &amp; Cryptographic Posture Audit</option>
               </select>
               <div style="display:flex; gap:6px; margin-top:6px;">
-                <input id="wbAuthHeader" class="input" style="flex:1;" placeholder="Optional Grey-Box Auth (e.g. Authorization: Bearer ... or Cookie: sid=...)" />
-                <input id="wbLowPrivHeader" class="input" style="flex:1;" placeholder="Optional Low-Priv Role Header (BOLA/BFLA diff)" />
+                <input id="wbAuthHeader" class="input" style="flex:1;" placeholder="Auth header (optional)" title="Optional grey-box auth header, e.g. Authorization: Bearer … or Cookie: sid=…" aria-label="Optional authenticated header for grey-box testing" />
+                <input id="wbLowPrivHeader" class="input" style="flex:1;" placeholder="Low-priv header (optional)" title="Optional low-privilege role header, used to diff BOLA/BFLA access" aria-label="Optional low-privilege header for BOLA/BFLA comparison" />
               </div>
             </div>
             <button class="btn btn-primary" id="wbRunBtn" onclick="executeWorkbenchScan()" style="height:38px;">
@@ -1083,8 +1103,8 @@
             <details>
               <summary style="cursor:pointer; font-size:12px; color:var(--text-muted); font-weight:600;"><i class="mdi mdi-code-tags"></i> White-Box Source / Route &amp; Sink Analyzer (optional)</summary>
               <div style="display:flex; gap:10px; margin-top:8px; align-items:start;">
-                <textarea id="wbSourceInput" class="input" rows="2" style="flex:1; font-family:monospace; font-size:11.5px;" placeholder="Paste source code or a local path to extract web routes (@app.route / @router.get) and dangerous sinks..."></textarea>
-                <button class="btn btn-sm" onclick="runWhiteboxScan()"><i class="mdi mdi-magnify-scan"></i> Scan Code</button>
+                <textarea id="wbSourceInput" aria-label="Source code or path for white-box analysis" class="input" rows="2" style="flex:1; font-family:monospace; font-size:11.5px;" placeholder="Paste source code or a local path to extract web routes (@app.route / @router.get) and dangerous sinks..."></textarea>
+                <button class="btn btn-sm" onclick="runWhiteboxScan()" title="Scan source code"><i class="mdi mdi-magnify-scan"></i> Scan Code</button>
               </div>
               <div id="wbSourceResult" style="margin-top:8px; font-size:12px; color:var(--text-muted);"></div>
             </details>
@@ -1100,7 +1120,7 @@
             </div>
             <div class="panel-body">
               <div id="wbPortsBar" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;"></div>
-              <div class="terminal-box" id="wbRawOutput">Select an in-scope target and click "Run Assessment" to initiate reconnaissance via Kali...</div>
+              <div class="terminal-box" id="wbRawOutput">Select an in-scope target and click "Run Assessment" to start reconnaissance from your attack host...</div>
             </div>
           </div>
 
@@ -1132,7 +1152,7 @@
           </div>
           <div>
             <div style="display:flex; gap:8px; align-items:center;">
-              <input type="text" id="targetFilterInput" class="input" placeholder="Filter by hostname, IP, or role..." oninput="renderTargetMatrix()" style="width:240px;" />
+              <input type="text" id="targetFilterInput" aria-label="Filter targets" class="input" placeholder="Filter by hostname, IP, or role..." oninput="renderTargetMatrix()" style="width:240px;" />
               <button class="btn" id="discoverBtn" onclick="discoverHosts(this)"><i class="mdi mdi-radar"></i> Discover hosts</button>
             </div>
           </div>
@@ -1187,10 +1207,10 @@
           <div>
             <div class="page-title">
               <i class="mdi mdi-package-variant-closed" style="color: var(--primary);"></i>
-              Kali Linux Arsenal &amp; Package Manager
+              Attack Host Arsenal &amp; Package Manager
             </div>
             <div class="page-subtitle">
-              Inspect installed tools on your Kali host or install new security packages directly via `apt-get` (also accessible via the AI Operator chat)
+              Inspect installed tools on your attack host or install new security packages directly via `apt-get` (also accessible via the AI Operator chat)
             </div>
           </div>
           <button class="btn" onclick="loadKaliTools()">
@@ -1200,14 +1220,14 @@
 
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title"><i class="mdi mdi-download"></i> Install / Update Kali Package (`apt-get install -y`)</div>
+            <div class="panel-title"><i class="mdi mdi-download"></i> Install / Update Package on the Attack Host (`apt-get install -y`)</div>
             <span class="badge badge-red">SSH</span>
           </div>
           <div class="panel-body">
             <div style="display:flex; gap:10px; margin-bottom:12px;">
-              <input type="text" id="kaliPkgInput" class="input" placeholder="Enter Kali apt package name (e.g. whatweb, sslscan, nuclei, nikto, gobuster, ffuf, dnsrecon)..." style="flex:1;" onkeydown="if(event.key==='Enter') installCustomKaliPkg()" />
+              <input type="text" id="kaliPkgInput" aria-label="Package name to install" class="input" placeholder="Enter Kali apt package name (e.g. whatweb, sslscan, nuclei, nikto, gobuster, ffuf, dnsrecon)..." style="flex:1;" onkeydown="if(event.key==='Enter') installCustomKaliPkg()" />
               <button class="btn btn-primary" id="kaliInstallBtn" onclick="installCustomKaliPkg()">
-                <i class="mdi mdi-package-variant-closed"></i> Install on Kali
+                <i class="mdi mdi-package-variant-closed"></i> Install on attack host
               </button>
             </div>
             <div class="terminal-box" id="kaliInstallOutput" style="max-height:160px; display:none;"></div>
@@ -1215,7 +1235,7 @@
         </div>
 
         <div class="target-grid" id="kaliArsenalGrid">
-          <div style="color:var(--text-muted); padding:16px;">Checking installed tools on your Kali host...</div>
+          <div style="color:var(--text-muted); padding:16px;">Checking installed tools on your attack host...</div>
         </div>
       </section>
 
@@ -1228,19 +1248,19 @@
               Exploit-DB &amp; Fleet CVE Intelligence
             </div>
             <div class="page-subtitle">
-              Query Kali's local `searchsploit` Exploit-DB database for advisories by service, product, or CVE
+              Query the attack host's local `searchsploit` Exploit-DB database for advisories by service, product, or CVE
             </div>
           </div>
         </div>
 
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title"><i class="mdi mdi-magnify"></i> Kali Exploit-DB (`searchsploit`) Advisory Lookup</div>
+            <div class="panel-title"><i class="mdi mdi-magnify"></i> Exploit-DB (`searchsploit`) Advisory Lookup</div>
             <span class="badge badge-red">KALI EXPLOIT-DB ARCHIVE</span>
           </div>
           <div class="panel-body">
             <div style="display:flex; gap:10px; margin-bottom:14px;">
-              <input type="text" id="exploitQueryInput" class="input" placeholder="Search product, service, or CVE (e.g. OpenSSH, nginx, Proxmox, Jellyfin)..." style="flex:1;" onkeydown="if(event.key==='Enter') searchExploitDb()" />
+              <input type="text" id="exploitQueryInput" aria-label="Exploit-DB search query" class="input" placeholder="Search product, service, or CVE (e.g. OpenSSH, nginx, Proxmox, Jellyfin)..." style="flex:1;" onkeydown="if(event.key==='Enter') searchExploitDb()" />
               <button class="btn btn-primary" onclick="searchExploitDb()">
                 <i class="mdi mdi-database-search"></i> Search Exploit-DB
               </button>
@@ -1256,7 +1276,7 @@
                   </tr>
                 </thead>
                 <tbody id="exploitResultsTable">
-                  <tr><td colspan="4" style="color:var(--text-muted); text-align:center; padding:18px;">Enter a service banner or CVE above to search Kali's offline Exploit-DB archive.</td></tr>
+                  <tr><td colspan="4" style="color:var(--text-muted); text-align:center; padding:18px;">Enter a service banner or CVE above to search the offline Exploit-DB archive.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1382,19 +1402,19 @@
             <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
               <div style="flex:1; min-width:220px;">
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">ENDPOINT BASE URL</label>
-                <input id="aisecUrl" class="input" style="width:100%;" placeholder="http://host:11434 (Ollama) or https://api.example.com (OpenAI)" />
+                <input id="aisecUrl" aria-label="AI endpoint URL" class="input" style="width:100%;" placeholder="http://host:11434 (Ollama) or https://api.example.com (OpenAI)" />
               </div>
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">MODEL</label>
-                <input id="aisecModel" class="input" placeholder="e.g. qwen2.5-coder:7b" />
+                <input id="aisecModel" aria-label="Model name" class="input" placeholder="e.g. qwen2.5-coder:7b" />
               </div>
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">API</label>
-                <select id="aisecApi" class="select" onchange="document.getElementById('aisecCustomFields').style.display=this.value==='custom'?'block':'none'"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option><option value="custom">Custom endpoint</option></select>
+                <select id="aisecApi" aria-label="AI endpoint API type" class="select" onchange="document.getElementById('aisecCustomFields').style.display=this.value==='custom'?'block':'none'"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option><option value="custom">Custom endpoint</option></select>
               </div>
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">CONVERTER</label>
-                <select id="aisecConverter" class="select">
+                <select id="aisecConverter" aria-label="Prompt converter" class="select">
                   <option value="none">Direct + 3-Turn Crescendo</option>
                   <option value="leetspeak">Leetspeak Obfuscation</option>
                   <option value="rot13">ROT13 Cipher</option>
@@ -1407,7 +1427,7 @@
             </div>
             <div style="margin-top:12px;">
               <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">SYSTEM PROMPT (optional)</label>
-              <textarea id="aisecSystem" class="input" rows="2" style="width:100%; font-family:inherit; resize:vertical;" placeholder="Paste your app's system prompt to test the guardrailed app instead of the raw model."></textarea>
+              <textarea id="aisecSystem" aria-label="System prompt under test" class="input" rows="2" style="width:100%; font-family:inherit; resize:vertical;" placeholder="Paste your app's system prompt to test the guardrailed app instead of the raw model."></textarea>
             </div>
             {% raw %}
             <div id="aisecCustomFields" style="display:none; margin-top:12px;">
@@ -1446,19 +1466,19 @@
           <div class="panel-header"><div class="panel-title"><i class="mdi mdi-target"></i> Mission</div></div>
           <div class="panel-body">
             <label style="display:block; font-size:12px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">OBJECTIVE</label>
-            <input id="agentObjective" class="input" style="width:100%;" placeholder="e.g. Enumerate services on the adguard host and flag any exposures" />
+            <input id="agentObjective" aria-label="Agent objective" class="input" style="width:100%;" placeholder="e.g. Enumerate services on the adguard host and flag any exposures" />
             <div style="display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; align-items:end;">
               <div style="flex:1; min-width:180px;">
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">TARGET (optional)</label>
-                <select id="agentTarget" class="select" style="width:100%;"></select>
+                <select id="agentTarget" aria-label="Agent target" class="select" style="width:100%;"></select>
               </div>
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">MAX STEPS</label>
-                <select id="agentMaxSteps" class="select"><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
+                <select id="agentMaxSteps" aria-label="Maximum agent steps" class="select"><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
               </div>
               <div style="flex:1; min-width:200px;">
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">GREY-BOX AUTH HEADER (optional)</label>
-                <input id="agentAuthHeader" class="input" style="width:100%;" placeholder="Authorization: Bearer ... or Cookie: ..." />
+                <input id="agentAuthHeader" aria-label="Optional authenticated header for the agent" class="input" style="width:100%;" placeholder="Authorization: Bearer ... or Cookie: ..." />
               </div>
               <button class="btn btn-primary" id="agentRunBtn" onclick="runAgent()"><i class="mdi mdi-play"></i> Run Agent</button>
             </div>
@@ -1519,22 +1539,23 @@
           <i class="mdi mdi-robot-outline"></i>
           ONIOPS // RED-TEAM OPERATOR
         </div>
-        <button class="icon-btn" onclick="toggleDrawer()" style="width:28px; height:28px;">
+        <button class="icon-btn" onclick="toggleDrawer()" style="width:28px; height:28px;" aria-label="Close the AI operator" title="Close">
           <i class="mdi mdi-close"></i>
         </button>
       </div>
       <div class="drawer-messages" id="chatMessages">
         <div class="chat-bubble assistant">
-          <strong>ONIOPS Red-Team Operator online.</strong><br/>
-          Connected to your Kali attack host. You can ask me to:<br/>
-          • <code>install whatweb</code> or <code>install sslscan</code> on Kali<br/>
+          <strong>ONIOPS Red-Team Operator</strong><br/>
+          <span id="chatHostStatus" style="color:var(--text-muted);">Checking your attack host…</span><br/>
+          You can ask me to:<br/>
+          • <code>install whatweb</code> or <code>install sslscan</code> on the attack host<br/>
           • <code>scan &lt;in-scope-ip&gt; with nmap</code> or <code>run whatweb on &lt;ip&gt;</code><br/>
           • <code>searchsploit openssh</code> or prioritize findings across your scope.
         </div>
       </div>
       <div class="drawer-input-bar">
-        <input type="text" id="chatInput" class="input" placeholder="Ask ONIOPS or run/install Kali tools..." style="flex:1;" onkeydown="if(event.key==='Enter') sendChatMessage()" />
-        <button class="btn btn-primary" onclick="sendChatMessage()">
+        <input type="text" id="chatInput" class="input" placeholder="Ask ONIOPS or run a tool..." aria-label="Message the AI operator" style="flex:1;" onkeydown="if(event.key==='Enter') sendChatMessage()" />
+        <button class="btn btn-primary" onclick="sendChatMessage()" aria-label="Send message" title="Send">
           <i class="mdi mdi-send"></i>
         </button>
       </div>
@@ -1618,13 +1639,46 @@
         const res = await fetch('/api/status');
         const data = await res.json();
 
-        const kaliOk = data.health?.kali;
-        document.getElementById('kaliDot').className = 'status-dot ' + (kaliOk ? 'online' : 'warn');
-        document.getElementById('kaliStatusText').textContent = kaliOk ? 'SSH OK' : 'Offline';
+        // health.kali / health.llm are true, false, or null (= still checking;
+        // the server checks in the background so this request never waits).
+        const st = v => (v === null || v === undefined) ? 'checking' : (v ? 'online' : 'offline');
+        const dotCls = s => 'status-dot ' + (s === 'online' ? 'online' : s === 'offline' ? 'warn' : '');
+        const hostState = st(data.health?.kali);
+        const llmState = st(data.health?.llm);
+        const hostName = data.health?.host_name || 'your attack host';
+        window.__oniStatus = {hostState, llmState, hostName, model: data.current_model};
 
-        const ollamaOk = data.health?.llm;
-        document.getElementById('ollamaDot').className = 'status-dot ' + (ollamaOk ? 'online' : 'warn');
-        document.getElementById('ollamaStatusText').textContent = ollamaOk ? (data.current_model || 'Online') : 'Offline';
+        document.getElementById('kaliDot').className = dotCls(hostState);
+        document.getElementById('kaliStatusText').textContent =
+          {online: 'SSH OK', offline: 'Offline', checking: 'Checking...'}[hostState];
+        document.getElementById('ollamaDot').className = dotCls(llmState);
+        document.getElementById('ollamaStatusText').textContent =
+          {online: data.current_model || 'Online', offline: 'Offline', checking: 'Checking...'}[llmState];
+        document.getElementById('mKaliDot').className = dotCls(hostState);
+        document.getElementById('mLlmDot').className = dotCls(llmState);
+
+        // Sidebar card + AI operator greeting describe the REAL host state.
+        const card = {
+          online:   ['mdi-console-network', 'var(--success)', 'Attack host connected',
+                     `Scope-locked SSH execution on ${hostName}. Add more hosts in Settings.`],
+          offline:  ['mdi-lan-disconnect', 'var(--warning)', 'Attack host offline',
+                     `Can't reach ${hostName} over SSH. Start it, or check Settings → Attack Hosts.`],
+          checking: ['mdi-console-network', 'var(--text-dim)', 'Checking attack host…',
+                     `Testing SSH to ${hostName}…`],
+        }[hostState];
+        document.getElementById('hostCardTitle').innerHTML =
+          `<i class="mdi ${card[0]}" style="color:${card[1]};"></i> ${card[2]}`;
+        document.getElementById('hostCardText').textContent = card[3];
+        const chat = document.getElementById('chatHostStatus');
+        if (chat) chat.textContent = {online: `Connected to ${hostName}.`,
+          offline: `${hostName} is offline — tool commands will fail until it is reachable.`,
+          checking: `Checking ${hostName}…`}[hostState];
+
+        // While the background check runs, poll again soon instead of waiting
+        // for the regular 25s refresh.
+        if ((hostState === 'checking' || llmState === 'checking') && !window.__oniStatusRetry) {
+          window.__oniStatusRetry = setTimeout(() => { window.__oniStatusRetry = null; loadStatus(); }, 2500);
+        }
 
         const k = data.kpis || {};
         document.getElementById('kpiTotalTargets').textContent = k.scope_hosts ?? 0;
@@ -1646,8 +1700,16 @@
         const qSel = document.getElementById('quickTargetSelect');
         const wSel = document.getElementById('wbTargetSelect');
         const opts = TARGETS_CACHE.map(t => `<option value="${t.ip}">${t.hostname} (${t.ip}) — ${t.role}</option>`).join('');
-        qSel.innerHTML = opts;
-        wSel.innerHTML = opts;
+        // Explicit choice (never a silent default target), a helpful empty
+        // state, and keep whatever the user picked across auto-refreshes.
+        const placeholder = TARGETS_CACHE.length
+          ? '<option value="">Select a target…</option>'
+          : '<option value="">No targets yet — run Discovery in Target Matrix, or type an IP</option>';
+        const keepQ = qSel.value, keepW = wSel.value;
+        qSel.innerHTML = placeholder + opts;
+        wSel.innerHTML = placeholder + opts;
+        if (keepQ && TARGETS_CACHE.some(t => t.ip === keepQ)) qSel.value = keepQ;
+        if (keepW && TARGETS_CACHE.some(t => t.ip === keepW)) wSel.value = keepW;
         const aSel = document.getElementById('agentTarget');
         if (aSel) aSel.innerHTML = '<option value="">(auto / discover)</option>' + opts;
 
@@ -1827,6 +1889,13 @@
       }
     }
 
+    function showStatusToast() {
+      const s = window.__oniStatus || {};
+      const word = v => ({online: 'online', offline: 'offline', checking: 'checking…'}[v] || 'unknown');
+      toast(`Attack host (${s.hostName || '—'}): ${word(s.hostState)}  ·  LLM${s.model ? ' (' + s.model + ')' : ''}: ${word(s.llmState)}`,
+            s.hostState === 'offline' || s.llmState === 'offline');
+    }
+
     function toast(msg, bad) {
       let t = document.getElementById('oniToast');
       if (!t) { t = document.createElement('div'); t.id = 'oniToast';
@@ -1864,9 +1933,9 @@
         // Attack hosts (editable)
         const hostRow = (h) => `
           <div class="set-host-row" style="display:grid; grid-template-columns: 1fr 1.3fr .7fr auto; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border-subtle);">
-            <input class="input" data-f="label" value="${esc(h.label || h.name)}" placeholder="label" style="font-size:12px;"/>
-            <input class="input" data-f="host" value="${esc(h.host)}" placeholder="host / ip" style="font-size:12px;"/>
-            <input class="input" data-f="user" value="${esc(h.user || 'root')}" placeholder="user" style="font-size:12px;"/>
+            <input class="input" data-f="label" value="${esc(h.label || h.name)}" placeholder="label" aria-label="Attack host label" style="font-size:12px;"/>
+            <input class="input" data-f="host" value="${esc(h.host)}" placeholder="host / ip" aria-label="Attack host address" style="font-size:12px;"/>
+            <input class="input" data-f="user" value="${esc(h.user || 'root')}" placeholder="user" aria-label="SSH user" style="font-size:12px;"/>
             <div style="display:flex; gap:5px; align-items:center;">
               <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="radio" name="defhost" data-f="default" ${h.default ? 'checked' : ''}/>def</label>
               <button class="btn btn-sm" onclick="testHostRow(this)">Test</button>
@@ -1890,18 +1959,18 @@
           Object.keys(roles).map(r => `
             <div class="set-row"><span style="text-transform:capitalize;">${r}</span>
               <span style="display:flex; gap:5px;">
-                <input class="input" id="role_${r}_p" value="${esc(roles[r].provider || 'ollama')}" style="width:92px; font-size:12px;"/>
-                <input class="input" id="role_${r}_m" value="${esc(roles[r].model || '')}" placeholder="model" style="width:150px; font-size:12px;"/>
+                <input class="input" id="role_${r}_p" value="${esc(roles[r].provider || 'ollama')}" aria-label="${r} provider" style="width:92px; font-size:12px;"/>
+                <input class="input" id="role_${r}_m" value="${esc(roles[r].model || '')}" placeholder="model" aria-label="${r} model" style="width:150px; font-size:12px;"/>
               </span></div>`).join('') +
           `<div style="margin:9px 0;"><button class="btn btn-sm btn-primary" onclick="saveLLM()">Save roles</button></div>` +
-          `<div class="set-row"><span>Active report model <span style="color:var(--text-dim)">(runtime)</span></span><select class="select" onchange="setModel(this.value)">${(s.llm.models || []).map(m => `<option ${m === s.llm.current_model ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
+          `<div class="set-row"><span>Active report model <span style="color:var(--text-dim)">(runtime)</span></span><select class="select" onchange="setModel(this.value)" aria-label="Active report model">${(s.llm.models || []).map(m => `<option ${m === s.llm.current_model ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
           `<div style="margin-top:9px; display:flex; gap:14px; flex-wrap:wrap; font-size:12px;">${(s.llm.providers || []).map(p => `<span>${dot(s.llm.provider_health[p])} ${p}</span>`).join('')}</div>`;
 
         // Scope (editable)
         document.getElementById('setScope').innerHTML =
-          `<div class="set-row"><span>Allowed CIDRs</span><input class="input" id="scCidrs" value="${esc((cfg.scope.allowed_cidrs || []).join(', '))}" style="width:58%; font-size:12px;"/></div>` +
-          `<div class="set-row"><span>Excluded</span><input class="input" id="scExclude" value="${esc((cfg.scope.exclude || []).join(', '))}" placeholder="none" style="width:58%; font-size:12px;"/></div>` +
-          `<div class="set-row"><span>Mode</span><select class="select" id="scMode">${['active','passive','stealth'].map(m => `<option ${m === cfg.scope.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
+          `<div class="set-row"><span>Allowed CIDRs</span><input class="input" id="scCidrs" aria-label="Allowed CIDRs, comma separated" value="${esc((cfg.scope.allowed_cidrs || []).join(', '))}" style="width:58%; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>Excluded</span><input class="input" id="scExclude" aria-label="Excluded addresses, comma separated" value="${esc((cfg.scope.exclude || []).join(', '))}" placeholder="none" style="width:58%; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>Mode</span><select class="select" id="scMode" aria-label="Scope mode">${['active','passive','stealth'].map(m => `<option ${m === cfg.scope.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></div>` +
           `<div class="set-row"><span>Non-destructive guard</span><input type="checkbox" id="scND" ${cfg.scope.non_destructive ? 'checked' : ''}/></div>` +
           `<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="saveScope()">Save scope</button></div>`;
 
@@ -1915,21 +1984,21 @@
           ['misp','caldera'].map(k => `
             <div class="set-row"><span>${k === 'misp' ? 'MISP (threat intel)' : 'Caldera (emulation)'}</span>
               <span style="display:flex; gap:6px; align-items:center;">
-                <input class="input" id="int_${k}_h" value="${esc(cfg.integrations[k].host || '')}" placeholder="host url" style="width:150px; font-size:12px;"/>
+                <input class="input" id="int_${k}_h" aria-label="${k} host URL" value="${esc(cfg.integrations[k].host || '')}" placeholder="host url" style="width:150px; font-size:12px;"/>
                 <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="checkbox" id="int_${k}_e" ${cfg.integrations[k].enabled ? 'checked' : ''}/>on</label>
               </span></div>`).join('') +
           `<div class="set-row"><span>NVD CVE enrichment (offline + optional online)<br>
              <small style="color:var(--muted);font-size:10px;">searchsploit works offline always; this adds live CVE IDs + CVSS from nvd.nist.gov. No MISP needed.</small></span>
              <span style="display:flex; gap:6px; align-items:center;">
-               <input class="input" id="int_nvd_k" value="" placeholder="${cfg.integrations.nvd && cfg.integrations.nvd.has_key ? 'key set — leave blank to keep' : 'optional API key'}" style="width:150px; font-size:12px;"/>
+               <input class="input" id="int_nvd_k" aria-label="NVD API key (optional)" value="" placeholder="${cfg.integrations.nvd && cfg.integrations.nvd.has_key ? 'key set — leave blank to keep' : 'optional API key'}" style="width:150px; font-size:12px;"/>
                <label style="font-size:11px; display:flex; gap:3px; align-items:center;"><input type="checkbox" id="int_nvd_e" ${cfg.integrations.nvd && cfg.integrations.nvd.enabled ? 'checked' : ''}/>on</label>
              </span></div>` +
           `<div style="margin-top:10px;"><button class="btn btn-sm btn-primary" onclick="saveIntegrations()">Save integrations</button></div>`;
 
         // About / instance (editable)
         document.getElementById('setAbout').innerHTML =
-          `<div class="set-row"><span>Instance name</span><input class="input" id="instName" value="${esc(cfg.instance_name)}" style="width:150px; font-size:12px;"/></div>` +
-          `<div class="set-row"><span>External URL</span><input class="input" id="instUrl" value="${esc(cfg.external_url || '')}" placeholder="https://oniops.example.com" style="width:55%; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>Instance name</span><input class="input" id="instName" aria-label="Instance name" value="${esc(cfg.instance_name)}" style="width:150px; font-size:12px;"/></div>` +
+          `<div class="set-row"><span>External URL</span><input class="input" id="instUrl" aria-label="External URL" value="${esc(cfg.external_url || '')}" placeholder="https://oniops.example.com" style="width:55%; font-size:12px;"/></div>` +
           `<div style="margin:9px 0;"><button class="btn btn-sm btn-primary" onclick="saveInstance()">Save</button></div>` +
           `<div class="set-row"><span>Version</span><span class="mono">ONIOPS ${s.version}</span></div>` +
           `<div class="set-row"><span>License</span><span class="mono">Apache-2.0</span></div>`;
@@ -2168,7 +2237,7 @@
           </div>
         `).join('');
       } catch (e) {
-        grid.innerHTML = `<div style="color:var(--danger);">Failed to query Kali VM: ${e}</div>`;
+        grid.innerHTML = `<div style="color:var(--danger);">Failed to query the attack host: ${e}</div>`;
       }
     }
 
@@ -2247,6 +2316,7 @@
 
     async function runQuickAssessment() {
       const target = document.getElementById('quickTargetSelect').value;
+      if (!target) { toast('Select a target first (or use the Workbench to type an IP)', true); return; }
       const profile = document.getElementById('quickProfileSelect').value;
       document.getElementById('wbTargetSelect').value = target;
       document.getElementById('wbProfileSelect').value = profile;
@@ -2256,16 +2326,31 @@
 
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+    // Put every Workbench panel into a consistent end state, so nothing keeps
+    // saying "Dispatching..." / "Running..." after a run fails or stops.
+    function wbFinish(state, message) {
+      const labels = {error: 'Failed', stopped: 'Stopped', timeout: 'Timed out'};
+      document.getElementById('wbScanMeta').textContent = labels[state] || state;
+      if (message) document.getElementById('wbRawOutput').textContent = message;
+      document.getElementById('wbAiReport').innerHTML =
+        `<div style="color:var(--text-muted);">No report — the run ${state === 'stopped' ? 'was stopped' : 'did not complete'}.</div>`;
+    }
+
     async function executeWorkbenchScan() {
       const target = document.getElementById('wbTargetInput').value.trim() || document.getElementById('wbTargetSelect').value;
       const profile = document.getElementById('wbProfileSelect').value;
+      if (!target) {
+        toast('Pick a target or type an in-scope IP / domain first', true);
+        document.getElementById('wbTargetInput').focus();
+        return;
+      }
       const auth_header = (document.getElementById('wbAuthHeader')?.value || '').trim();
       const low_priv_header = (document.getElementById('wbLowPrivHeader')?.value || '').trim();
       const btn = document.getElementById('wbRunBtn');
       btn.disabled = true;
       btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('wbScanMeta').textContent = `Dispatching ${profile} on ${target}...`;
-      document.getElementById('wbRawOutput').textContent = `[ONIOPS] Starting ${profile} against ${target} via Kali...\n`;
+      document.getElementById('wbRawOutput').textContent = `[ONIOPS] Starting ${profile} against ${target} from the attack host...\n`;
       document.getElementById('wbAiReport').innerHTML = `<div style="color:var(--text-muted);">Running recon and synthesizing the AI red-team report...</div>`;
 
       try {
@@ -2275,7 +2360,7 @@
           body: JSON.stringify({target, profile, auth_header, low_priv_header})
         });
         const sdata = await sres.json();
-        if (sdata.error) { document.getElementById('wbRawOutput').textContent = `ERROR: ${sdata.error}`; return; }
+        if (sdata.error) { wbFinish('error', `ERROR: ${sdata.error}`); toast(sdata.error, true); return; }
         const jobId = sdata.job_id;
         renderCtl('wbCtl', jobId);
 
@@ -2288,10 +2373,10 @@
           document.getElementById('wbScanMeta').textContent = `Job ${jobId} // ${j.status}`;
           document.getElementById('wbRawOutput').textContent = `[ONIOPS] ${profile} on ${target} — ${j.status}\n\n${recent}`;
           if (j.status === 'done') { data = j.result; break; }
-          if (j.status === 'cancelled') { document.getElementById('wbRawOutput').textContent += '\n\n[stopped by operator]'; return; }
-          if (j.status === 'error') { document.getElementById('wbRawOutput').textContent = `ERROR: ${j.error || 'job failed'}`; return; }
+          if (j.status === 'cancelled') { wbFinish('stopped', document.getElementById('wbRawOutput').textContent + '\n\n[stopped by operator]'); return; }
+          if (j.status === 'error' || j.status === 'interrupted') { wbFinish('error', `ERROR: ${j.error || 'job failed'}`); return; }
         }
-        if (!data) { document.getElementById('wbRawOutput').textContent += '\n[timed out waiting for job]'; return; }
+        if (!data) { wbFinish('timeout', document.getElementById('wbRawOutput').textContent + '\n[timed out waiting for job]'); return; }
 
         document.getElementById('wbScanMeta').textContent = `Scan #${data.id} // ${data.severity} // ${data.verified_count || 0} verified`;
         document.getElementById('wbRawOutput').textContent = data.raw_output || 'Completed.';
@@ -2301,7 +2386,7 @@
         ).join('');
         refreshAll();
       } catch (e) {
-        document.getElementById('wbRawOutput').textContent = `Request failed: ${e}`;
+        wbFinish('error', `Request failed: ${e}`);
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment';
@@ -2313,7 +2398,7 @@
       const q = document.getElementById('exploitQueryInput').value.trim();
       if (!q) return;
       const tbody = document.getElementById('exploitResultsTable');
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:18px;">Querying Kali Exploit-DB for "${q}"...</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:18px;">Querying Exploit-DB for "${q}"...</td></tr>`;
       try {
         const res = await fetch(`/api/intel?q=${encodeURIComponent(q)}`);
         const data = await res.json();
@@ -2339,7 +2424,7 @@
       const box = document.getElementById('chatMessages');
       box.innerHTML += `<div class="chat-bubble user">${msg.replace(/</g, '&lt;')}</div>`;
       const pendingId = 'msg-' + Date.now();
-      box.innerHTML += `<div class="chat-bubble assistant" id="${pendingId}"><i class="mdi mdi-loading mdi-spin"></i> Executing on Kali / Analyzing...</div>`;
+      box.innerHTML += `<div class="chat-bubble assistant" id="${pendingId}"><i class="mdi mdi-loading mdi-spin"></i> Executing on the attack host / analyzing...</div>`;
       box.scrollTop = box.scrollHeight;
 
       try {

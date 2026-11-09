@@ -68,3 +68,12 @@ def test_preview_redacts_secrets(cfg_path):
 def test_preview_invalid_raises(cfg_path):
     with pytest.raises(ValueError):
         preview_updates({"scope": {"allowed_cidrs": ["bad"]}})
+
+
+def test_invalid_scope_mode_falls_back_to_active(cfg_path):
+    # An unknown mode must not be passed through: the UI dropdown only offers
+    # active/passive/stealth, so a stray value would display (and save) as
+    # something other than what is configured.
+    cfg_path.write_text(cfg_path.read_text().replace("mode: active", "mode: strict"))
+    cfg = get_config(reload=True)
+    assert cfg.scope.mode == "active"

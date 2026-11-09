@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import difflib
 import ipaddress
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -24,6 +25,12 @@ import yaml
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Valid scope.mode values. Checked both when loading config.yaml and when the
+# UI saves an update, so the UI never displays a different mode than the one
+# actually in effect.
+_SCOPE_MODES = {"active", "passive", "stealth"}
+_log = logging.getLogger("ONIOPS")
 
 
 def _load_env() -> None:
@@ -140,12 +147,18 @@ def load_config() -> Config:
             "ONIOPS will not run without an explicit Rules-of-Engagement scope."
         )
 
+    mode = str(scope_raw.get("mode", "active")).strip().lower()
+    if mode not in _SCOPE_MODES:
+        _log.warning("scope.mode %r is not one of %s; using 'active'. Fix config.yaml to silence this.",
+                     mode, sorted(_SCOPE_MODES))
+        mode = "active"
+
     scope = ScopeConfig(
         allowed_cidrs=list(scope_raw["allowed_cidrs"]),
         exclude=list(scope_raw.get("exclude", []) or []),
         auto_detect_subnet=bool(scope_raw.get("auto_detect_subnet", True)),
         rate_limit_per_min=int(scope_raw.get("rate_limit_per_min", 120)),
-        mode=str(scope_raw.get("mode", "active")),
+        mode=mode,
         non_destructive=bool(scope_raw.get("non_destructive", True)),
         active_window=scope_raw.get("active_window"),
     )
@@ -226,9 +239,6 @@ def get_config(reload: bool = False) -> Config:
     if _CONFIG is None or reload:
         _CONFIG = load_config()
     return _CONFIG
-
-
-_SCOPE_MODES = {"active", "passive", "stealth"}
 
 
 def _build_updated_config(updates: dict) -> tuple[Any, str, dict]:
