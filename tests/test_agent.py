@@ -129,3 +129,34 @@ def test_agent_graph_memory_roundtrip(tmp_path):
     ctx = load_target_context(db, "10.0.0.150")
     assert "22/tcp (ssh)" in ctx
     assert "80/tcp (http)" in ctx
+
+
+def test_agent_report_finding_independent_validator(tmp_path, scope):
+    from oniops.agent import TOOLS
+    from oniops.findings import FindingsLedger
+
+    db = tmp_path / "oniops.sqlite"
+
+    class _Runner:
+        def run(self, cmd, timeout=10):
+            class _R:
+                ok = True
+                out = "HTTP/1.1 200 OK\r\nX-Debug-Mode: enabled\r\n"
+            return _R()
+
+    out_verified = TOOLS["report_finding"]["fn"](
+        _Runner(),
+        "10.0.0.150",
+        {
+            "port": 8080,
+            "path": "/debug",
+            "title": "Exposed Debug Endpoint",
+            "severity": "HIGH",
+            "expected_indicator": "X-Debug-Mode: enabled",
+            "_db_path": str(db),
+        },
+    )
+    assert "status=VERIFIED" in out_verified
+    items = FindingsLedger(db).list_findings("10.0.0.150")
+    assert len(items) == 1
+    assert items[0]["status"] == "VERIFIED"

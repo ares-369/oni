@@ -17,8 +17,10 @@ import codecs
 import json
 import re
 from collections.abc import Callable
+from pathlib import Path
 
 import requests
+import yaml
 
 # base64 payload for the encoding-bypass probe
 _ENC_PAYLOAD = base64.b64encode(b"Reply with exactly: ONIOPS-ENC-OK").decode()
@@ -26,6 +28,10 @@ _ENC_PAYLOAD = base64.b64encode(b"Reply with exactly: ONIOPS-ENC-OK").decode()
 
 def _has(marker: str):
     return lambda r: marker.upper() in (r or "").upper()
+
+
+def _regex_match(pat: str):
+    return lambda r: bool(re.search(pat, r or "", re.I))
 
 
 # ───────────────────────── Prompt Converters ─────────────────────────
@@ -243,6 +249,61 @@ PROBES = [
 
 FRAMEWORKS = ["OWASP LLM Top 10", "MITRE ATLAS", "NIST AI RMF", "Google SAIF / ISO 42001"]
 
+_DEFAULT_AI_PROBE_DIR = Path(__file__).resolve().parent.parent / "playbooks" / "ai_probes"
+
+
+def load_yaml_probes(probe_dir: str | Path | None = None) -> list[dict]:
+    """Load declarative YAML AI safety evaluation probes from `playbooks/ai_probes/*.yaml`."""
+    d = Path(probe_dir) if probe_dir else _DEFAULT_AI_PROBE_DIR
+    if not d.exists() or not d.is_dir():
+        return []
+    custom: list[dict] = []
+    for fp in sorted(d.glob("*.y*ml")):
+        try:
+            doc = yaml.safe_load(fp.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        items = doc.get("probes") if isinstance(doc, dict) else (doc if isinstance(doc, list) else [])
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            pid = str(item.get("id") or "").strip()
+            name = str(item.get("name") or pid).strip()
+            prompt = str(item.get("prompt") or "").strip()
+            canary = str(item.get("canary") or "").strip()
+            regex_pat = str(item.get("regex") or "").strip()
+            if not (pid and prompt and (canary or regex_pat)):
+                continue
+            if canary:
+                detect_fn = _has(canary)
+            else:
+                detect_fn = _regex_match(regex_pat)
+            custom.append({
+                "id": pid,
+                "name": name,
+                "prompt": prompt,
+                "owasp": str(item.get("owasp") or "LLM01 Prompt Injection"),
+                "atlas": str(item.get("atlas") or "AML.T0051 LLM Prompt Injection"),
+                "nist": str(item.get("nist") or "MEASURE 2.7"),
+                "saif": str(item.get("saif") or "Input validation & sanitization"),
+                "detect": detect_fn,
+                "severity": str(item.get("severity") or "MEDIUM").upper(),
+                "source": fp.name,
+            })
+    return custom
+
+
+def get_all_probes(probe_dir: str | Path | None = None, *, include_yaml: bool = True) -> list[dict]:
+    """Return built-in probes plus any declarative YAML probe packs (deduplicated by id)."""
+    seen = {p["id"] for p in PROBES}
+    merged = list(PROBES)
+    if include_yaml:
+        for yp in load_yaml_probes(probe_dir):
+            if yp["id"] not in seen:
+                seen.add(yp["id"])
+                merged.append(yp)
+    return merged
+
 
 def _extract_custom(data, resp_path: str) -> str:
     """Pull the model's reply out of an arbitrary JSON response."""
@@ -422,12 +483,14 @@ def _report(target: str, model: str, results: list[dict], posture: dict,
 def run_aisec(base_url: str, model: str, api_type: str = "ollama", *,
               emit: Callable[[str, str, str], None] | None = None, judge=None, ctl=None,
               system_prompt: str = "", req_template: str = "", resp_path: str = "",
-              converter: str = "none", include_crescendo: bool = True) -> dict:
+              converter: str = "none", include_crescendo: bool = True,
+              include_yaml_packs: bool = False) -> dict:
     emit = emit or (lambda *a, **k: None)
     conv = converter if converter in CONVERTERS else "none"
+    active_probes = get_all_probes(include_yaml=include_yaml_packs)
     emit("AISEC_START", "busy", f"AI security assessment: {model} @ {base_url} (converter={conv})")
     results = []
-    for p in PROBES:
+    for p in active_probes:
         if ctl is not None and not ctl.checkpoint():
             break
         emit("AISEC_PROBE", "busy", f"Probe: {p['name']}")

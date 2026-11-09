@@ -88,12 +88,14 @@ def probe_openapi(
     run_fn,
     *,
     auth_header: str = "",
+    low_priv_header: str = "",
     ctl=None,
 ) -> dict:
     """Discover OpenAPI/Swagger specs on a target web service and run an
-    unauthenticated vs. authenticated access-control differential check."""
+    unauthenticated vs. low-privilege vs. admin access-control differential check."""
     base = f"{scheme}://{ip}:{port}"
     clean_hdr = sanitize_auth_header(auth_header) if auth_header else ""
+    clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
     spec_data = None
     spec_url = ""
 
@@ -121,7 +123,7 @@ def probe_openapi(
     lines = [f"=== Grey-Box API Audit: OpenAPI Spec ({spec_url}) ===",
              f"Discovered {len(endpoints)} API route(s)."]
 
-    # Probe up to 8 GET endpoints unauthenticated (and authenticated if header supplied).
+    # Probe up to 8 GET endpoints unauthenticated, low-privilege, and admin-authenticated.
     get_eps = [e for e in endpoints if "GET" in e["methods"]][:8]
     for ep in get_eps:
         if ctl is not None and not ctl.checkpoint():
@@ -131,13 +133,19 @@ def probe_openapi(
         m_un = re.search(r"HTTP/[\d.]+\s+(\d{3})", unauth_out)
         un_code = int(m_un.group(1)) if m_un else 0
 
+        low_code = 0
+        if clean_low:
+            low_out = run_fn(["curl", "-kIsS", "--max-time", "4", "-H", clean_low, u], 6) or ""
+            m_lo = re.search(r"HTTP/[\d.]+\s+(\d{3})", low_out)
+            low_code = int(m_lo.group(1)) if m_lo else 0
+
         auth_code = 0
         if clean_hdr:
             auth_out = run_fn(["curl", "-kIsS", "--max-time", "4", "-H", clean_hdr, u], 6) or ""
             m_au = re.search(r"HTTP/[\d.]+\s+(\d{3})", auth_out)
             auth_code = int(m_au.group(1)) if m_au else 0
 
-        sensitive_route = bool(re.search(r"admin|user|config|secret|token|internal|debug|export|key", ep["path"], re.I))
+        sensitive_route = bool(re.search(r"admin|user|config|secret|token|internal|debug|export|key|role|tenant|billing", ep["path"], re.I))
         if un_code == 200 and (ep["auth_declared"] or sensitive_route):
             sev = "HIGH" if sensitive_route else "MEDIUM"
             title = f"Unauthenticated API access on {ep['path']} (HTTP 200)"
@@ -151,6 +159,18 @@ def probe_openapi(
                 "repro_cmd": ["curl", "-kIsS", "--max-time", "5", u],
             })
             lines.append(f"- [VULNERABLE/{sev}] {ep['path']}: HTTP 200 unauthenticated")
+        elif clean_low and low_code == 200 and un_code in (401, 403) and sensitive_route:
+            title = f"BOLA/BFLA privilege boundary bypass on {ep['path']} (low-priv HTTP 200)"
+            ev = f"GET {u} blocked unauthenticated ({un_code}) but returned HTTP 200 to low-privilege role on sensitive route"
+            findings.append({
+                "port": port,
+                "title": title,
+                "severity": "HIGH",
+                "status": "VERIFIED",
+                "evidence": ev,
+                "repro_cmd": ["curl", "-kIsS", "--max-time", "5", u],
+            })
+            lines.append(f"- [VULNERABLE/HIGH BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200}")
         elif clean_hdr and un_code in (401, 403) and auth_code == 200:
             lines.append(f"- [AUTH-ENFORCED] {ep['path']}: unauth={un_code} -> auth={auth_code}")
         elif un_code:
@@ -163,6 +183,70 @@ def probe_openapi(
         "findings": findings,
         "raw_section": "\n".join(lines),
     }
+
+
+_JS_SCRIPT_RE = re.compile(r"""<script[^>]+src=['"]([^'"]+\.js(?:\?[^'"]*)?)['"]""", re.I)
+_JS_API_ROUTE_RE = re.compile(
+    r"""['"](/(?:api|v1|v2|v3|graphql|admin|internal|auth|oauth|users|tenants)(?:/[A-Za-z0-9_\-{}:.]+)*)['"]"""
+)
+
+
+def discover_js_endpoints(
+    ip: str,
+    port: int,
+    scheme: str,
+    run_fn,
+    *,
+    ctl=None,
+) -> dict:
+    """Extract client-side SPA/JS bundle URLs and hidden API routes referenced
+    inside JavaScript bundles."""
+    base = f"{scheme}://{ip}:{port}"
+    html = (run_fn(["curl", "-ksSL", "--max-time", "6", base], 8) or "")[:120000]
+    if not html:
+        return {"scripts": [], "routes": [], "raw_section": ""}
+
+    scripts: list[str] = []
+    routes: list[str] = []
+
+    for m in _JS_API_ROUTE_RE.finditer(html):
+        r = m.group(1)
+        if r not in routes:
+            routes.append(r)
+
+    for m in _JS_SCRIPT_RE.finditer(html):
+        src = m.group(1).strip()
+        if src.startswith("//"):
+            continue
+        if src.startswith("http://") or src.startswith("https://"):
+            if f"{ip}:{port}" not in src and ip not in src:
+                continue
+            full_url = src
+        elif src.startswith("/"):
+            full_url = f"{base}{src}"
+        else:
+            full_url = f"{base}/{src}"
+        if full_url not in scripts:
+            scripts.append(full_url)
+
+    for js_url in scripts[:4]:
+        if ctl is not None and not ctl.checkpoint():
+            break
+        js_body = (run_fn(["curl", "-ksS", "--max-time", "5", js_url], 7) or "")[:150000]
+        for m in _JS_API_ROUTE_RE.finditer(js_body):
+            r = m.group(1)
+            if r not in routes:
+                routes.append(r)
+
+    routes = routes[:40]
+    raw_section = ""
+    if routes:
+        raw_section = (
+            f"=== SPA / JS Bundle Route Inventory ({base}) ===\n"
+            f"Scanned {len(scripts[:4])} JS bundle(s); discovered {len(routes)} client-side API route(s):\n"
+            + "\n".join(f"- {r}" for r in routes[:20])
+        )
+    return {"scripts": scripts[:10], "routes": routes, "raw_section": raw_section}
 
 
 # ───────────────────────── White-Box Source Analyzer ─────────────────────────

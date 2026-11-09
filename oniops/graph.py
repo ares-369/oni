@@ -16,6 +16,66 @@ import json
 import sqlite3
 
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0, "": 0}
+_HIGH_VALUE_PORTS = {22, 88, 135, 139, 389, 445, 636, 1433, 3306, 3389, 5432, 6379, 8006, 8443, 9200}
+
+
+def compute_attack_paths(
+    host_ips: set[str],
+    surface: dict[str, dict],
+    findings_by_host: dict[str, list[dict]],
+    targets: dict[str, dict],
+) -> list[dict]:
+    """Correlate open services, verified findings, and high-value internal
+    services into multi-stage risk paths with a 0-100 blast-radius score."""
+    paths: list[dict] = []
+    for ip in sorted(host_ips):
+        surf = surface.get(ip, {})
+        h_findings = findings_by_host.get(ip, [])
+        if not h_findings:
+            continue
+        services: list[dict] = []
+        if surf.get("services_json"):
+            try:
+                services = json.loads(surf["services_json"])
+            except Exception:
+                services = []
+        open_ports = {int(s.get("port") or 0) for s in services if s.get("port")}
+        verified = [f for f in h_findings if f.get("status") in ("VERIFIED", "AUTH-GATED")]
+        top_finding = max(h_findings, key=lambda f: _SEV_RANK.get(f.get("severity", ""), 0))
+        top_sev = top_finding.get("severity", "MEDIUM")
+        crown_ports = sorted(open_ports & _HIGH_VALUE_PORTS)
+
+        # Calculate blast-radius score (0-100) from severity, verification, and exposed high-value services.
+        score = _SEV_RANK.get(top_sev, 1) * 18
+        score += min(len(verified) * 10, 20)
+        score += min(len(crown_ports) * 6, 18)
+        score = min(score, 100)
+
+        hostname = (targets.get(ip, {}).get("hostname")
+                    or surf.get("target_name")
+                    or f"host-{ip}")
+        entry_port = int(top_finding.get("port") or (min(open_ports) if open_ports else 0))
+        steps = [
+            f"Initial Surface: {hostname} ({ip}:{entry_port})" if entry_port else f"Initial Surface: {hostname} ({ip})",
+            f"Weakness: {top_finding['title']} [{top_sev}/{top_finding['status']}]",
+        ]
+        if crown_ports:
+            steps.append(f"Lateral / High-Value Reachability: ports {', '.join(str(p) for p in crown_ports)}")
+        else:
+            steps.append(f"Host Impact: {len(h_findings)} active finding(s) on {hostname}")
+
+        paths.append({
+            "target_ip": ip,
+            "hostname": hostname,
+            "entry_port": entry_port,
+            "primary_finding": top_finding["title"],
+            "severity": top_sev,
+            "verified_count": len(verified),
+            "blast_radius_score": score,
+            "steps": steps,
+        })
+    paths.sort(key=lambda p: p["blast_radius_score"], reverse=True)
+    return paths
 
 
 def build_graph(db_path, cidrs: list[str]) -> dict:
@@ -113,11 +173,16 @@ def build_graph(db_path, cidrs: list[str]) -> dict:
             })
             edges.append({"source": parent_id, "target": fid})
 
+    attack_paths = compute_attack_paths(host_ips, surface, findings_by_host, targets)
+    max_blast = max((p["blast_radius_score"] for p in attack_paths), default=0)
+
     stats = {
         "hosts": len(host_ips),
         "services": svc_total,
         "scanned_hosts": len(surface),
         "verified_findings": verified_total,
         "critical_hosts": sum(1 for ip in host_ips if _SEV_RANK.get((surface.get(ip, {}).get("risk_level") or roll.get(ip, {}).get("worst") or ""), 0) >= 3),
+        "attack_paths": len(attack_paths),
+        "max_blast_radius": max_blast,
     }
-    return {"nodes": nodes, "edges": edges, "stats": stats}
+    return {"nodes": nodes, "edges": edges, "stats": stats, "attack_paths": attack_paths}
