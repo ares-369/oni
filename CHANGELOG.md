@@ -7,6 +7,14 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.2-beta] — 2026-11-09
+
+### Fixed
+- Workbench Recent Jobs bar was always empty (read `params` instead of job `meta`); it now also refreshes when the Workbench opens.
+- Replay commands could expose bearer tokens/cookies in the Finding Detail Drawer; repro commands are now secret-redacted on storage and on display.
+- Zero-token retest now treats 401/403/404 as FIXED for BOLA/BFLA findings.
+- Clicking a findings row now opens the Finding Detail Drawer reliably; long SHA-256 hashes wrap on mobile.
+
 ## [0.4.1-beta] — 2026-11-09
 
 ### Added
@@ -142,7 +150,8 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.1-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.2-beta...HEAD
+[0.4.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.2-beta
 [0.4.1-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.1-beta
 [0.4.0-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.0-beta
 [0.3.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.3-beta
