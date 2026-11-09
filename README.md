@@ -46,9 +46,10 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 - **Correlated Attack Paths & Blast Radius** — correlates open services,
   verified findings, and high-value internal ports into multi-stage attack paths
   with a `0–100` Blast Radius score.
-- **Offline-first CVE & exploit intelligence** — maps detected service banners
-  to local Exploit-DB (`searchsploit`) advisories on your attack host with zero
-  external dependencies, plus optional online NVD CVE/CVSS enrichment.
+- **Offline-first CVE, Exploit-DB & EPSS intelligence** — maps detected service
+  banners to local Exploit-DB (`searchsploit`) advisories on your attack host
+  with zero external dependencies, plus optional online NVD CVE/CVSS and **FIRST
+  EPSS** 30-day exploitation probability enrichment.
 - **Declarative YAML Playbooks & AI Probe Packs** — drop `.yaml` network/WAPT
   playbooks into `playbooks/` and custom AI safety probe packs into
   `playbooks/ai_probes/` without touching Python code.
@@ -58,12 +59,15 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
   `rot13`, `unicode_homoglyph`, `markdown_wrap`, `json_smuggle`), and a **3-turn
   Crescendo escalation loop**, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI
   RMF, and Google SAIF / ISO 42001.
-- **Safe by design** — explicit scope allow-list, non-destructive by default, a
-  destructive-command guard, no auto-scanning, pause/stop on running jobs, and
-  pluggable auth (`none` / `basic` / `local` / **OIDC SSO** / reverse-proxy).
+- **Safe & reproducible by design** — explicit CIDR/host scope allow-list with
+  multi-record DNS rebinding and embedded command IP verification,
+  non-destructive command guard, SHA-256 cryptographic evidence provenance,
+  reproducible execution manifests, login brute-force rate limiting, CSRF
+  same-origin protection, pause/stop on running jobs, and pluggable auth (`none`
+  / `basic` / `local` / **OIDC SSO** / reverse-proxy).
 - **Editable config in the UI** (with unified YAML diff preview before save),
-  **report export (`.md` / `.json` / `.pdf`)**, and runs on Linux, Windows,
-  Docker, and Proxmox LXC.
+  **report export (`.md` / `.html` / `.pdf` / `.sarif` / `.json`)**, and runs on
+  Linux, Windows, Docker, and Proxmox LXC.
 
 ---
 
@@ -71,13 +75,13 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 ```mermaid
 flowchart LR
-    Op["Operator Browser\n(Web UI / OIDC SSO)"] -->|"HTTPS"| Ctrl["ONIOPS Controller\n(Flask + Waitress)"]
-    Ctrl -->|"Rules of Engagement\n(CIDR + Cmd Guard)"| Scope["Scope & Safety Engine\n(oniops/scope.py)"]
+    Op["Operator Browser / CLI\n(Web UI / OIDC SSO / CI Gate)"] -->|"HTTPS / CLI"| Ctrl["ONIOPS Controller\n(Flask + Waitress + CLI)"]
+    Ctrl -->|"Rules of Engagement\n(CIDR + DNS + Cmd Guard)"| Scope["Scope & Safety Engine\n(oniops/scope.py)"]
     Scope -->|"SSH / Paramiko\n(argv-only)"| Kali["Attack Host(s)\n(Kali / 41 Tools)"]
     Kali -->|"nmap / nuclei / ffuf\nsearchsploit / httpx"| Target["Authorized Targets\n(In-Scope CIDRs)"]
-    Ctrl -->|"ReAct Agent & Reporting"| LLM["Pluggable LLM Layer\n(Ollama / Claude / Gemini / OpenAI)"]
-    Ctrl -->|"11 Canary Probes"| AITarget["Target AI / LLM Endpoint"]
-    AITarget -->|"OWASP / ATLAS / NIST / SAIF"| GRC["Executive & GRC Reports\n(.md / .json / .pdf)"]
+    Ctrl -->|"ReAct Agent & Reporting\n(7B Sliding-Window + Quarantine)"| LLM["Pluggable LLM Layer\n(Ollama / Claude / Gemini / OpenAI)"]
+    Ctrl -->|"14 Probes + YAML Packs\n+ 3-Turn Crescendo"| AITarget["Target AI / LLM Endpoint"]
+    AITarget -->|"OWASP / ATLAS / NIST / SAIF"| GRC["Executive & GRC Reports\n(.md / .html / .pdf / .sarif)"]
 ```
 
 ### How it works

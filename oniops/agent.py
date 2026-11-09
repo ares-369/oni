@@ -245,6 +245,31 @@ def quarantine_output(tool: str, raw: str) -> str:
     return f'<untrusted_tool_output tool="{tool}">\n{redacted[:1800]}\n</untrusted_tool_output>'
 
 
+def compact_agent_messages(messages: list[dict], keep_recent_turns: int = 2) -> list[dict]:
+    """Sliding-window prompt compaction for 7B local models: retain the system
+    prompt, initial objective, and the last `keep_recent_turns` observations in
+    full while rolling older observations into a 3-line digest."""
+    if len(messages) <= 2 + keep_recent_turns * 2:
+        return messages
+    cutoff = len(messages) - (keep_recent_turns * 2)
+    compacted: list[dict] = []
+    for idx, msg in enumerate(messages):
+        if idx < 2 or idx >= cutoff or msg.get("role") != "user":
+            compacted.append(msg)
+            continue
+        content = msg.get("content") or ""
+        if "<untrusted_tool_output" in content and len(content) > 360:
+            lines = [ln.strip() for ln in content.splitlines() if ln.strip() and not ln.startswith("<")][:3]
+            digest = " | ".join(lines)[:280]
+            compacted.append({
+                "role": "user",
+                "content": f'<untrusted_tool_output compacted="true">{digest}</untrusted_tool_output>\nNext JSON action.',
+            })
+        else:
+            compacted.append(msg)
+    return compacted
+
+
 # ───────────────────────── Graph Memory & Write-Back ─────────────────────────
 def load_target_context(db_path: str | Path | None, target_ip: str) -> str:
     """Load known open ports and verified findings for `target_ip` from SQLite so
@@ -459,6 +484,7 @@ def run_agent(objective: str, target: str, *, llm, scope: Scope, runner,
         transcript.append({"step": step, "thought": thought, "tool": tool, "args": targs, "observation": obs})
         messages.append({"role": "assistant", "content": reply[:600]})
         messages.append({"role": "user", "content": f"Observation from {tool}:\n{quarantined}\n\nNext JSON action, or a final object if done."})
+        messages = compact_agent_messages(messages, keep_recent_turns=2)
         if stall >= 3:
             emit("AGENT_WRAP", "warn", "Agent stalled (repeated/invalid calls); summarizing")
             break

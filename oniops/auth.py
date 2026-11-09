@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import html
 import logging
 import secrets
+import time
+from urllib.parse import urlparse
 
 from flask import Response, redirect, render_template, request, session
 
@@ -26,6 +29,39 @@ log = logging.getLogger("oniops.auth")
 
 _PBKDF2_ITERS = 240_000
 _OPEN_PATHS = {"/login", "/auth/callback", "/logout", "/healthz"}
+_LOGIN_BUCKETS: dict[str, list[float]] = {}
+_LOGIN_MAX_ATTEMPTS = 10
+_LOGIN_WINDOW_SEC = 60.0
+
+
+def _check_login_rate_limit(ip: str) -> bool:
+    """Return True if the IP is within the login rate limit, False if throttled."""
+    now = time.monotonic()
+    bucket = [t for t in _LOGIN_BUCKETS.get(ip, []) if now - t < _LOGIN_WINDOW_SEC]
+    if len(bucket) >= _LOGIN_MAX_ATTEMPTS:
+        _LOGIN_BUCKETS[ip] = bucket
+        return False
+    bucket.append(now)
+    _LOGIN_BUCKETS[ip] = bucket
+    return True
+
+
+def _origin_matches_request(cfg) -> bool:
+    """Validate Origin/Referer header on state-changing cookie-authenticated requests."""
+    origin = request.headers.get("Origin") or ""
+    if not origin:
+        return True
+    try:
+        o_host = urlparse(origin).netloc.lower()
+    except Exception:
+        return False
+    allowed_hosts = {request.host.lower()}
+    if cfg.external_url:
+        try:
+            allowed_hosts.add(urlparse(cfg.external_url).netloc.lower())
+        except Exception:
+            pass
+    return bool(o_host and o_host in allowed_hosts)
 
 
 # ---- password hashing ----
@@ -117,6 +153,8 @@ def init_auth(app, cfg) -> None:
 
         # local / oidc -> session
         if session.get("user"):
+            if request.method in ("POST", "PUT", "DELETE", "PATCH") and not _origin_matches_request(cfg):
+                return Response("Forbidden: cross-origin state-changing request blocked (CSRF guard).", 403)
             return None
         if p.startswith("/api/"):
             return Response("Authentication required.", 401)
@@ -132,6 +170,9 @@ def init_auth(app, cfg) -> None:
             return oauth.oniops_sso.authorize_redirect(redirect_uri)
         # local (and basic, though basic never redirects here)
         if request.method == "POST":
+            client_ip = request.remote_addr or "unknown"
+            if not _check_login_rate_limit(client_ip):
+                return Response("Too many login attempts. Please wait 60 seconds.", 429)
             u = request.form.get("username", "")
             pw = request.form.get("password", "")
             if hmac.compare_digest(u, cfg.auth.username) and _verify_password(cfg, pw):
@@ -146,11 +187,12 @@ def init_auth(app, cfg) -> None:
         if mode != "oidc":
             return redirect("/")
         def _fail(msg: str):
+            safe_msg = html.escape(str(msg or ""))
             return Response(
                 f"<!doctype html><meta charset=utf-8><title>ONIOPS sign-in</title>"
                 f"<body style='background:#090b10;color:#f1f5f9;font-family:Inter,sans-serif;"
                 f"display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center'>"
-                f"<div><h2 style='color:#ef4444'>Sign-in failed</h2><p style='color:#94a3b8'>{msg}</p>"
+                f"<div><h2 style='color:#ef4444'>Sign-in failed</h2><p style='color:#94a3b8'>{safe_msg}</p>"
                 f"<a href='/login' style='color:#ef4444'>Try again</a></div></body>", 400,
                 {"Content-Type": "text/html; charset=utf-8"})
 

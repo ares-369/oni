@@ -25,7 +25,7 @@ from oniops.agent import run_agent
 from oniops.aisec import CONVERTERS, load_yaml_probes, run_aisec
 from oniops.auth import init_auth
 from oniops.config import apply_updates, get_config, preview_updates
-from oniops.findings import FindingsLedger, diff_assessments, redact_secrets
+from oniops.findings import FindingsLedger, build_assessment_manifest, diff_assessments, redact_secrets
 from oniops.graph import build_graph
 from oniops.greybox import analyze_source_code, discover_js_endpoints, probe_openapi, sanitize_auth_header
 from oniops.jobs import JobManager
@@ -455,6 +455,7 @@ def _run(cmd: list[str], timeout: int) -> str:
 
 def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
                     auth_header: str = "", low_priv_header: str = "") -> dict:
+    started_at = now_iso()
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) via Kali")
     clean_auth = sanitize_auth_header(auth_header) if auth_header else ""
     clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
@@ -772,6 +773,19 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
         conn.commit()
 
     emit_event("COMPLETE", "ok", f"[{profile}] on {hostname}: {n} ports, {finding_count} findings")
+    ev_hashes = [f.get("evidence_sha256", "") for f in ledger.list_findings(target_ip=target_ip, limit=15) if f.get("evidence_sha256")]
+    manifest = build_assessment_manifest(
+        assessment_id=aid or 0,
+        oniops_version=__version__,
+        target_ip=target_ip,
+        profile=profile,
+        scope_cidrs=scope.cidrs,
+        model_name=active_model_name(),
+        started_at=started_at,
+        completed_at=ts,
+        commands_run=commands_run,
+        evidence_hashes=ev_hashes,
+    )
     return {
         "id": aid, "timestamp": ts, "target_ip": target_ip, "target_name": hostname,
         "profile": profile, "severity": severity, "open_ports": port_summary,
@@ -780,6 +794,7 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
         "cve_count": cve_intel.get("cve_count", 0), "exploit_count": cve_intel.get("exploit_count", 0),
         "cve_findings": cve_intel.get("findings", []),
         "commands_run": commands_run, "raw_output": full_raw, "ai_report": ai_report,
+        "manifest": manifest,
     }
 
 
