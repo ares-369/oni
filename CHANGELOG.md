@@ -7,12 +7,38 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.3-beta] — 2026-11-10
+
+### Fixed
+- **Retest could mark a still-present vulnerability as FIXED.** Since
+  0.4.1-beta, credentials in replay commands were masked *in the database*, so
+  a retest of an authenticated finding sent `[REDACTED-TOKEN]`, got a 401, and
+  reported the issue as fixed. Replay commands are stored intact again and
+  secrets are masked wherever a finding leaves the server (UI, API, CLI, retest
+  responses). Findings saved by 0.4.1-0.4.2 with a masked credential now refuse
+  to retest, with a clear message, instead of guessing.
+- A 401 on an *authenticated* retest now reports UNCONFIRMED ("credential
+  rejected, it may have expired") instead of FIXED. Unauthenticated findings
+  that start returning 401/403/404 are still reported as FIXED.
+- If a retest cannot run at all (attack host unreachable, timeout, scope
+  refusal), the finding's status is left unchanged instead of becoming FIXED.
+- **Access control:** the full database backup (`/api/backup/download`) and the
+  attack-host SSH check (`/api/doctor?runner=1`) are now admin-only. Previously
+  the read-only `viewer` role could download the whole database.
+
+### Changed
+- The "benchmark" from 0.4.1-beta is renamed to **validator self-test**
+  (`oniops selftest`, `GET /api/selftest`; the old names still work). It checks
+  ONIOPS's own validators against built-in example inputs and reports pass/fail
+  per check. It no longer reports precision / recall / F1, because those
+  numbers described the examples, not detection accuracy on real targets.
+
 ## [0.4.2-beta] — 2026-11-09
 
 ### Fixed
 - Workbench Recent Jobs bar was always empty (read `params` instead of job `meta`); it now also refreshes when the Workbench opens.
-- Replay commands could expose bearer tokens/cookies in the Finding Detail Drawer; repro commands are now secret-redacted on storage and on display.
-- Zero-token retest now treats 401/403/404 as FIXED for BOLA/BFLA findings.
+- Replay commands could expose bearer tokens/cookies in the Finding Detail Drawer; repro commands are now secret-redacted on storage and on display. *(Correction: masking in storage broke authenticated retests; fixed in 0.4.3-beta.)*
+- Zero-token retest now treats 401/403/404 as FIXED for BOLA/BFLA findings. *(Correction: for authenticated findings a 401 now reports UNCONFIRMED; see 0.4.3-beta.)*
 - Clicking a findings row now opens the Finding Detail Drawer reliably; long SHA-256 hashes wrap on mobile.
 
 ## [0.4.1-beta] — 2026-11-09
@@ -24,11 +50,13 @@ behaviour may still change between releases.
   zero-token retest), CWE / OWASP / ATT&CK tags, step-by-step engineering
   remediation guidance (`get_remediation_guide`), and a `0-100` Fix-First
   Priority Score (`compute_priority_score`). Added `GET /api/findings/<id>`.
-- **Verification & False-Positive Benchmark Suite (`oniops benchmark`)**: Built-in
-  17-case benchmark suite (`oniops/benchmark.py`, `python -m oniops benchmark`, and
-  `GET /api/benchmark`) measuring true-positive recall, false-positive rate
-  (FPR), precision, and F1 score across Web/API proof validators, BOLA/BOPLA
-  analyzers, SAST sink detection, and prompt-injection quarantine.
+- **Validator self-test (`oniops benchmark`)**: 17 built-in checks
+  (`oniops/benchmark.py`, `python -m oniops benchmark`, `GET /api/benchmark`) for the
+  Web/API proof validators, BOLA/BOPLA analyzers, SAST sink detection, and
+  prompt-injection quarantine. *(Correction: this was originally described as
+  measuring recall, false-positive rate, precision and F1. It only checks ONIOPS's
+  validators against built-in examples and does not measure detection accuracy
+  on real targets. Renamed to `oniops selftest` in 0.4.3-beta.)*
 - **Authenticated Assessment Enhancements**: `whatweb` and PoC service
   validation now honor the grey-box `auth_header` when testing behind login
   gates, and agent-reported findings persist secret-redacted `-H` replay
@@ -150,7 +178,8 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.2-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.3-beta...HEAD
+[0.4.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.3-beta
 [0.4.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.2-beta
 [0.4.1-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.1-beta
 [0.4.0-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.0-beta
