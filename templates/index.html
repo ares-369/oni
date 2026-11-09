@@ -1298,7 +1298,11 @@
           <div class="panel">
             <div class="panel-header">
               <div class="panel-title"><i class="mdi mdi-file-document-outline"></i> Selected Report Inspector</div>
-              <span class="badge badge-red mono" id="reportInspectorBadge">Select a scan</span>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <span class="badge badge-red mono" id="reportInspectorBadge">Select a scan</span>
+                <button class="btn btn-sm" onclick="downloadText('oniops-assessment.md', window._lastScanMd || '')"><i class="mdi mdi-download"></i> .md</button>
+                <button class="btn btn-sm" onclick="downloadText('oniops-assessment.json', window._lastScanJson || '')"><i class="mdi mdi-download"></i> .json</button>
+              </div>
             </div>
             <div class="panel-body">
               <div class="report-box" id="reportInspectorBody" style="margin-bottom:12px;">
@@ -1359,7 +1363,7 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div><button class="btn btn-sm" onclick="downloadText('oniops-aisec-grc.md', window._lastAisecMd || '')"><i class="mdi mdi-download"></i> .md</button></div>
           <div class="panel-body"><div id="aisecReport" style="color:var(--text-muted);">&mdash;</div></div>
         </div>
       </section>
@@ -1395,7 +1399,7 @@
           <div class="panel-body"><div id="agentLog" class="terminal-box" style="min-height:120px; max-height:360px; overflow:auto;">No run yet. Enter an objective and Run Agent.</div></div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div><button class="btn btn-sm" onclick="downloadText('oniops-agent-report.md', window._lastAgentMd || '')"><i class="mdi mdi-download"></i> .md</button></div>
           <div class="panel-body"><div id="agentFinal" style="color:var(--text-muted);">&mdash;</div></div>
         </div>
       </section>
@@ -1917,6 +1921,8 @@
           if (j.status === 'error') { document.getElementById('agentLog').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
         }
         if (!data) { document.getElementById('agentLog').textContent += '\n[timed out waiting for agent]'; return; }
+        window._lastAgentMd = `# ONIOPS Agent Report\n\n**Objective:** ${data.objective || ''}\n**Target:** ${data.target || '-'}\n\n## Summary\n${data.final || ''}\n\n## Steps\n` +
+          (data.steps || []).map(s => `### Step ${s.step}: ${s.tool}\n- args: ${JSON.stringify(s.args)}\n- thought: ${s.thought || ''}\n\n\`\`\`\n${s.observation || ''}\n\`\`\``).join('\n\n');
         const t = (data.steps || []).map(s => `#${s.step}  ${s.tool}  ${JSON.stringify(s.args)}\n  thought: ${s.thought || ''}\n  ${String(s.observation || '').slice(0, 400).replace(/\n/g, '\n  ')}`).join('\n\n');
         document.getElementById('agentLog').textContent = t || '(no steps taken)';
         document.getElementById('agentStatus').textContent = data.completed ? 'completed' : 'stopped (budget)';
@@ -1955,6 +1961,7 @@
           if (j.status === 'error') { document.getElementById('aisecPosture').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
         }
         if (!data) { document.getElementById('aisecPosture').textContent = 'timed out'; return; }
+        window._lastAisecMd = data.report || '';
         const p = data.posture;
         const col = p.rating === 'Strong' ? 'var(--success)' : p.rating === 'Moderate' ? 'var(--warning)' : 'var(--danger)';
         document.getElementById('aisecPosture').innerHTML = `<span style="font-size:24px; font-weight:800; color:${col};">${p.score}/100</span> <span style="color:${col}; font-weight:600;">${p.rating}</span> <span style="color:var(--text-muted);">— ${p.failed}/${p.total} controls failed</span>`;
@@ -1967,6 +1974,12 @@
       finally { btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment'; clearCtl('aisecCtl'); }
     }
 
+    function downloadText(name, text) {
+      if (!text) { toast('Nothing to download yet', true); return; }
+      const blob = new Blob([text], {type: name.endsWith('.json') ? 'application/json' : 'text/markdown'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
     async function jobAction(jid, action) { try { await fetch(`/api/job/${jid}/${action}`, {method:'POST'}); } catch (e) {} }
     function renderCtl(elId, jid) {
       const el = document.getElementById(elId); if (!el) return;
@@ -2105,6 +2118,8 @@
       document.getElementById('reportInspectorBadge').textContent = `SCAN #${s.id} // ${s.target_name} (${s.target_ip})`;
       document.getElementById('reportInspectorBody').innerHTML = renderMarkdown(s.ai_report);
       document.getElementById('reportInspectorRaw').textContent = s.raw_output || 'No raw output.';
+      window._lastScanMd = s.ai_report || '';
+      window._lastScanJson = JSON.stringify(s, null, 2);
     }
 
     async function runQuickAssessment() {
