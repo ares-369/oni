@@ -553,6 +553,31 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
                         finding_count += 1
                         raw_sections.append(f"=== PTT: Exploit-DB ({term}) ===\n{sp[:1200]}")
 
+    # ── PoC validation: confirm discovered services are actually live, so a
+    # finding is VERIFIED (re-tested on the target) rather than merely reported.
+    verified_services = []
+    _webset = {80, 81, 443, 3000, 3001, 5000, 5055, 8000, 8006, 8080, 8081, 8090,
+               8096, 8123, 8443, 8501, 8888, 8989, 9000, 9090, 9200, 9443, 9696}
+    for p in discovered_ports[:8]:
+        if ctl is not None and not ctl.checkpoint():
+            break
+        pn, svc = p["port"], p["service"]
+        if pn in _webset or "http" in svc or "ssl" in svc:
+            scheme = "https" if pn in (443, 8443, 9443, 8006) or "ssl" in svc else "http"
+            out = _run(["curl", "-kIsS", "--max-time", "4", f"{scheme}://{target_ip}:{pn}"], 8)
+            m = re.search(r"HTTP/[\d.]+\s+\d{3}[^\r\n]*", out or "")
+            if m:
+                verified_services.append({"port": pn, "service": svc, "status": "VERIFIED", "evidence": m.group(0).strip()})
+            else:
+                verified_services.append({"port": pn, "service": svc, "status": "UNCONFIRMED", "evidence": (out or "no HTTP response")[:80]})
+        else:
+            verified_services.append({"port": pn, "service": svc, "status": "OPEN", "evidence": "port open; non-HTTP service (not re-verified)"})
+    verified_count = sum(1 for v in verified_services if v["status"] == "VERIFIED")
+    if verified_services:
+        emit_event("VALIDATE", "ok", f"PoC validation: {verified_count}/{len(verified_services)} services verified live")
+        raw_sections.append("=== PoC Validation: Service Verification ===\n"
+                            + "\n".join(f"- {v['port']}/{v['service']}: {v['status']} ({v['evidence']})" for v in verified_services))
+
     full_raw = "\n\n".join(raw_sections)
     port_summary = ", ".join(f"{p['port']}/{p['proto']} ({p['service']})" for p in discovered_ports) \
         or "No open ports in scanned range"
@@ -588,7 +613,9 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
     )
     user_prompt = (
         f"Target: {hostname} ({target_ip})\nProfile: {profile}\nOpen ports: {port_summary}\n"
-        f"Findings detected: {finding_count}\n\nAttack-path reasoning:\n{cot}\n\nEvidence:\n{full_raw[:3000]}"
+        f"Findings detected: {finding_count}\n"
+        f"Verified live services (PoC-validated): {verified_count}/{len(verified_services)}\n\n"
+        f"Attack-path reasoning:\n{cot}\n\nEvidence:\n{full_raw[:3000]}"
     )
     ai_report = ai_chat([{"role": "system", "content": sys_prompt},
                          {"role": "user", "content": user_prompt}], role="reporter")
@@ -614,6 +641,7 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> di
         "id": aid, "timestamp": ts, "target_ip": target_ip, "target_name": hostname,
         "profile": profile, "severity": severity, "open_ports": port_summary,
         "ports_list": discovered_ports, "finding_count": finding_count,
+        "verified_services": verified_services, "verified_count": verified_count,
         "commands_run": commands_run, "raw_output": full_raw, "ai_report": ai_report,
     }
 

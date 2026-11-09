@@ -2168,7 +2168,7 @@
         }
         if (!data) { document.getElementById('wbRawOutput').textContent += '\n[timed out waiting for job]'; return; }
 
-        document.getElementById('wbScanMeta').textContent = `Scan #${data.id} // Severity: ${data.severity}`;
+        document.getElementById('wbScanMeta').textContent = `Scan #${data.id} // ${data.severity} // ${data.verified_count || 0} verified`;
         document.getElementById('wbRawOutput').textContent = data.raw_output || 'Completed.';
         document.getElementById('wbAiReport').innerHTML = renderMarkdown(data.ai_report);
         document.getElementById('wbPortsBar').innerHTML = (data.ports_list || []).map(p =>
