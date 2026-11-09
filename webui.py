@@ -331,24 +331,49 @@ def api_test_host():
     return jsonify({"name": name, "online": res.ok, "output": res.out[:200]})
 
 
-@app.route("/api/discover", methods=["POST"])
-def api_discover():
-    emit_event("DISCOVER", "busy", f"Sweeping scope {', '.join(scope.cidrs)} for live hosts")
-    try:
-        hosts = discover_hosts(active_runner(), scope)
-    except Exception as exc:
-        return jsonify({"error": f"Discovery failed: {exc}"}), 500
+MAX_SWEEP_HOSTS = 4096  # refuse a one-shot sweep larger than this without force
+
+
+def _scope_host_count() -> int:
+    import ipaddress as _ip
+    total = 0
+    for c in scope.cidrs:
+        try:
+            total += _ip.ip_network(c, strict=False).num_addresses
+        except Exception:
+            pass
+    return total
+
+
+def _discover_job(ctl):
+    emit_event("DISCOVER", "busy", f"Sweeping {', '.join(scope.cidrs)} for live hosts")
+    hosts = discover_hosts(active_runner(), scope)
     ts = now_iso()
     with sqlite3.connect(DB_PATH) as conn:
         for h in hosts:
-            conn.execute("""
-                INSERT INTO targets (target_ip, hostname, first_seen, last_seen)
+            conn.execute("""INSERT INTO targets (target_ip, hostname, first_seen, last_seen)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(target_ip) DO UPDATE SET hostname=excluded.hostname, last_seen=excluded.last_seen
-            """, (h.ip, h.hostname, ts, ts))
+                ON CONFLICT(target_ip) DO UPDATE SET hostname=excluded.hostname, last_seen=excluded.last_seen""",
+                (h.ip, h.hostname, ts, ts))
         conn.commit()
-    emit_event("DISCOVER", "ok", f"Discovered {len(hosts)} live host(s) in scope")
-    return jsonify({"discovered": len(hosts)})
+    emit_event("DISCOVER", "ok", f"Discovered {len(hosts)} live host(s)")
+    return {"discovered": len(hosts)}
+
+
+@app.route("/api/discover", methods=["POST"])
+def api_discover():
+    """Explicit, guarded host discovery as a background job (never automatic)."""
+    data = request.get_json(silent=True) or {}
+    n = _scope_host_count()
+    if n > MAX_SWEEP_HOSTS and not data.get("force"):
+        return jsonify({
+            "error": (f"Scope spans {n} addresses (over {MAX_SWEEP_HOSTS}). A full sweep could be "
+                      "slow and noisy on a large network. Narrow scope.allowed_cidrs, discover one "
+                      "subnet at a time, or resend with force=true to proceed anyway."),
+            "scope_size": n,
+        }), 400
+    job_id = jobs.submit("discover", {"scope": scope.cidrs, "size": n}, _discover_job)
+    return jsonify({"job_id": job_id, "scope_size": n})
 
 
 @app.route("/api/targets")
@@ -359,22 +384,8 @@ def api_targets():
         surface = {r["target_ip"]: dict(r)
                    for r in conn.execute("SELECT * FROM host_surface").fetchall()}
 
-    # Auto-discover on first use if the target cache is empty.
-    if not tgt_rows:
-        try:
-            hosts = discover_hosts(active_runner(), scope)
-            ts = now_iso()
-            with sqlite3.connect(DB_PATH) as conn:
-                for h in hosts:
-                    conn.execute("""INSERT INTO targets (target_ip, hostname, first_seen, last_seen)
-                        VALUES (?,?,?,?) ON CONFLICT(target_ip) DO UPDATE SET last_seen=excluded.last_seen""",
-                        (h.ip, h.hostname, ts, ts))
-                conn.commit()
-                conn.row_factory = sqlite3.Row
-                tgt_rows = conn.execute("SELECT * FROM targets ORDER BY target_ip").fetchall()
-        except Exception as exc:
-            log.warning(f"auto-discovery failed: {exc}")
-
+    # NOTE: ONIOPS never auto-scans. Discovery is explicit (POST /api/discover),
+    # so pointing ONIOPS at a large network can't trigger a surprise sweep.
     enriched = []
     for t in tgt_rows:
         ip = t["target_ip"]
@@ -404,7 +415,7 @@ def _run(cmd: list[str], timeout: int) -> str:
     return active_runner().run(cmd, timeout=timeout).out
 
 
-def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
+def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None) -> dict:
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) via Kali")
 
     commands_run, raw_sections, discovered_ports = [], [], []
@@ -453,6 +464,8 @@ def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
         raw_sections.append(f"=== WAPT: Web Service Discovery ===\n$ {' '.join(cmd)}\n{out}")
         discovered_ports = parse_nmap_ports(out)
         for p in discovered_ports[:3]:
+            if ctl is not None and not ctl.checkpoint():
+                break
             pn = p["port"]
             scheme = "https" if pn in (443, 8443) else "http"
             url = f"{scheme}://{target_ip}:{pn}"
@@ -507,6 +520,8 @@ def _run_assessment(target_ip: str, hostname: str, profile: str) -> dict:
         web_set = {80, 81, 443, 3000, 3001, 5000, 5055, 6767, 7878, 8000, 8006, 8080,
                    8090, 8096, 8123, 8443, 8501, 8888, 8989, 9000, 9090, 9200, 9443, 9696}
         for p in discovered_ports[:4]:
+            if ctl is not None and not ctl.checkpoint():
+                break
             pn, service, banner = p["port"], p["service"], p["banner"]
             if pn in web_set or "http" in service or "ssl" in service:
                 scheme = "https" if pn in (443, 8006, 8443, 9200, 9443) or "ssl" in service else "http"
@@ -630,7 +645,7 @@ def api_assess_start():
         return jsonify({"error": str(exc)}), 400
     ip, label = rt.ip, rt.label
     job_id = jobs.submit("assessment", {"target": label, "ip": ip, "profile": profile},
-                         lambda: _run_assessment(ip, label, profile))
+                         lambda ctl: _run_assessment(ip, label, profile, ctl=ctl))
     return jsonify({"job_id": job_id})
 
 
@@ -649,9 +664,9 @@ def api_agent_start():
             return jsonify({"error": str(exc)}), 400
     steps = max(2, min(int(data.get("max_steps", 8) or 8), 12))
 
-    def _job():
+    def _job(ctl):
         return run_agent(objective, target, llm=llm, scope=scope,
-                         runner=active_runner(), emit=emit_event, max_steps=steps)
+                         runner=active_runner(), emit=emit_event, max_steps=steps, ctl=ctl)
 
     job_id = jobs.submit("agent", {"objective": objective[:80], "target": target or "(auto)"}, _job)
     return jsonify({"job_id": job_id})
@@ -671,8 +686,9 @@ def api_aisec_start():
     if api_type not in ("ollama", "openai"):
         api_type = "ollama"
 
-    def _job():
-        return run_aisec(base_url, model, api_type, emit=emit_event, judge=llm.for_role("reporter"))
+    def _job(ctl):
+        return run_aisec(base_url, model, api_type, emit=emit_event,
+                         judge=llm.for_role("reporter"), ctl=ctl)
 
     job_id = jobs.submit("aisec", {"model": model, "target": base_url}, _job)
     return jsonify({"job_id": job_id})
@@ -689,6 +705,14 @@ def api_job(job_id):
 @app.route("/api/jobs")
 def api_jobs():
     return jsonify({"jobs": jobs.list()})
+
+
+@app.route("/api/job/<job_id>/<action>", methods=["POST"])
+def api_job_control(job_id, action):
+    fn = {"cancel": jobs.cancel, "pause": jobs.pause, "resume": jobs.resume}.get(action)
+    if not fn:
+        return jsonify({"error": "unknown action"}), 400
+    return jsonify({"ok": fn(job_id), "action": action})
 
 
 @app.route("/api/intel")
@@ -732,22 +756,54 @@ def api_telemetry():
 
 
 KALI_TOOL_CATALOG = [
+    # --- Network recon ---
     {"pkg": "nmap", "bin": "nmap", "category": "Network Recon", "desc": "Port scanning & service fingerprinting"},
-    {"pkg": "exploitdb", "bin": "searchsploit", "category": "Vuln Intel", "desc": "Offline Exploit-DB archive search"},
-    {"pkg": "whatweb", "bin": "whatweb", "category": "Web Recon", "desc": "Web technology & CMS fingerprinting"},
-    {"pkg": "sslscan", "bin": "sslscan", "category": "TLS Audit", "desc": "SSL/TLS cipher & certificate inspector"},
-    {"pkg": "nikto", "bin": "nikto", "category": "Web Audit", "desc": "Web server misconfiguration scanner"},
-    {"pkg": "gobuster", "bin": "gobuster", "category": "Web Recon", "desc": "Directory & DNS discovery"},
-    {"pkg": "ffuf", "bin": "ffuf", "category": "Web Recon", "desc": "Fast endpoint & parameter fuzzing"},
-    {"pkg": "nuclei", "bin": "nuclei", "category": "Vuln Audit", "desc": "Template-based CVE & misconfig scanner"},
-    {"pkg": "enum4linux-ng", "bin": "enum4linux-ng", "category": "Host Audit", "desc": "SMB/Samba enumeration"},
-    {"pkg": "sqlmap", "bin": "sqlmap", "category": "Web Exploit", "desc": "Automated SQL injection testing"},
-    {"pkg": "metasploit-framework", "bin": "msfconsole", "category": "Exploitation", "desc": "Exploit & auxiliary module framework"},
-    {"pkg": "httpx-toolkit", "bin": "httpx", "category": "Web Recon", "desc": "Fast HTTP probe & tech detect"},
-    {"pkg": "katana", "bin": "katana", "category": "Web Crawl", "desc": "Web spidering engine"},
-    {"pkg": "subfinder", "bin": "subfinder", "category": "DNS Recon", "desc": "Passive subdomain discovery"},
-    {"pkg": "naabu", "bin": "naabu", "category": "Network Recon", "desc": "Fast SYN/connect port scanner"},
     {"pkg": "masscan", "bin": "masscan", "category": "Network Recon", "desc": "High-speed async port scanner"},
+    {"pkg": "naabu", "bin": "naabu", "category": "Network Recon", "desc": "Fast SYN/connect port scanner"},
+    {"pkg": "arp-scan", "bin": "arp-scan", "category": "Network Recon", "desc": "Layer-2 host discovery"},
+    {"pkg": "netdiscover", "bin": "netdiscover", "category": "Network Recon", "desc": "Passive/active ARP reconnaissance"},
+    # --- DNS / subdomain ---
+    {"pkg": "subfinder", "bin": "subfinder", "category": "DNS Recon", "desc": "Passive subdomain discovery"},
+    {"pkg": "amass", "bin": "amass", "category": "DNS Recon", "desc": "Attack-surface & subdomain mapping"},
+    {"pkg": "dnsx", "bin": "dnsx", "category": "DNS Recon", "desc": "Fast DNS toolkit & resolver"},
+    {"pkg": "dnsrecon", "bin": "dnsrecon", "category": "DNS Recon", "desc": "DNS enumeration & zone auditing"},
+    # --- Web recon / WAPT ---
+    {"pkg": "whatweb", "bin": "whatweb", "category": "Web Recon", "desc": "Web technology & CMS fingerprinting"},
+    {"pkg": "httpx-toolkit", "bin": "httpx", "category": "Web Recon", "desc": "Fast HTTP probe & tech detect"},
+    {"pkg": "katana", "bin": "katana", "category": "Web Recon", "desc": "Next-gen web crawler/spider"},
+    {"pkg": "gobuster", "bin": "gobuster", "category": "Web Recon", "desc": "Directory, vhost & DNS brute-force"},
+    {"pkg": "ffuf", "bin": "ffuf", "category": "Web Recon", "desc": "Fast endpoint & parameter fuzzing"},
+    {"pkg": "feroxbuster", "bin": "feroxbuster", "category": "Web Recon", "desc": "Recursive content discovery"},
+    {"pkg": "dirb", "bin": "dirb", "category": "Web Recon", "desc": "Classic web content scanner"},
+    {"pkg": "wfuzz", "bin": "wfuzz", "category": "Web Recon", "desc": "Web application fuzzer"},
+    {"pkg": "arjun", "bin": "arjun", "category": "Web Recon", "desc": "HTTP parameter discovery"},
+    {"pkg": "wafw00f", "bin": "wafw00f", "category": "Web Recon", "desc": "WAF detection & fingerprinting"},
+    # --- Web audit / exploit ---
+    {"pkg": "nuclei", "bin": "nuclei", "category": "Web Audit", "desc": "Template-based CVE & misconfig scanner"},
+    {"pkg": "nikto", "bin": "nikto", "category": "Web Audit", "desc": "Web server misconfiguration scanner"},
+    {"pkg": "wpscan", "bin": "wpscan", "category": "Web Audit", "desc": "WordPress vulnerability scanner"},
+    {"pkg": "sqlmap", "bin": "sqlmap", "category": "Web Exploit", "desc": "Automated SQL injection exploitation"},
+    {"pkg": "dalfox", "bin": "dalfox", "category": "Web Exploit", "desc": "Fast XSS discovery & verification"},
+    {"pkg": "commix", "bin": "commix", "category": "Web Exploit", "desc": "Command-injection exploitation"},
+    {"pkg": "burpsuite", "bin": "burpsuite", "category": "Web Proxy", "desc": "Intercepting proxy & web auditing (GUI)"},
+    # --- TLS ---
+    {"pkg": "sslscan", "bin": "sslscan", "category": "TLS Audit", "desc": "SSL/TLS cipher & certificate inspector"},
+    {"pkg": "sslyze", "bin": "sslyze", "category": "TLS Audit", "desc": "Deep TLS configuration analyzer"},
+    {"pkg": "testssl.sh", "bin": "testssl", "category": "TLS Audit", "desc": "Comprehensive TLS/SSL auditor"},
+    # --- SMB / AD / network creds ---
+    {"pkg": "enum4linux-ng", "bin": "enum4linux-ng", "category": "SMB/AD", "desc": "SMB/Samba & RPC enumeration"},
+    {"pkg": "smbmap", "bin": "smbmap", "category": "SMB/AD", "desc": "SMB share enumeration & access"},
+    {"pkg": "netexec", "bin": "nxc", "category": "SMB/AD", "desc": "Network/AD exec (CrackMapExec successor)"},
+    {"pkg": "responder", "bin": "responder", "category": "SMB/AD", "desc": "LLMNR/NBT-NS/MDNS poisoner"},
+    {"pkg": "snmp-check", "bin": "snmp-check", "category": "Enum", "desc": "SNMP device enumeration"},
+    # --- Credentials ---
+    {"pkg": "hydra", "bin": "hydra", "category": "Credentials", "desc": "Network login brute-forcer"},
+    {"pkg": "medusa", "bin": "medusa", "category": "Credentials", "desc": "Parallel login brute-forcer"},
+    {"pkg": "john", "bin": "john", "category": "Credentials", "desc": "John the Ripper password cracker"},
+    {"pkg": "hashcat", "bin": "hashcat", "category": "Credentials", "desc": "GPU password cracking"},
+    # --- Exploitation / intel ---
+    {"pkg": "metasploit-framework", "bin": "msfconsole", "category": "Exploitation", "desc": "Exploit & auxiliary framework"},
+    {"pkg": "exploitdb", "bin": "searchsploit", "category": "Vuln Intel", "desc": "Offline Exploit-DB archive search"},
     {"pkg": "gitleaks", "bin": "gitleaks", "category": "Secret Audit", "desc": "Scan for leaked secrets & keys"},
 ]
 

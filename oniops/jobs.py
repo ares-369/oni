@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,10 +23,30 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class JobControl:
+    """Passed into a job's function so it can be paused/stopped cooperatively.
+    The function calls checkpoint() at safe boundaries (between tools/steps)."""
+
+    def __init__(self, mgr: "JobManager", job_id: str):
+        self.mgr = mgr
+        self.job_id = job_id
+
+    @property
+    def cancelled(self) -> bool:
+        return self.mgr._control.get(self.job_id) == "cancel"
+
+    def checkpoint(self) -> bool:
+        """Block while paused; return False if the job should stop."""
+        while self.mgr._control.get(self.job_id) == "pause":
+            time.sleep(0.4)
+        return self.mgr._control.get(self.job_id) != "cancel"
+
+
 class JobManager:
-    def __init__(self, db_path, max_workers: int = 2):
+    def __init__(self, db_path, max_workers: int = 3):
         self.db_path = str(db_path)
         self.pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="oniops-job")
+        self._control: dict[str, str] = {}
         self._init_db()
 
     def _conn(self):
@@ -52,8 +73,9 @@ class JobManager:
             conn.execute(f"UPDATE jobs SET {cols} WHERE id=?", (*fields.values(), job_id))
             conn.commit()
 
-    def submit(self, kind: str, meta: dict[str, Any], fn: Callable[[], dict]) -> str:
+    def submit(self, kind: str, meta: dict[str, Any], fn: Callable[["JobControl"], dict]) -> str:
         job_id = uuid.uuid4().hex[:12]
+        self._control[job_id] = "run"
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO jobs (id, kind, meta, status, created) VALUES (?,?,?,?,?)",
@@ -63,14 +85,37 @@ class JobManager:
         self.pool.submit(self._run, job_id, fn)
         return job_id
 
-    def _run(self, job_id: str, fn: Callable[[], dict]):
+    def _run(self, job_id: str, fn: Callable[["JobControl"], dict]):
         self._set(job_id, status="running")
+        ctl = JobControl(self, job_id)
         try:
-            result = fn()
-            self._set(job_id, status="done", finished=_now(), result=json.dumps(result))
+            result = fn(ctl)
+            status = "cancelled" if self._control.get(job_id) == "cancel" else "done"
+            self._set(job_id, status=status, finished=_now(), result=json.dumps(result))
         except Exception as exc:  # noqa: BLE001
             self._set(job_id, status="error", finished=_now(),
                       error=f"{exc}\n{traceback.format_exc()[-800:]}")
+        finally:
+            self._control.pop(job_id, None)
+
+    # ---- cooperative control ----
+    def cancel(self, job_id: str) -> bool:
+        if job_id in self._control:
+            self._control[job_id] = "cancel"
+            return True
+        return False
+
+    def pause(self, job_id: str) -> bool:
+        if self._control.get(job_id) == "run":
+            self._control[job_id] = "pause"
+            return True
+        return False
+
+    def resume(self, job_id: str) -> bool:
+        if self._control.get(job_id) == "pause":
+            self._control[job_id] = "run"
+            return True
+        return False
 
     def get(self, job_id: str) -> dict | None:
         with self._conn() as conn:

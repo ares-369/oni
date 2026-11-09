@@ -162,11 +162,13 @@ def _report(target: str, model: str, results: list[dict], posture: dict, judge=N
 
 
 def run_aisec(base_url: str, model: str, api_type: str = "ollama", *,
-              emit: Callable[[str, str, str], None] | None = None, judge=None) -> dict:
+              emit: Callable[[str, str, str], None] | None = None, judge=None, ctl=None) -> dict:
     emit = emit or (lambda *a, **k: None)
     emit("AISEC_START", "busy", f"AI security assessment: {model} @ {base_url}")
     results = []
     for p in PROBES:
+        if ctl is not None and not ctl.checkpoint():
+            break
         emit("AISEC_PROBE", "busy", f"Probe: {p['name']}")
         resp = _ask(base_url, model, api_type, p["prompt"])
         err = resp.startswith("__ERROR__")

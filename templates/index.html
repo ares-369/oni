@@ -1056,6 +1056,7 @@
             <div>
               <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">TARGET (IN SCOPE)</label>
               <select id="wbTargetSelect" class="select" style="width:100%;"></select>
+              <input id="wbTargetInput" class="input" style="width:100%; margin-top:6px;" placeholder="…or type any in-scope IP or domain to attack" />
             </div>
             <div>
               <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">ASSESSMENT PROFILE</label>
@@ -1078,6 +1079,7 @@
             <div class="panel-header">
               <div class="panel-title"><i class="mdi mdi-console-network"></i> Raw Sensor Telemetry &amp; Discovered Ports</div>
               <span class="badge badge-neutral mono" id="wbScanMeta">Ready</span>
+            <span id="wbCtl" style="margin-left:8px;"></span>
             </div>
             <div class="panel-body">
               <div id="wbPortsBar" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;"></div>
@@ -1112,7 +1114,10 @@
             </div>
           </div>
           <div>
-            <input type="text" id="targetFilterInput" class="input" placeholder="Filter by hostname, IP, or role..." oninput="renderTargetMatrix()" style="width:260px;" />
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="text" id="targetFilterInput" class="input" placeholder="Filter by hostname, IP, or role..." oninput="renderTargetMatrix()" style="width:240px;" />
+              <button class="btn" id="discoverBtn" onclick="discoverHosts(this)"><i class="mdi mdi-radar"></i> Discover hosts</button>
+            </div>
           </div>
         </div>
         <div class="target-grid" id="targetMatrixGrid"></div>
@@ -1327,7 +1332,7 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-shield-search"></i> Posture</div><span class="badge badge-neutral" id="aisecStatus">idle</span></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-shield-search"></i> Posture</div><span class="badge badge-neutral" id="aisecStatus">idle</span><span id="aisecCtl" style="margin-left:8px;"></span></div>
           <div class="panel-body">
             <div id="aisecPosture" style="color:var(--text-muted);">No run yet. Enter an AI endpoint and run the assessment.</div>
             <div class="table-wrap" style="margin-top:12px;">
@@ -1368,7 +1373,7 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-timeline-text-outline"></i> Live Steps</div><span class="badge badge-neutral" id="agentStatus">idle</span></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-timeline-text-outline"></i> Live Steps</div><span class="badge badge-neutral" id="agentStatus">idle</span><span id="agentCtl" style="margin-left:8px;"></span></div>
           <div class="panel-body"><div id="agentLog" class="terminal-box" style="min-height:120px; max-height:360px; overflow:auto;">No run yet. Enter an objective and Run Agent.</div></div>
         </div>
         <div class="panel">
@@ -1846,6 +1851,7 @@
         const r = await (await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({objective, target, max_steps})})).json();
         if (r.error) { document.getElementById('agentLog').textContent = 'ERROR: ' + r.error; return; }
         const jid = r.job_id; let data = null;
+        renderCtl('agentCtl', jid);
         for (let i = 0; i < 160; i++) {
           await sleep(2000);
           const j = await (await fetch('/api/job/' + jid)).json();
@@ -1853,7 +1859,7 @@
           const steps = (tv.events || []).filter(e => (e.stage || '').startsWith('AGENT')).slice(0, 16).reverse().map(e => `[${e.stage}] ${e.title}`).join('\n');
           document.getElementById('agentStatus').textContent = j.status;
           if (steps) document.getElementById('agentLog').textContent = steps;
-          if (j.status === 'done') { data = j.result; break; }
+          if (j.status === 'done' || j.status === 'cancelled') { data = j.result; break; }
           if (j.status === 'error') { document.getElementById('agentLog').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
         }
         if (!data) { document.getElementById('agentLog').textContent += '\n[timed out waiting for agent]'; return; }
@@ -1865,6 +1871,7 @@
         document.getElementById('agentLog').textContent = 'Request failed: ' + e;
       } finally {
         btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Agent';
+        clearCtl('agentCtl');
       }
     }
 
@@ -1882,11 +1889,12 @@
         const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type})})).json();
         if (r.error) { document.getElementById('aisecPosture').textContent = 'ERROR: ' + r.error; return; }
         const jid = r.job_id; let data = null;
+        renderCtl('aisecCtl', jid);
         for (let i = 0; i < 120; i++) {
           await sleep(2000);
           const j = await (await fetch('/api/job/' + jid)).json();
           document.getElementById('aisecStatus').textContent = j.status;
-          if (j.status === 'done') { data = j.result; break; }
+          if (j.status === 'done' || j.status === 'cancelled') { data = j.result; break; }
           if (j.status === 'error') { document.getElementById('aisecPosture').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
         }
         if (!data) { document.getElementById('aisecPosture').textContent = 'timed out'; return; }
@@ -1899,7 +1907,35 @@
         }).join('');
         document.getElementById('aisecReport').innerHTML = renderMarkdown(data.report || '');
       } catch (e) { document.getElementById('aisecPosture').textContent = 'Request failed: ' + e; }
-      finally { btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment'; }
+      finally { btn.disabled = false; btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment'; clearCtl('aisecCtl'); }
+    }
+
+    async function jobAction(jid, action) { try { await fetch(`/api/job/${jid}/${action}`, {method:'POST'}); } catch (e) {} }
+    function renderCtl(elId, jid) {
+      const el = document.getElementById(elId); if (!el) return;
+      el.dataset.jid = jid; el.dataset.paused = '';
+      el.innerHTML = `<button class="btn btn-sm" id="${elId}_p" onclick="ctlPause('${elId}')">Pause</button> <button class="btn btn-sm" style="border-color:var(--danger);color:var(--danger);" onclick="jobAction('${jid}','cancel')">Stop</button>`;
+    }
+    function clearCtl(elId) { const el = document.getElementById(elId); if (el) el.innerHTML = ''; }
+    function ctlPause(elId) {
+      const el = document.getElementById(elId); const jid = el.dataset.jid; const btn = document.getElementById(elId + '_p');
+      if (el.dataset.paused) { jobAction(jid, 'resume'); el.dataset.paused = ''; btn.textContent = 'Pause'; }
+      else { jobAction(jid, 'pause'); el.dataset.paused = '1'; btn.textContent = 'Resume'; }
+    }
+    async function discoverHosts(btn) {
+      const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Discovering...';
+      try {
+        const r = await (await fetch('/api/discover', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})).json();
+        if (r.error) { toast(r.error, true); return; }
+        const jid = r.job_id;
+        for (let i = 0; i < 120; i++) {
+          await sleep(2000);
+          const j = await (await fetch('/api/job/' + jid)).json();
+          if (j.status === 'done') { toast('Discovered ' + ((j.result && j.result.discovered) || 0) + ' hosts'); loadTargets(); loadStatus(); break; }
+          if (j.status === 'error' || j.status === 'cancelled') { toast('Discovery ' + j.status, true); break; }
+        }
+      } catch (e) { toast('Discovery failed: ' + e, true); }
+      finally { btn.disabled = false; btn.innerHTML = old; }
     }
 
     function launchTargetInWorkbench(ip) {
@@ -2026,7 +2062,7 @@
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     async function executeWorkbenchScan() {
-      const target = document.getElementById('wbTargetSelect').value;
+      const target = document.getElementById('wbTargetInput').value.trim() || document.getElementById('wbTargetSelect').value;
       const profile = document.getElementById('wbProfileSelect').value;
       const btn = document.getElementById('wbRunBtn');
       btn.disabled = true;
@@ -2044,6 +2080,7 @@
         const sdata = await sres.json();
         if (sdata.error) { document.getElementById('wbRawOutput').textContent = `ERROR: ${sdata.error}`; return; }
         const jobId = sdata.job_id;
+        renderCtl('wbCtl', jobId);
 
         let data = null;
         for (let i = 0; i < 150; i++) {
@@ -2054,6 +2091,7 @@
           document.getElementById('wbScanMeta').textContent = `Job ${jobId} // ${j.status}`;
           document.getElementById('wbRawOutput').textContent = `[ONIOPS] ${profile} on ${target} — ${j.status}\n\n${recent}`;
           if (j.status === 'done') { data = j.result; break; }
+          if (j.status === 'cancelled') { document.getElementById('wbRawOutput').textContent += '\n\n[stopped by operator]'; return; }
           if (j.status === 'error') { document.getElementById('wbRawOutput').textContent = `ERROR: ${j.error || 'job failed'}`; return; }
         }
         if (!data) { document.getElementById('wbRawOutput').textContent += '\n[timed out waiting for job]'; return; }
@@ -2070,6 +2108,7 @@
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="mdi mdi-play"></i> Run Assessment';
+        clearCtl('wbCtl');
       }
     }
 
