@@ -4,7 +4,12 @@ Usage examples:
   python -m oniops                                  # start Waitress WebUI server (default)
   python -m oniops serve                            # start Waitress WebUI server
   python -m oniops version                          # print version
+  python -m oniops doctor                           # run self-diagnostics (DB, scope, playbooks, runner)
   python -m oniops whitebox ./repo --fail-on HIGH --sarif results.sarif
+  python -m oniops assess 10.0.0.150 --profile fast_recon
+  python -m oniops retest --all --target 10.0.0.150
+  python -m oniops backup /tmp/oniops-backup.sqlite
+  python -m oniops restore /tmp/oniops-backup.sqlite
   python -m oniops findings --target 10.0.0.150
   python -m oniops diff 2
   python -m oniops playbooks
@@ -13,17 +18,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import sys
 from pathlib import Path
 
 from . import __version__
 from .aisec import load_yaml_probes
 from .config import get_config
-from .findings import FindingsLedger, diff_assessments
+from .findings import FindingsLedger, backup_sqlite, diff_assessments, restore_sqlite
 from .greybox import analyze_source_code
+from .kali import KaliRunner
 from .playbooks import load_playbooks
+from .scope import Scope
 
 _SEV_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+
+
+def _default_db_path() -> Path:
+    env_db = os.getenv("ONIOPS_DB_PATH", "").strip()
+    if env_db:
+        return Path(env_db)
+    return Path(__file__).resolve().parent.parent / "data" / "oniops.sqlite"
 
 
 def build_whitebox_sarif(scan_res: dict) -> dict:
@@ -58,6 +74,36 @@ def build_whitebox_sarif(scan_res: dict) -> dict:
     }
 
 
+def run_doctor(db_override: str = "", check_runner: bool = False) -> dict:
+    """Run deterministic self-diagnostics on ONIOPS config, SQLite DB, playbooks, and runner."""
+    cfg = get_config()
+    scope = Scope(cfg)
+    db_path = Path(db_override) if db_override else _default_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    FindingsLedger(db_path)
+
+    with sqlite3.connect(str(db_path)) as con:
+        integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
+
+    pbs = load_playbooks()
+    ai_probes = load_yaml_probes()
+    checks = {
+        "version": __version__,
+        "scope_cidrs": scope.cidrs,
+        "db_path": str(db_path),
+        "db_integrity": integrity,
+        "playbooks_loaded": len(pbs),
+        "ai_yaml_probes_loaded": len(ai_probes),
+        "auth_mode": cfg.auth.mode,
+    }
+    if check_runner:
+        runner = KaliRunner(cfg.kali, scope, cfg)
+        ping = runner.run(["echo", "oniops-doctor-ok"], timeout=10)
+        checks["runner_ok"] = bool(ping.ok and "oniops-doctor-ok" in (ping.out or ""))
+    checks["ok"] = (integrity == "ok" and len(scope.cidrs) > 0 and len(pbs) > 0)
+    return checks
+
+
 def cli_main(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
     if not args_list or args_list[0] == "serve":
@@ -71,6 +117,10 @@ def cli_main(argv: list[str] | None = None) -> int:
     sub.add_parser("version", help="Print ONIOPS version")
     sub.add_parser("playbooks", help="List loaded YAML playbooks and AI safety probe packs")
 
+    doc = sub.add_parser("doctor", help="Run self-diagnostics on config, scope, SQLite DB, and playbooks")
+    doc.add_argument("--db", default="", help="Path to oniops.sqlite")
+    doc.add_argument("--check-runner", action="store_true", help="Also test SSH/local attack runner connectivity")
+
     wb = sub.add_parser("whitebox", help="Run white-box source/sink analysis & CI security gate")
     wb.add_argument("path", help="Source directory, file path, or inline snippet")
     wb.add_argument("--fail-on", default="", choices=["", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
@@ -82,6 +132,26 @@ def cli_main(argv: list[str] | None = None) -> int:
     fl.add_argument("--target", default="", help="Filter by target IP")
     fl.add_argument("--db", default="", help="Path to oniops.sqlite")
 
+    rt = sub.add_parser("retest", help="Run zero-token deterministic PoC retest on stored findings")
+    rt.add_argument("--id", type=int, default=0, help="Specific finding ID to retest")
+    rt.add_argument("--all", action="store_true", help="Retest all stored findings")
+    rt.add_argument("--target", default="", help="Filter batch retest by target IP")
+    rt.add_argument("--db", default="", help="Path to oniops.sqlite")
+
+    bk = sub.add_parser("backup", help="Create an online SQLite backup of oniops.sqlite")
+    bk.add_argument("destination", help="Destination backup .sqlite path")
+    bk.add_argument("--db", default="", help="Source oniops.sqlite path")
+
+    rs = sub.add_parser("restore", help="Verify and restore a SQLite backup into oniops.sqlite")
+    rs.add_argument("source", help="Backup .sqlite file path to restore from")
+    rs.add_argument("--db", default="", help="Target oniops.sqlite path")
+
+    ass = sub.add_parser("assess", help="Run a scoped assessment from the CLI")
+    ass.add_argument("target", help="In-scope target IP or hostname")
+    ass.add_argument("--profile", default="fast_recon", help="Assessment profile or playbook ID")
+    ass.add_argument("--auth-header", default="", help="Optional Grey-Box auth header")
+    ass.add_argument("--low-priv-header", default="", help="Optional low-privilege role header for BOLA/BFLA diff")
+
     df = sub.add_parser("diff", help="Compare an assessment against its previous baseline")
     df.add_argument("assessment_id", type=int, help="Assessment ID to diff")
     df.add_argument("--db", default="", help="Path to oniops.sqlite")
@@ -91,6 +161,11 @@ def cli_main(argv: list[str] | None = None) -> int:
     if ns.cmd == "version":
         print(f"ONIOPS {__version__}")
         return 0
+
+    if ns.cmd == "doctor":
+        res = run_doctor(db_override=ns.db, check_runner=ns.check_runner)
+        print(json.dumps(res, indent=2))
+        return 0 if res.get("ok") else 1
 
     if ns.cmd == "playbooks":
         pbs = load_playbooks()
@@ -123,13 +198,47 @@ def cli_main(argv: list[str] | None = None) -> int:
         return 0
 
     if ns.cmd == "findings":
-        db_path = ns.db or get_config().db_path
+        db_path = ns.db or _default_db_path()
         ledger = FindingsLedger(db_path)
         print(json.dumps({"findings": ledger.list_findings(target_ip=ns.target)}, indent=2))
         return 0
 
+    if ns.cmd == "retest":
+        cfg = get_config()
+        scope = Scope(cfg)
+        db_path = ns.db or _default_db_path()
+        ledger = FindingsLedger(db_path)
+        runner = KaliRunner(cfg.kali, scope, cfg)
+        if ns.id:
+            res = ledger.retest(ns.id, runner, scope)
+            print(json.dumps(res, indent=2))
+            return 0
+        res = ledger.retest_all(runner, scope, target_ip=ns.target)
+        print(json.dumps(res, indent=2))
+        return 0
+
+    if ns.cmd == "backup":
+        db_path = ns.db or _default_db_path()
+        print(json.dumps(backup_sqlite(db_path, ns.destination), indent=2))
+        return 0
+
+    if ns.cmd == "restore":
+        db_path = ns.db or _default_db_path()
+        print(json.dumps(restore_sqlite(ns.source, db_path), indent=2))
+        return 0
+
+    if ns.cmd == "assess":
+        import webui
+        rt = webui.scope.resolve(ns.target)
+        res = webui._run_assessment(
+            rt.ip, rt.label, ns.profile,
+            auth_header=ns.auth_header, low_priv_header=ns.low_priv_header,
+        )
+        print(json.dumps(res, indent=2))
+        return 0
+
     if ns.cmd == "diff":
-        db_path = ns.db or get_config().db_path
+        db_path = ns.db or _default_db_path()
         print(json.dumps(diff_assessments(db_path, ns.assessment_id), indent=2))
         return 0
 

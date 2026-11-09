@@ -77,6 +77,25 @@ def validate_evidence(evidence: str, expected_indicator: str = "", category: str
     return "VERIFIED" if len(text) > 12 else "UNCONFIRMED"
 
 
+def evaluate_finding_confidence(category: str, status: str, evidence: str) -> str:
+    """Calibrate finding confidence (HIGH / MEDIUM / LOW) per category and
+    verification status rather than using one generic rule."""
+    st = (status or "").upper()
+    cat = (category or "").lower()
+    ev = (evidence or "").strip()
+    if st in ("VERIFIED", "FIXED"):
+        if cat in ("nuclei", "api_security", "agent_validation"):
+            return "HIGH"
+        if cat == "service_exposure" and re.search(r"HTTP/[\d.]+\s+2\d\d", ev):
+            return "HIGH"
+        return "HIGH" if len(ev) > 20 else "MEDIUM"
+    if st == "AUTH-GATED":
+        return "MEDIUM"
+    if cat in ("cve", "exploitdb"):
+        return "MEDIUM" if "CVSS" in ev or "EDB-" in ev else "LOW"
+    return "LOW"
+
+
 class FindingsLedger:
     """SQLite-backed vulnerability and PoC evidence ledger."""
 
@@ -100,6 +119,7 @@ class FindingsLedger:
                 category TEXT NOT NULL,
                 severity TEXT NOT NULL,
                 status TEXT NOT NULL,
+                confidence TEXT DEFAULT 'MEDIUM',
                 evidence TEXT NOT NULL,
                 evidence_sha256 TEXT DEFAULT '',
                 repro_cmd TEXT NOT NULL,
@@ -108,10 +128,12 @@ class FindingsLedger:
                 last_retest TEXT DEFAULT '',
                 UNIQUE(target_ip, port, title)
             )""")
-            # Auto-migrate older SQLite schemas missing evidence_sha256.
+            # Auto-migrate older SQLite schemas missing evidence_sha256 or confidence.
             cols = {r["name"] for r in con.execute("PRAGMA table_info(findings)").fetchall()}
             if "evidence_sha256" not in cols:
                 con.execute("ALTER TABLE findings ADD COLUMN evidence_sha256 TEXT DEFAULT ''")
+            if "confidence" not in cols:
+                con.execute("ALTER TABLE findings ADD COLUMN confidence TEXT DEFAULT 'MEDIUM'")
             con.commit()
 
     def upsert(
@@ -125,12 +147,14 @@ class FindingsLedger:
         status: str,
         evidence: str,
         repro_cmd: list[str] | str,
+        confidence: str = "",
     ) -> int:
-        """Insert or update a deduplicated finding with secret-redacted evidence
-        and SHA-256 cryptographic provenance."""
+        """Insert or update a deduplicated finding with secret-redacted evidence,
+        calibrated confidence, and SHA-256 cryptographic provenance."""
         ts = _now_iso()
         clean_evidence = redact_secrets(evidence)[:1500]
         ev_hash = hashlib.sha256(clean_evidence.encode("utf-8")).hexdigest()
+        conf = (confidence or evaluate_finding_confidence(category, status, clean_evidence)).upper()
         if isinstance(repro_cmd, list):
             cmd_str = json.dumps(repro_cmd)
         else:
@@ -140,18 +164,19 @@ class FindingsLedger:
             cur = con.execute(
                 """
                 INSERT INTO findings
-                    (target_ip, port, title, category, severity, status, evidence, evidence_sha256, repro_cmd, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (target_ip, port, title, category, severity, status, confidence, evidence, evidence_sha256, repro_cmd, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(target_ip, port, title) DO UPDATE SET
                     severity = excluded.severity,
                     status = excluded.status,
+                    confidence = excluded.confidence,
                     evidence = excluded.evidence,
                     evidence_sha256 = excluded.evidence_sha256,
                     repro_cmd = CASE WHEN excluded.repro_cmd != '[]' THEN excluded.repro_cmd ELSE findings.repro_cmd END,
                     last_seen = excluded.last_seen
                 """,
                 (target_ip, int(port or 0), title[:200], category[:60],
-                 severity.upper(), status.upper(), clean_evidence, ev_hash, cmd_str, ts, ts),
+                 severity.upper(), status.upper(), conf, clean_evidence, ev_hash, cmd_str, ts, ts),
             )
             con.commit()
             if cur.lastrowid:
@@ -332,10 +357,11 @@ class FindingsLedger:
 
         new_ev = f"[Retest {ts[:19]}] {out[:400] or '(no output — appears remediated/closed)'}"
         new_hash = hashlib.sha256(new_ev.encode("utf-8")).hexdigest()
+        new_conf = evaluate_finding_confidence(cat, new_status, out)
         with self._conn() as con:
             con.execute(
-                "UPDATE findings SET status = ?, evidence = ?, evidence_sha256 = ?, last_retest = ?, last_seen = ? WHERE id = ?",
-                (new_status, new_ev, new_hash, ts, ts, finding_id),
+                "UPDATE findings SET status = ?, confidence = ?, evidence = ?, evidence_sha256 = ?, last_retest = ?, last_seen = ? WHERE id = ?",
+                (new_status, new_conf, new_ev, new_hash, ts, ts, finding_id),
             )
             con.commit()
         return {
@@ -344,6 +370,7 @@ class FindingsLedger:
             "title": f["title"],
             "previous_status": f["status"],
             "status": new_status,
+            "confidence": new_conf,
             "evidence": new_ev,
             "evidence_sha256": new_hash,
             "repro_cmd": shlex.join(cmd),
@@ -448,3 +475,28 @@ def diff_assessments(db_path: str | Path, assessment_id: int) -> dict:
         "active_findings": active_findings,
         "remediated_findings": fixed_findings,
     }
+
+
+def backup_sqlite(src_db: str | Path, dest_db: str | Path) -> dict:
+    """Safely snapshot a live SQLite database using SQLite's online backup API."""
+    src = Path(src_db)
+    if not src.exists():
+        raise FileNotFoundError(f"Source database does not exist: {src}")
+    dst = Path(dest_db)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(src)) as s_con, sqlite3.connect(str(dst)) as d_con:
+        s_con.backup(d_con)
+    size = dst.stat().st_size
+    return {"ok": True, "source": str(src), "destination": str(dst), "bytes": size}
+
+
+def restore_sqlite(backup_db: str | Path, target_db: str | Path) -> dict:
+    """Restore a SQLite backup into `target_db` after verifying SQLite integrity."""
+    src = Path(backup_db)
+    if not src.exists():
+        raise FileNotFoundError(f"Backup file does not exist: {src}")
+    with sqlite3.connect(str(src)) as check_con:
+        row = check_con.execute("PRAGMA integrity_check").fetchone()
+        if not row or row[0] != "ok":
+            raise ValueError(f"Backup failed SQLite integrity_check: {row[0] if row else 'invalid'}")
+    return backup_sqlite(src, target_db)
