@@ -43,3 +43,10 @@ def cfg_path(tmp_path, monkeypatch):
     import oniops.config as c
     c._CONFIG = None
     return p
+
+
+@pytest.fixture()
+def scope(cfg_path):
+    from oniops.config import get_config
+    from oniops.scope import Scope
+    return Scope(get_config())

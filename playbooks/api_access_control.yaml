@@ -1,0 +1,12 @@
+id: api_access_control
+name: "API & Microservice Exposure Audit"
+description: "Discover HTTP/API ports, fingerprint frameworks, crawl API routes, and scan for exposed specs and misconfigurations."
+steps:
+  - name: "API Port & Service Discovery"
+    cmd: ["nmap", "-sV", "-p", "80,443,3000,4000,5000,8000,8080,8081,8443,8888,9000", "--open", "-T4", "{target}"]
+    timeout: 65
+    parse_ports: true
+  - name: "API Exposure & Misconfiguration Scan (Nuclei)"
+    cmd: ["nuclei", "-target", "{target}", "-tags", "api,exposure,token,swagger,graphql,cors,misconfig", "-silent", "-severity", "low,medium,high,critical"]
+    timeout: 75
+    count_findings: true

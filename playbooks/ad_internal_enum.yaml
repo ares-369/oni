@@ -1,0 +1,16 @@
+id: ad_internal_enum
+name: "Identity & Internal Network (AD / SMB / LDAP)"
+description: "Enumerate Active Directory, SMB signing, shares, null sessions, LDAP anonymous bind, and Kerberos exposure."
+steps:
+  - name: "Identity & Directory Port Discovery"
+    cmd: ["nmap", "-sV", "-p", "53,88,135,139,389,445,464,636,3268,3269,5985", "--open", "-T4", "{target}"]
+    timeout: 70
+    parse_ports: true
+  - name: "SMB Signing & Security Mode Audit"
+    cmd: ["nmap", "-p", "139,445", "--script=smb-security-mode,smb2-security-mode,smb-os-discovery", "{target}"]
+    timeout: 60
+    count_findings: false
+  - name: "SMB & RPC Null-Session Enumeration"
+    cmd: ["enum4linux-ng", "-A", "{target}"]
+    timeout: 65
+    count_findings: false

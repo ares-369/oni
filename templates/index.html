@@ -1065,12 +1065,26 @@
                 <option value="fast_recon">Fast Tactical Recon (Top 100 TCP Ports + Service Detection)</option>
                 <option value="deep_service">Deep Service &amp; Banner Discovery (-sV -sC + searchsploit)</option>
                 <option value="web_tls_audit">Web Security Headers (HSTS/CSP/XFO) &amp; TLS Cipher Audit</option>
-                <option value="web_app_pt">Web App PT (WAPT — OWASP Web Top 10: crawl, dirs, nuclei, nikto)</option>
+                <option value="web_app_pt">Web App PT (WAPT — OWASP Top 10 + OpenAPI + Grey-Box Auth)</option>
+                <option value="ad_internal_enum">Playbook: Identity &amp; Internal Network (AD / SMB / LDAP)</option>
+                <option value="api_access_control">Playbook: API &amp; Microservice Exposure Audit</option>
+                <option value="tls_crypto_audit">Playbook: TLS &amp; Cryptographic Posture Audit</option>
               </select>
+              <input id="wbAuthHeader" class="input" style="width:100%; margin-top:6px;" placeholder="Optional Grey-Box Auth (e.g. Authorization: Bearer ... or Cookie: sid=...)" />
             </div>
             <button class="btn btn-primary" id="wbRunBtn" onclick="executeWorkbenchScan()" style="height:38px;">
               <i class="mdi mdi-play"></i> Run Assessment
             </button>
+          </div>
+          <div class="panel-body" style="border-top:1px solid var(--border-subtle); padding-top:10px;">
+            <details>
+              <summary style="cursor:pointer; font-size:12px; color:var(--text-muted); font-weight:600;"><i class="mdi mdi-code-tags"></i> White-Box Source / Route &amp; Sink Analyzer (optional)</summary>
+              <div style="display:flex; gap:10px; margin-top:8px; align-items:start;">
+                <textarea id="wbSourceInput" class="input" rows="2" style="flex:1; font-family:monospace; font-size:11.5px;" placeholder="Paste source code or a local path to extract web routes (@app.route / @router.get) and dangerous sinks..."></textarea>
+                <button class="btn btn-sm" onclick="runWhiteboxScan()"><i class="mdi mdi-magnify-scan"></i> Scan Code</button>
+              </div>
+              <div id="wbSourceResult" style="margin-top:8px; font-size:12px; color:var(--text-muted);"></div>
+            </details>
           </div>
         </div>
 
@@ -1313,6 +1327,31 @@
             </div>
           </div>
         </div>
+
+        <div class="panel" style="margin-top:16px;">
+          <div class="panel-header">
+            <div class="panel-title"><i class="mdi mdi-shield-check-outline"></i> Proof-First Findings Ledger &amp; Zero-Token PoC Retest</div>
+            <button class="btn btn-sm" onclick="loadFindingsLedger()"><i class="mdi mdi-refresh"></i> Refresh Ledger</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Target</th>
+                  <th>Finding</th>
+                  <th>Severity</th>
+                  <th>Status</th>
+                  <th>Evidence / Deterministic Replay</th>
+                  <th>Zero-Token Retest</th>
+                </tr>
+              </thead>
+              <tbody id="findingsLedgerTable">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">No structured findings recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
       <!-- VIEW: AI SECURITY & GRC -->
       <section class="view-section" id="view-aisec">
@@ -1337,6 +1376,17 @@
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">API</label>
                 <select id="aisecApi" class="select" onchange="document.getElementById('aisecCustomFields').style.display=this.value==='custom'?'block':'none'"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option><option value="custom">Custom endpoint</option></select>
+              </div>
+              <div>
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">CONVERTER</label>
+                <select id="aisecConverter" class="select">
+                  <option value="none">Direct + 3-Turn Crescendo</option>
+                  <option value="leetspeak">Leetspeak Obfuscation</option>
+                  <option value="rot13">ROT13 Cipher</option>
+                  <option value="unicode_homoglyph">Unicode Homoglyphs</option>
+                  <option value="markdown_wrap">Markdown Fence Smuggle</option>
+                  <option value="json_smuggle">JSON Override Envelope</option>
+                </select>
               </div>
               <button class="btn btn-primary" id="aisecRunBtn" onclick="runAiSec()"><i class="mdi mdi-play"></i> Run Assessment</button>
             </div>
@@ -1390,6 +1440,10 @@
               <div>
                 <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">MAX STEPS</label>
                 <select id="agentMaxSteps" class="select"><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
+              </div>
+              <div style="flex:1; min-width:200px;">
+                <label style="display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:5px; font-weight:600;">GREY-BOX AUTH HEADER (optional)</label>
+                <input id="agentAuthHeader" class="input" style="width:100%;" placeholder="Authorization: Bearer ... or Cookie: ..." />
               </div>
               <button class="btn btn-primary" id="agentRunBtn" onclick="runAgent()"><i class="mdi mdi-play"></i> Run Agent</button>
             </div>
@@ -1918,13 +1972,14 @@
       if (!objective) { document.getElementById('agentLog').textContent = 'Enter an objective first.'; return; }
       const target = document.getElementById('agentTarget').value;
       const max_steps = parseInt(document.getElementById('agentMaxSteps').value, 10);
+      const auth_header = (document.getElementById('agentAuthHeader')?.value || '').trim();
       const btn = document.getElementById('agentRunBtn');
       btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('agentStatus').textContent = 'starting';
       document.getElementById('agentLog').textContent = '[ONIOPS] launching autonomous agent...';
       document.getElementById('agentFinal').innerHTML = '<span style="color:var(--text-muted);">Agent is working...</span>';
       try {
-        const r = await (await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({objective, target, max_steps})})).json();
+        const r = await (await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({objective, target, max_steps, auth_header})})).json();
         if (r.error) { document.getElementById('agentLog').textContent = 'ERROR: ' + r.error; return; }
         const jid = r.job_id; let data = null;
         renderCtl('agentCtl', jid);
@@ -1960,6 +2015,7 @@
       const system_prompt = document.getElementById('aisecSystem').value;
       const req_template = document.getElementById('aisecReqTemplate').value.trim();
       const resp_path = document.getElementById('aisecRespPath').value.trim();
+      const converter = (document.getElementById('aisecConverter')?.value || 'none');
       if (!base_url || (!model && api_type !== 'custom')) { document.getElementById('aisecPosture').textContent = 'Enter an endpoint URL (and a model, unless custom).'; return; }
       const btn = document.getElementById('aisecRunBtn'); btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('aisecStatus').textContent = 'starting';
@@ -1967,7 +2023,7 @@
       document.getElementById('aisecPosture').textContent = 'Probing the AI endpoint...';
       document.getElementById('aisecReport').innerHTML = 'Working...';
       try {
-        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type, system_prompt, req_template, resp_path})})).json();
+        const r = await (await fetch('/api/aisec/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({base_url, model, api_type, system_prompt, req_template, resp_path, converter, include_crescendo: true})})).json();
         if (r.error) { document.getElementById('aisecPosture').textContent = 'ERROR: ' + r.error; return; }
         const jid = r.job_id; let data = null;
         renderCtl('aisecCtl', jid);
@@ -2168,6 +2224,7 @@
     async function executeWorkbenchScan() {
       const target = document.getElementById('wbTargetInput').value.trim() || document.getElementById('wbTargetSelect').value;
       const profile = document.getElementById('wbProfileSelect').value;
+      const auth_header = (document.getElementById('wbAuthHeader')?.value || '').trim();
       const btn = document.getElementById('wbRunBtn');
       btn.disabled = true;
       btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
@@ -2179,7 +2236,7 @@
         // Enqueue as a background job so long WAPT/PTT runs don't block.
         const sres = await fetch('/api/assess/start', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({target, profile})
+          body: JSON.stringify({target, profile, auth_header})
         });
         const sdata = await sres.json();
         if (sdata.error) { document.getElementById('wbRawOutput').textContent = `ERROR: ${sdata.error}`; return; }
@@ -2267,11 +2324,67 @@
       box.scrollTop = box.scrollHeight;
     }
 
+    async function loadFindingsLedger() {
+      const tb = document.getElementById('findingsLedgerTable');
+      if (!tb) return;
+      try {
+        const res = await fetch('/api/findings');
+        const data = await res.json();
+        const list = data.findings || [];
+        if (!list.length) {
+          tb.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:16px;">No structured findings recorded yet. Run an assessment to populate the ledger.</td></tr>';
+          return;
+        }
+        const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+        tb.innerHTML = list.map(f => {
+          const stBadge = f.status === 'FIXED' ? 'badge-green' : (f.status === 'VERIFIED' || f.status === 'AUTH-GATED' ? 'badge-red' : 'badge-orange');
+          const sevBadge = (f.severity === 'CRITICAL' || f.severity === 'HIGH') ? 'badge-red' : 'badge-neutral';
+          return `<tr>
+            <td class="mono">#${f.id}</td>
+            <td class="mono">${esc(f.target_ip)}${f.port ? ':' + f.port : ''}</td>
+            <td><strong>${esc(f.title)}</strong></td>
+            <td><span class="badge ${sevBadge}">${esc(f.severity)}</span></td>
+            <td><span class="badge ${stBadge}" id="fstatus_${f.id}">${esc(f.status)}</span></td>
+            <td class="mono" style="font-size:11px; max-width:340px; overflow:hidden; text-overflow:ellipsis;" title="${esc(f.repro_display)}">${esc(f.evidence.slice(0, 120))}</td>
+            <td>${f.repro_display ? `<button class="btn btn-sm" onclick="retestFinding(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest</button>` : '&mdash;'}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {}
+    }
+
+    async function retestFinding(fid, btn) {
+      const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i>';
+      try {
+        const res = await fetch(`/api/findings/${fid}/retest`, {method:'POST'});
+        const d = await res.json();
+        if (d.error) { toast(d.error, true); return; }
+        toast(`Finding #${fid}: ${d.previous_status} -> ${d.status}`);
+        await loadFindingsLedger();
+      } catch (e) { toast('Retest failed: ' + e, true); }
+      finally { btn.disabled = false; btn.innerHTML = old; }
+    }
+
+    async function runWhiteboxScan() {
+      const src = (document.getElementById('wbSourceInput')?.value || '').trim();
+      const box = document.getElementById('wbSourceResult');
+      if (!src) { box.textContent = 'Enter a code snippet or local path first.'; return; }
+      box.textContent = 'Scanning source...';
+      try {
+        const r = await (await fetch('/api/whitebox/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source: src})})).json();
+        if (r.error) { box.textContent = r.error; return; }
+        const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+        const rts = (r.routes || []).map(x => `<code class="mono">${esc(x)}</code>`).join(', ') || 'none';
+        const snks = (r.sinks || []).map(s => `<div><span class="badge badge-red">${esc(s.severity)}</span> <strong>${esc(s.type)}</strong> (${esc(s.file)}:${s.line}): <code class="mono">${esc(s.snippet)}</code></div>`).join('') || '<div>No dangerous sinks detected.</div>';
+        box.innerHTML = `<div style="margin-bottom:6px;"><strong>Discovered Routes (${(r.routes||[]).length}):</strong> ${rts}</div><div><strong>Sinks (${(r.sinks||[]).length}):</strong>${snks}</div>`;
+      } catch (e) { box.textContent = 'Error: ' + e; }
+    }
+
     function refreshAll() {
       loadStatus();
       loadTargets();
       loadScansHistory();
       loadKaliTools();
+      loadFindingsLedger();
     }
 
     refreshAll();

@@ -1,0 +1,12 @@
+id: tls_crypto_audit
+name: "TLS & Cryptographic Posture Audit"
+description: "Audit TLS certificates, weak cipher suites, expired certs, and HTTP security headers across web ports."
+steps:
+  - name: "TLS Port & Certificate Discovery"
+    cmd: ["nmap", "-sV", "-p", "443,636,8006,8443,9443", "--open", "--script=ssl-cert,ssl-enum-ciphers,http-security-headers", "{target}"]
+    timeout: 80
+    parse_ports: true
+  - name: "TLS Vulnerability Scan (Nuclei SSL)"
+    cmd: ["nuclei", "-target", "{target}", "-tags", "ssl,tls", "-silent"]
+    timeout: 60
+    count_findings: true
