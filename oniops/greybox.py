@@ -160,8 +160,14 @@ def validate_bola_response_content(raw_resp: str, admin_resp: str = "") -> tuple
     if "content-type: text/html" in hdr_lower:
         return False, "HTML content-type (likely SPA shell or login redirect)"
     if not body:
-        # Headers-only probe (`curl -I` or empty body with JSON content-type)
-        return True, "HTTP 200 API response headers confirmed"
+        # No body to inspect (login shells were already rejected by the HTML
+        # content-type check above). Only treat an empty 200 as confirmable when
+        # the server explicitly declared an API content-type — a declared-auth
+        # route answering 200/JSON to the wrong principal is still a real authz
+        # gap. An empty 200 with no API content-type is NOT confirmed.
+        if re.search(r"content-type:\s*application/(json|xml|.*\+json)", hdr_lower):
+            return True, "HTTP 200 with API content-type (empty body; data not dumped)"
+        return False, "HTTP 200 but empty body and no API content-type (unconfirmed)"
 
     body_lower = body.lower()
     if body_lower.startswith(("<!doctype html", "<html")) or "<form" in body_lower:
@@ -284,21 +290,27 @@ def probe_openapi(
             })
             lines.append(f"- [VULNERABLE/{sev}] {ep['path']}: HTTP 200 unauthenticated ({body_reason})")
         elif clean_low and low_code == 200 and un_code in (401, 403) and sensitive_route:
+            # The STATUS DIFFERENTIAL itself (anon 401/403 -> low-priv 200 on a
+            # sensitive route) is the authz-boundary signal, so it is reported
+            # regardless of body. Body content only upgrades confidence: with
+            # confirmed data it is VERIFIED/HIGH; without, it is a PROBABLE
+            # finding (status UNCONFIRMED) flagged for manual confirmation.
             valid_body, body_reason = validate_bola_response_content(low_out, auth_out)
-            if not valid_body:
-                lines.append(f"- [FALSE-POSITIVE-FILTERED] {ep['path']}: low-priv HTTP 200 ignored ({body_reason})")
-                continue
+            status = "VERIFIED" if valid_body else "UNCONFIRMED"
+            confidence = "data confirmed" if valid_body else f"data exposure unconfirmed — {body_reason}"
             title = f"BOLA/BFLA privilege boundary bypass on {ep['path']} (low-priv HTTP 200)"
-            ev = f"GET {u} blocked unauthenticated ({un_code}) but returned HTTP 200 to low-privilege role on sensitive route ({body_reason})"
+            ev = (f"GET {u} blocked unauthenticated ({un_code}) but returned HTTP 200 to "
+                  f"low-privilege role on sensitive route ({confidence})")
             findings.append({
                 "port": port,
                 "title": title,
-                "severity": "HIGH",
-                "status": "VERIFIED",
+                "severity": "HIGH" if valid_body else "MEDIUM",
+                "status": status,
                 "evidence": ev,
                 "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
             })
-            lines.append(f"- [VULNERABLE/HIGH BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200} ({body_reason})")
+            tag = "VULNERABLE/HIGH" if valid_body else "PROBABLE/MEDIUM"
+            lines.append(f"- [{tag} BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200} ({confidence})")
         elif clean_hdr and un_code in (401, 403) and auth_code == 200:
             lines.append(f"- [AUTH-ENFORCED] {ep['path']}: unauth={un_code} -> auth={auth_code}")
         elif un_code:

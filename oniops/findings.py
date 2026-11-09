@@ -183,13 +183,17 @@ def validate_evidence(evidence: str, expected_indicator: str = "", category: str
     m = re.search(r"HTTP/[\d.]+\s+(\d{3})", text)
     if m:
         code = int(m.group(1))
-        if code in (200, 201, 204):
-            return "VERIFIED"
         if code in (401, 403):
             return "AUTH-GATED" if cat == "service_exposure" else "UNCONFIRMED"
-        if code >= 400:
-            return "UNCONFIRMED"
-    return "VERIFIED" if len(text) > 12 else "UNCONFIRMED"
+        if code in (200, 201, 204):
+            # A live 2xx proves a service is EXPOSED, but not that an arbitrary
+            # vulnerability is present. Only self-proving categories (the finding
+            # *is* "the service responded") may be VERIFIED without an indicator.
+            return "VERIFIED" if cat in ("service_exposure", "exposure") else "UNCONFIRMED"
+        return "UNCONFIRMED"  # any other status code
+    # No indicator, no vuln-proof pattern, no HTTP status line -> we cannot
+    # independently confirm anything. Never VERIFIED on content length alone.
+    return "UNCONFIRMED"
 
 
 def evaluate_finding_confidence(category: str, status: str, evidence: str) -> str:

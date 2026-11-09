@@ -144,9 +144,11 @@ def _report_finding(runner, ip, args):
     indicator = str(args.get("expected_indicator") or "").strip()
     scheme = "https" if port in (443, 8443, 9443) else "http"
     url = f"{scheme}://{ip}:{port}{path}"
-    repro_cmd = ["curl", "-kIsS", "--max-time", "5", url]
+    # GET with -i (headers + body) so an expected_indicator in the response BODY
+    # can match, not just response headers. Bounded, non-destructive.
+    repro_cmd = ["curl", "-kisS", "--max-time", "5", url]
     if args.get("_auth_header"):
-        repro_cmd = ["curl", "-kIsS", "--max-time", "5", "-H", args["_auth_header"], url]
+        repro_cmd = ["curl", "-kisS", "--max-time", "5", "-H", args["_auth_header"], url]
     probe_out = runner.run(repro_cmd, timeout=10).out or ""
     status = validate_evidence(probe_out, expected_indicator=indicator, category="agent_validation")
     db_path = args.get("_db_path")
@@ -161,7 +163,7 @@ def _report_finding(runner, ip, args):
                 severity=severity,
                 status=status,
                 evidence=probe_out[:800] or f"Indicator '{indicator}' not matched",
-                repro_cmd=["curl", "-kIsS", "--max-time", "5", url],
+                repro_cmd=["curl", "-kisS", "--max-time", "5", url],
             )
         except Exception:
             pass

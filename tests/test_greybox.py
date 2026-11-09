@@ -156,6 +156,14 @@ def test_bola_content_diff_filters_html_shell_and_empty_json():
     assert ok is True
     assert "JSON" in reason
 
+    # Empty body with NO API content-type is ambiguous -> NOT confirmed.
+    empty_no_ctype = "HTTP/1.1 200 OK\r\n\r\n"
+    assert validate_bola_response_content(empty_no_ctype)[0] is False
+    # Empty body but an explicit API content-type on a sensitive route is still a
+    # real authz-gap signal (auth simply not enforced) -> confirmable.
+    empty_json_ctype = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
+    assert validate_bola_response_content(empty_json_ctype)[0] is True
+
 
 def test_horizontal_peer_bola_and_bopla_and_graphql():
     spec = {
