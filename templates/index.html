@@ -2388,6 +2388,10 @@
     }
 
     refreshAll();
+    const _qp = new URLSearchParams(window.location.search);
+    if (_qp.get('drawer') === 'closed') document.getElementById('aiDrawer')?.classList.add('closed');
+    if (_qp.get('view')) switchView(_qp.get('view'));
+    if (_qp.get('inspect')) setTimeout(() => inspectScan(parseInt(_qp.get('inspect'), 10)), 900);
     setInterval(loadStatus, 25000);
   </script>
 </body>

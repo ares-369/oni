@@ -1,4 +1,4 @@
-"""Tests for AI Red Team 2.0 prompt converters, probes, and multi-turn Crescendo."""
+"""Tests for AI Red Team prompt converters, probes, and multi-turn Crescendo."""
 from __future__ import annotations
 
 from oniops.aisec import CONVERTERS, PROBES, apply_converter

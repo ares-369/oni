@@ -12,7 +12,11 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 > it only against systems you own or have **explicit written permission** to
 > test. Unauthorized use is illegal in most jurisdictions. See [`NOTICE`](NOTICE).
 
-![ONIOPS Interface Overview](docs/oniops-overview.svg)
+![ONIOPS Command Center](docs/screenshots/oniops_dashboard.png)
+
+| Attack-Surface Graph & Analytics | Proof-First Findings & Zero-Token Retest |
+| --- | --- |
+| ![Attack Graph](docs/screenshots/oniops_graph.png) | ![Findings Ledger & Reports](docs/screenshots/oniops_reports.png) |
 
 ---
 
@@ -39,7 +43,7 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 - **Declarative YAML Playbooks** — drop `.yaml` playbooks into `playbooks/`
   (ships with Identity/AD/SMB, API Exposure, and TLS Crypto audits) without
   touching Python code.
-- **AI / LLM Red Team & GRC 2.0** — probe any LLM endpoint across **14 single-turn
+- **AI / LLM Red Team & GRC** — probe any LLM endpoint across **14 single-turn
   probes** (incl. RAG context poisoning, MCP tool-description poisoning, and
   cross-tenant leakage), **6 composable prompt converters** (`leetspeak`,
   `rot13`, `unicode_homoglyph`, `markdown_wrap`, `json_smuggle`), and a **3-turn
