@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from .findings import redact_secrets
@@ -270,12 +272,51 @@ _DANGEROUS_SINKS: list[tuple[str, str, re.Pattern[str]]] = [
 ]
 
 
-def analyze_source_code(source_text_or_path: str) -> dict:
+def parse_external_sast_json(semgrep_json: str = "", gitleaks_json: str = "") -> list[dict]:
+    """Normalize JSON output from Semgrep (`--json`) or Gitleaks (`--report-format json`)
+    into ONIOPS white-box sink records with automatic secret redaction."""
+    findings: list[dict] = []
+    if semgrep_json and semgrep_json.strip().startswith("{"):
+        try:
+            data = json.loads(semgrep_json)
+            for r in (data.get("results") or [])[:25]:
+                extra = r.get("extra") or {}
+                sev_raw = str(extra.get("severity") or "MEDIUM").upper()
+                sev = "HIGH" if sev_raw in ("ERROR", "HIGH", "CRITICAL") else ("MEDIUM" if sev_raw == "WARNING" else "LOW")
+                findings.append({
+                    "file": str(r.get("path") or "repo"),
+                    "line": int((r.get("start") or {}).get("line") or 1),
+                    "type": f"Semgrep [{r.get('check_id', 'rule')}]",
+                    "severity": sev,
+                    "snippet": redact_secrets(str(extra.get("lines") or extra.get("message") or "").strip())[:160],
+                })
+        except Exception:
+            pass
+
+    if gitleaks_json and gitleaks_json.strip().startswith("["):
+        try:
+            items = json.loads(gitleaks_json)
+            for item in (items if isinstance(items, list) else [])[:25]:
+                findings.append({
+                    "file": str(item.get("File") or "repo"),
+                    "line": int(item.get("StartLine") or 1),
+                    "type": f"Gitleaks [{item.get('RuleID', 'secret')}]",
+                    "severity": "HIGH",
+                    "snippet": redact_secrets(str(item.get("Match") or item.get("Description") or "").strip())[:160],
+                })
+        except Exception:
+            pass
+    return findings
+
+
+def analyze_source_code(source_text_or_path: str, *, run_external: bool = True) -> dict:
     """Extract web routes, dangerous sinks, and hardcoded secret patterns from
-    a code snippet or a local repository directory."""
+    a code snippet or a local repository directory (plus optional Semgrep/Gitleaks
+    adapter when scanning a path on disk)."""
     files_content: list[tuple[str, str]] = []
     candidate = Path(source_text_or_path.strip()) if len(source_text_or_path.strip()) < 260 else None
-    if candidate and candidate.exists():
+    is_disk_path = bool(candidate and candidate.exists())
+    if is_disk_path and candidate is not None:
         if candidate.is_file():
             try:
                 files_content.append((candidate.name, candidate.read_text(errors="replace")[:80000]))
@@ -311,6 +352,17 @@ def analyze_source_code(source_text_or_path: str) -> dict:
                         "severity": sev,
                         "snippet": redact_secrets(line.strip())[:160],
                     })
+
+    if run_external and is_disk_path and candidate is not None and shutil.which("gitleaks"):
+        try:
+            proc = subprocess.run(
+                ["gitleaks", "detect", "--source", str(candidate), "--no-git", "-f", "json", "-r", "-"],
+                capture_output=True, text=True, timeout=15, check=False,
+            )
+            sinks.extend(parse_external_sast_json(gitleaks_json=proc.stdout))
+        except Exception:
+            pass
+
     return {
         "files_scanned": len(files_content),
         "routes": routes[:50],

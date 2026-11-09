@@ -9,6 +9,7 @@ from oniops.greybox import (
     analyze_source_code,
     discover_js_endpoints,
     extract_openapi_endpoints,
+    parse_external_sast_json,
     probe_openapi,
     sanitize_auth_header,
 )
@@ -115,3 +116,26 @@ def test_bola_bfla_low_priv_diff_and_js_discovery():
     assert "http://10.0.0.150:8080/static/app.bundle.js" in js_res["scripts"]
     assert "/api/v1/internal/keys" in js_res["routes"]
     assert "/graphql" in js_res["routes"]
+
+
+def test_parse_external_sast_json_semgrep_and_gitleaks():
+    semgrep_raw = json.dumps({
+        "results": [{
+            "check_id": "python.lang.security.audit.Dangerous-exec",
+            "path": "app.py",
+            "start": {"line": 42},
+            "extra": {"severity": "ERROR", "lines": "os.system(user_cmd)"},
+        }]
+    })
+    gitleaks_raw = json.dumps([{
+        "RuleID": "generic-api-key",
+        "File": "config.py",
+        "StartLine": 10,
+        "Match": "api_key = 'sk-1234567890abcdef123456'",
+    }])
+    sinks = parse_external_sast_json(semgrep_json=semgrep_raw, gitleaks_json=gitleaks_raw)
+    assert len(sinks) == 2
+    assert sinks[0]["type"].startswith("Semgrep")
+    assert sinks[0]["severity"] == "HIGH"
+    assert sinks[1]["type"].startswith("Gitleaks")
+    assert "1234567890abcdef" not in sinks[1]["snippet"]

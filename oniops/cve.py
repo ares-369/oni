@@ -38,6 +38,7 @@ _NOISE_TOKENS = {
 }
 
 NVD_ENDPOINT = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+EPSS_ENDPOINT = "https://api.first.org/data/v1/epss"
 # Generic client name — never the user's email / identity.
 _UA = "ONIOPS-Security-Scanner (offensive-neural-intelligence)"
 
@@ -152,7 +153,43 @@ def query_nvd(product: str, version: str, timeout: int = 8, api_key: str = "") -
                 sev = (arr[0].get("baseSeverity") or cvss.get("baseSeverity") or "UNKNOWN").upper()
                 break
         out.append({"id": cid, "cvss": score, "severity": sev})
+    if out:
+        epss_map = query_epss([c["id"] for c in out], timeout=min(timeout, 6))
+        for c in out:
+            ep = epss_map.get(c["id"])
+            if ep:
+                c["epss"] = ep["epss"]
+                c["epss_percentile"] = ep["percentile"]
+                if ep["epss"] >= 0.20 and c.get("severity") == "HIGH":
+                    c["severity"] = "CRITICAL"
     return out
+
+
+def query_epss(cve_ids: list[str], timeout: int = 6) -> dict[str, dict[str, float]]:
+    """Query FIRST.org's public EPSS API for real-world 30-day exploitation
+    probability (0.0 to 1.0) and percentile. Best-effort; returns {} on error."""
+    clean_ids = [c.strip().upper() for c in cve_ids if str(c).strip().upper().startswith("CVE-")]
+    if not clean_ids:
+        return {}
+    qs = urllib.parse.urlencode({"cve": ",".join(clean_ids[:20])})
+    req = urllib.request.Request(f"{EPSS_ENDPOINT}?{qs}", headers={"User-Agent": _UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return {}
+    result: dict[str, dict[str, float]] = {}
+    for row in data.get("data") or []:
+        cid = str(row.get("cve") or "").upper()
+        if cid:
+            try:
+                result[cid] = {
+                    "epss": round(float(row.get("epss") or 0.0), 4),
+                    "percentile": round(float(row.get("percentile") or 0.0), 4),
+                }
+            except (TypeError, ValueError):
+                continue
+    return result
 
 
 def enrich(ports: list[dict], cfg: Any, run_fn: Callable[[list[str], int], str],
@@ -210,7 +247,8 @@ def enrich(ports: list[dict], cfg: Any, run_fn: Callable[[list[str], int], str],
         lines.append(hdr)
         for c in f["cves"]:
             sc = f" CVSS {c['cvss']}" if c.get("cvss") is not None else ""
-            lines.append(f"    CVE: {c['id']} [{c.get('severity','?')}]{sc}")
+            ep = f" EPSS {c['epss']*100:.1f}%" if c.get("epss") is not None else ""
+            lines.append(f"    CVE: {c['id']} [{c.get('severity','?')}]{sc}{ep}")
         for e in f["exploits"][:6]:
             eid = f" (EDB-{e['edb_id']})" if e.get("edb_id") else ""
             lines.append(f"    Exploit-DB: {e['title']}{eid}")

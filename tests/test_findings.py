@@ -53,6 +53,7 @@ def test_ledger_upsert_deduplicates_and_retests(tmp_path, scope):
     assert len(items) == 1
     assert items[0]["severity"] == "HIGH"
     assert "secret123456789" not in items[0]["evidence"]
+    assert len(items[0]["evidence_sha256"]) == 64
 
     # Zero-token retest: simulate target returning 401 (now AUTH-GATED) then closed (FIXED).
     class _StubRunner:

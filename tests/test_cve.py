@@ -77,3 +77,28 @@ class TestEnrich:
         res = cve.enrich(ports, C(), self._stub_runner(title="nginx 1.18.0 issue"))
         # Same product+version searched once -> one finding.
         assert len(res["findings"]) == 1
+
+    def test_query_epss_parses_probabilities(self, monkeypatch):
+        import io
+        import json
+        import urllib.request
+
+        fake_body = json.dumps({
+            "status": "OK",
+            "data": [
+                {"cve": "CVE-2021-41773", "epss": "0.94321", "percentile": "0.99812"},
+            ],
+        }).encode("utf-8")
+
+        class _FakeResp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=6: _FakeResp(fake_body))
+        out = cve.query_epss(["CVE-2021-41773"])
+        assert "CVE-2021-41773" in out
+        assert out["CVE-2021-41773"]["epss"] == 0.9432
+        assert out["CVE-2021-41773"]["percentile"] == 0.9981
