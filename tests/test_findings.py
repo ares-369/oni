@@ -153,6 +153,18 @@ def test_validate_evidence_and_batch_retest_and_diff(tmp_path, scope):
     assert diff["active_findings"] == 1
 
 
+def test_validate_evidence_no_false_verified_without_proof():
+    # A live 200 with no indicator and a non-exposure category must NOT verify a
+    # vulnerability — only report that the service responded (UNCONFIRMED).
+    assert validate_evidence("HTTP/1.1 200 OK\r\nServer: nginx", category="agent_validation") == "UNCONFIRMED"
+    # Arbitrary content with no status line / indicator / proof pattern: UNCONFIRMED.
+    assert validate_evidence("some long banner text here", category="") == "UNCONFIRMED"
+    # service_exposure is self-proving from a live 2xx (the finding IS "exposed").
+    assert validate_evidence("HTTP/1.1 200 OK\r\n", category="service_exposure") == "VERIFIED"
+    # Indicator still wins regardless of category.
+    assert validate_evidence("HTTP/1.1 200 OK\r\nX-Debug: on", expected_indicator="X-Debug: on") == "VERIFIED"
+
+
 def test_vulnerability_specific_validators_and_compliance_coverage():
     # LFI requires /etc/passwd or win.ini proof, not just HTTP 200
     assert validate_evidence("HTTP/1.1 200 OK\r\n<html>Welcome</html>", category="lfi") == "UNCONFIRMED"
