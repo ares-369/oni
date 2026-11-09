@@ -1767,6 +1767,8 @@
       if (viewName === 'reports') loadScansHistory();
       if (viewName === 'arsenal') loadKaliTools();
       if (viewName === 'settings') loadSettings();
+      if (viewName === 'workbench') loadJobsBar();
+      if (viewName === 'aisec') loadAisecProbesMeta();
     }
 
     const isMobile = () => window.matchMedia('(max-width: 1024px)').matches;
@@ -2859,9 +2861,9 @@
             <td><span class="conf c${cLvl}" title="${cTip}"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>${cName}</span></td>
             <td><span class="badge ${stBadge}" id="fstatus_${f.id}">${esc(f.status)}</span></td>
             <td class="mono" style="font-size:11px; max-width:340px; overflow:hidden; text-overflow:ellipsis;" title="${esc(f.repro_display)}">${esc(f.evidence.slice(0, 120))}</td>
-            <td onclick="event.stopPropagation()" style="white-space:nowrap;">
-              <button class="btn btn-sm" onclick="openFindingDrawer(${f.id})" aria-label="Inspect finding #${f.id}"><i class="mdi mdi-eye-outline"></i> Inspect</button>
-              ${f.repro_display ? `<button class="btn btn-sm" onclick="retestFinding(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest</button>` : ''}
+            <td style="white-space:nowrap;">
+              <button class="btn btn-sm" onclick="event.stopPropagation(); openFindingDrawer(${f.id})" aria-label="Inspect finding #${f.id}"><i class="mdi mdi-eye-outline"></i> Inspect</button>
+              ${f.repro_display ? `<button class="btn btn-sm" onclick="event.stopPropagation(); retestFinding(${f.id}, this)"><i class="mdi mdi-replay"></i> Retest</button>` : ''}
             </td>
           </tr>`;
         }).join('');
@@ -2928,7 +2930,7 @@
           <div class="terminal-box mono" style="font-size:11.5px; padding:8px 10px; margin-bottom:10px;">${esc(f.repro_display || '(no deterministic replay command stored)')}</div>
           <div style="font-size:11.5px; color:var(--text-muted); margin-bottom:4px;">Captured Evidence (Secret-Redacted):</div>
           <div class="terminal-box mono" style="font-size:11.5px; max-height:200px; overflow:auto;">${esc(f.evidence || '(no evidence output)')}</div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:8px;" class="mono">
+          <div style="font-size:11px; color:var(--text-muted); margin-top:8px; word-break:break-all;" class="mono">
             SHA-256 Provenance: ${esc(f.evidence_sha256 || 'n/a')}
           </div>
         </div>
@@ -3020,7 +3022,7 @@
         bar.innerHTML = `<span style="font-weight:600; margin-right:6px;"><i class="mdi mdi-progress-clock"></i> Recent Jobs:</span>` +
           jobs.map(j => {
             const cls = j.status === 'done' ? 'badge-green' : (j.status === 'running' || j.status === 'queued' ? 'badge-red' : 'badge-neutral');
-            const label = j.params?.target || j.params?.model || j.kind;
+            const label = j.meta?.target || j.meta?.model || j.params?.target || j.params?.model || j.kind;
             return `<span class="badge ${cls} mono" style="margin-right:6px; cursor:pointer;" onclick="attachWorkbenchJob('${esc(j.id)}')" title="Click to inspect job ${esc(j.id)}">${esc(j.kind)}:${esc(label)} (${esc(j.status)})</span>`;
           }).join('');
       } catch (e) {}

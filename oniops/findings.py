@@ -401,9 +401,9 @@ class FindingsLedger:
         ev_hash = hashlib.sha256(clean_evidence.encode("utf-8")).hexdigest()
         conf = (confidence or evaluate_finding_confidence(category, status, clean_evidence)).upper()
         if isinstance(repro_cmd, list):
-            cmd_str = json.dumps(repro_cmd)
+            cmd_str = json.dumps([redact_secrets(str(x)) for x in repro_cmd])
         else:
-            cmd_str = json.dumps(shlex.split(repro_cmd)) if repro_cmd else "[]"
+            cmd_str = json.dumps([redact_secrets(x) for x in shlex.split(repro_cmd)]) if repro_cmd else "[]"
 
         with self._conn() as con:
             cur = con.execute(
@@ -534,7 +534,7 @@ class FindingsLedger:
     def _enrich(d: dict) -> dict:
         try:
             cmd_list = json.loads(d.get("repro_cmd") or "[]")
-            d["repro_display"] = shlex.join(cmd_list) if cmd_list else ""
+            d["repro_display"] = redact_secrets(shlex.join(cmd_list)) if cmd_list else ""
         except Exception:
             d["repro_display"] = ""
         cat = d.get("category", "")
@@ -598,7 +598,7 @@ class FindingsLedger:
                 new_status = "FIXED"
         elif cat == "nuclei":
             new_status = "VERIFIED" if out and f["target_ip"] in out else "FIXED"
-        elif cat == "api_security":
+        elif cat in ("api_security", "bola", "bola_horizontal", "bfla") or "bola" in cat or "bfla" in cat:
             m = re.search(r"HTTP/[\d.]+\s+(\d{3})", out)
             if m and int(m.group(1)) in (200, 201, 204):
                 new_status = "VERIFIED"
