@@ -15,7 +15,11 @@ from pathlib import Path
 import paramiko
 
 from .config import Config, get_config
+from .ratelimit import RateLimiter, response_throttle_status, target_key_from_command
 from .scope import Scope, ScopeViolation
+
+# After a target answers HTTP 429/503, push its next slot out by this long.
+THROTTLE_COOLDOWN_SECONDS = 30.0
 
 
 @dataclass
@@ -33,12 +37,21 @@ class KaliRunner:
 
     `host` is a HostConfig (Kali or any tooled Linux). Defaults to the active
     host in config for back-compat.
+
+    Every command is paced by ``limiter`` (built from
+    ``scope.rate_limit_per_min`` unless one is injected). One command aimed at
+    a target = one unit for that target; commands that name no target
+    (``echo``, ``searchsploit``, local bookkeeping) are not charged. A single
+    command may still send many packets (nmap, nikto); the limit does not
+    bound packets. Each runner paces independently.
     """
 
-    def __init__(self, host=None, scope: Scope | None = None, cfg: Config | None = None):
+    def __init__(self, host=None, scope: Scope | None = None, cfg: Config | None = None,
+                 limiter: RateLimiter | None = None):
         self.cfg = cfg or get_config()
         self.host = host or self.cfg.kali
         self.scope = scope or Scope(self.cfg)
+        self.limiter = limiter or RateLimiter(self.cfg.scope.rate_limit_per_min)
 
     def _host_policy(self, client: paramiko.SSHClient):
         """Configure host-key verification per config.kali.verify_host_key.
@@ -90,6 +103,16 @@ class KaliRunner:
         except ScopeViolation as exc:
             return CmdResult(rc=126, out=str(exc))
 
+        # Rate limit: block until this command's target has a free slot.
+        target = target_key_from_command(command)
+        self.limiter.acquire(target)
+        result = self._exec(command, timeout)
+        # Per-target cool-down when a curl-style response shows 429/503.
+        if target and response_throttle_status(result.out):
+            self.limiter.penalize(target, THROTTLE_COOLDOWN_SECONDS)
+        return result
+
+    def _exec(self, command: str, timeout: int) -> CmdResult:
         try:
             client = self._client()
         except Exception as exc:

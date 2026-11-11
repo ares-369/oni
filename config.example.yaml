@@ -28,6 +28,10 @@ scope:
   exclude:                   # never touched, even if inside allowed_cidrs
     - "192.168.1.1"          # e.g. your gateway/router
   auto_detect_subnet: true   # on first run, offer this host's own subnet
+  # Pacing per target: max commands / HTTP requests OniOps launches toward
+  # any ONE target per minute (one nmap, curl or AI probe request = 1). This is
+  # not a packet limit: a single nmap or nikto run still sends many packets.
+  # Commands that touch no target (searchsploit, local bookkeeping) are free.
   rate_limit_per_min: 120
   mode: "active"             # active | passive | stealth
   non_destructive: true      # hard-block destructive tool flags (keep true)
