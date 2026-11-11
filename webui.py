@@ -903,7 +903,9 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
         completed_at=ts,
         commands_run=commands_run,
         evidence_hashes=ev_hashes,
-        signing_key=str(cfg.auth.secret_key or app.secret_key or "oniops-default-manifest-key"),
+        # Only a persistent, operator-set key signs. Flask's session key is random per
+        # process when ONIOPS_SECRET_KEY is unset, so it could never be verified later.
+        signing_key=str(cfg.auth.secret_key or ""),
     )
     return {
         "id": aid, "timestamp": ts, "target_ip": target_ip, "target_name": hostname,

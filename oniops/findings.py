@@ -244,6 +244,27 @@ def compute_priority_score(severity: str, status: str, confidence: str) -> int:
     return min(100, sev_pts + st_pts + conf_pts)
 
 
+_SIG_PREFIX = "hmac-sha256:"
+
+# Strings that older releases used as built-in fallback keys. They are public
+# (this repository is open source), so anything "signed" with them proves
+# nothing. They are refused as signing keys and never verify.
+_PUBLIC_DEFAULT_KEYS = frozenset({"oniops-default-manifest-key", "oniops-webhook-key"})
+
+UNSIGNED_REASON = "no signing key configured (set ONIOPS_SECRET_KEY or auth.secret_key)"
+
+
+def usable_signing_key(key: str | None) -> str:
+    """Return ``key`` if it is a real operator-supplied secret, else "".
+
+    Empty or whitespace-only keys and the old public default strings are
+    rejected, so callers can never produce a signature anyone could forge."""
+    k = key if isinstance(key, str) else ""
+    if not k.strip() or k.strip() in _PUBLIC_DEFAULT_KEYS:
+        return ""
+    return k
+
+
 def dispatch_webhook_alert(
     event_type: str,
     payload: dict,
@@ -251,8 +272,12 @@ def dispatch_webhook_alert(
     webhook_url: str = "",
     signing_key: str = "",
 ) -> bool:
-    """POST a signed JSON alert to a configured webhook URL (Slack, Discord, or
-    generic SIEM/SOAR receiver) when a high-severity finding is verified or regresses."""
+    """POST a JSON alert to a configured webhook URL (Slack, Discord, or
+    generic SIEM/SOAR receiver) when a high-severity finding is verified or regresses.
+
+    The body is HMAC-SHA256 signed in the ``X-ONIOPS-Signature`` header only when an
+    operator-controlled key is available (``signing_key`` or ``ONIOPS_SECRET_KEY``).
+    Without one, no signature header is sent at all."""
     url = (webhook_url or os.getenv("ONIOPS_WEBHOOK_URL", "")).strip()
     if not url or not url.startswith(("http://", "https://")):
         return False
@@ -262,18 +287,15 @@ def dispatch_webhook_alert(
         "payload": payload,
     }
     body = json.dumps(envelope, sort_keys=True).encode("utf-8")
-    key = (signing_key or os.getenv("ONIOPS_SECRET_KEY", "") or "oniops-webhook-key").encode("utf-8")
-    sig = hmac.new(key, body, hashlib.sha256).hexdigest()
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "ONIOPS-Security-Webhook/0.3",
-            "X-ONIOPS-Signature": f"hmac-sha256:{sig}",
-        },
-        method="POST",
-    )
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "ONIOPS-Security-Webhook/0.3",
+    }
+    key = usable_signing_key(signing_key or os.getenv("ONIOPS_SECRET_KEY", ""))
+    if key:
+        sig = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        headers["X-ONIOPS-Signature"] = f"{_SIG_PREFIX}{sig}"
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             return 200 <= int(getattr(resp, "status", 200)) < 300
@@ -805,8 +827,12 @@ def build_assessment_manifest(
     evidence_hashes: list[str],
     signing_key: str = "",
 ) -> dict:
-    """Create a secret-free, HMAC-SHA256 cryptographically signed execution manifest
-    for assessment reproducibility and tamper detection."""
+    """Create a secret-free execution manifest for assessment reproducibility.
+
+    ``manifest_sha256`` is always present (an integrity hash: it detects edits but
+    anyone can recompute it). An HMAC-SHA256 ``signature`` is added only when a
+    real signing key is supplied; otherwise the manifest is explicitly marked
+    unsigned (``signed: False``, ``signature: None``, ``unsigned_reason``)."""
     scope_canonical = ",".join(sorted(scope_cidrs))
     scope_hash = hashlib.sha256(scope_canonical.encode("utf-8")).hexdigest()[:16]
     cmds_canonical = "\n".join(commands_run)
@@ -825,30 +851,59 @@ def build_assessment_manifest(
     }
     canonical = json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
     manifest_sha256 = hashlib.sha256(canonical).hexdigest()
-    key_bytes = (signing_key or "oniops-default-manifest-key").encode("utf-8")
-    sig = hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
+    key = usable_signing_key(signing_key)
+    if not key:
+        return {
+            **core,
+            "manifest_sha256": manifest_sha256,
+            "signed": False,
+            "signature": None,
+            "unsigned_reason": UNSIGNED_REASON,
+        }
+    sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
     return {
         **core,
         "manifest_sha256": manifest_sha256,
-        "signature": f"hmac-sha256:{sig}",
+        "signed": True,
+        "signature": f"{_SIG_PREFIX}{sig}",
     }
 
 
-def verify_assessment_manifest(manifest: dict, signing_key: str = "") -> bool:
-    """Verify the SHA-256 integrity and HMAC-SHA256 signature of an assessment manifest."""
+def manifest_verification_status(manifest: dict, signing_key: str = "") -> str:
+    """Check an assessment manifest and say why it does or does not verify.
+
+    Returns one of: "valid", "malformed", "integrity_mismatch", "unsigned",
+    "no_key" (no usable verification key was given), "bad_signature".
+    Only "valid" means a holder of ``signing_key`` produced this manifest."""
     if not isinstance(manifest, dict):
-        return False
+        return "malformed"
     core_keys = (
         "assessment_id", "oniops_version", "target_ip", "profile", "scope_hash",
         "commands_hash", "model", "started_at", "completed_at", "evidence_hashes",
     )
     if not all(k in manifest for k in core_keys):
-        return False
+        return "malformed"
     core = {k: manifest[k] for k in core_keys}
     canonical = json.dumps(core, sort_keys=True, separators=(",", ":")).encode("utf-8")
     expected_sha = hashlib.sha256(canonical).hexdigest()
     if not hmac.compare_digest(str(manifest.get("manifest_sha256", "")), expected_sha):
-        return False
-    key_bytes = (signing_key or "oniops-default-manifest-key").encode("utf-8")
-    expected_sig = "hmac-sha256:" + hmac.new(key_bytes, canonical, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(str(manifest.get("signature", "")), expected_sig)
+        return "integrity_mismatch"
+    sig = manifest.get("signature")
+    if manifest.get("signed") is False or not isinstance(sig, str) or not sig.startswith(_SIG_PREFIX):
+        return "unsigned"
+    key = usable_signing_key(signing_key)
+    if not key:
+        return "no_key"
+    expected_sig = _SIG_PREFIX + hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected_sig):
+        return "bad_signature"
+    return "valid"
+
+
+def verify_assessment_manifest(manifest: dict, signing_key: str = "") -> bool:
+    """Verify the SHA-256 integrity and HMAC-SHA256 signature of an assessment manifest.
+
+    False for unsigned manifests, an empty key, the old public default keys,
+    tampered content or a wrong key. Use ``manifest_verification_status`` for
+    the reason."""
+    return manifest_verification_status(manifest, signing_key) == "valid"
