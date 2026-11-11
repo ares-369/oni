@@ -130,6 +130,10 @@ class Config:
     # Only safe when something else restricts access (e.g. Docker publishing
     # the port on 127.0.0.1 only). Default False: OniOps refuses to start.
     allow_unauthenticated_network: bool = False
+    # Optional per-role TARGET login recipes (primary/low_priv/peer). Credentials
+    # are referenced here only as ${ENV_VAR} and resolved at login time; see
+    # oniops/target_auth.py. Empty = today's static-header behaviour.
+    target_auth: dict[str, Any] = field(default_factory=dict)
 
     # -- secrets (from .env) --
     def secret(self, name: str) -> str:
@@ -272,6 +276,7 @@ def load_config() -> Config:
         llm=data.get("llm", {}) or {},
         integrations=data.get("integrations", {}) or {},
         path=path,
+        target_auth=data.get("target_auth", {}) or {},
         allow_unauthenticated_network=(
             str(os.getenv("ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK", "")).strip().lower() in ("1", "true", "yes")
             or bool(oniops.get("allow_unauthenticated_network", False))
