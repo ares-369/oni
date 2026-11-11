@@ -18,6 +18,9 @@ probe runs on this machine instead of over SSH. It is deliberately narrow:
     ~/.curlrc), `--noproxy *`, `--proto =http,https` and `--max-redirs 0`, so
     the `-L` inside the engines' combined `-ksSL` flag cannot follow a
     redirect off loopback.
+  - Requests are paced per target by a ``RateLimiter`` exactly like
+    ``KaliRunner`` (built from ``scope.rate_limit_per_min`` unless one is
+    injected), including the per-target cool-down after an HTTP 429/503.
 """
 from __future__ import annotations
 
@@ -29,7 +32,8 @@ import subprocess
 from urllib.parse import urlsplit
 
 from .demo_target import is_loopback_host
-from .kali import CmdResult
+from .kali import THROTTLE_COOLDOWN_SECONDS, CmdResult
+from .ratelimit import RateLimiter, response_throttle_status, target_key_from_command
 from .scope import Scope, ScopeViolation
 
 _URL_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
@@ -43,10 +47,11 @@ _FORBIDDEN_FLAGS = {
 class LocalRunner:
     """Runs scope-guarded curl probes against loopback targets only."""
 
-    def __init__(self, scope: Scope, curl_path: str = "") -> None:
+    def __init__(self, scope: Scope, curl_path: str = "", limiter: RateLimiter | None = None) -> None:
         if scope is None:
             raise ValueError("LocalRunner requires a Scope; it never runs unscoped.")
         self.scope = scope
+        self.limiter = limiter or RateLimiter(scope.cfg.scope.rate_limit_per_min)
         self.curl = curl_path or shutil.which("curl") or ""
         for cidr in scope.cidrs:
             net_ip = cidr.split("/", 1)[0]
@@ -92,6 +97,16 @@ class LocalRunner:
         if not self.curl:
             return CmdResult(rc=127, out="Command error/timeout: curl is not installed on this machine.")
         self.commands_run.append(command)
+        # Rate limit: block until this command's target has a free slot.
+        target = target_key_from_command(command)
+        self.limiter.acquire(target)
+        result = self._exec(argv, timeout)
+        # Per-target cool-down when the response shows 429/503.
+        if target and response_throttle_status(result.out):
+            self.limiter.penalize(target, THROTTLE_COOLDOWN_SECONDS)
+        return result
+
+    def _exec(self, argv: list[str], timeout: int) -> CmdResult:
         # Hardening that keeps curl on loopback: no proxy, http(s) only, no redirects.
         safe = [self.curl, "-q", "--noproxy", "*", "--proto", "=http,https", "--max-redirs", "0", *argv[1:]]
         env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")}

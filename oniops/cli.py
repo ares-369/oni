@@ -28,13 +28,16 @@ from . import __version__
 from .aisec import load_yaml_probes
 from .benchmark import run_selftest
 from .config import get_config
-from .findings import FindingsLedger, backup_sqlite, diff_assessments, restore_sqlite
+from .findings import FindingsLedger, backup_sqlite, diff_assessments, restore_sqlite, usable_signing_key
 from .greybox import analyze_source_code
 from .kali import KaliRunner
 from .playbooks import load_playbooks
 from .scope import Scope
 
 _SEV_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+
+SIGNING_KEY_WARNING = ("No persistent signing key (ONIOPS_SECRET_KEY / auth.secret_key): assessment "
+                       "manifests and webhook alerts will be unsigned.")
 
 
 def _default_db_path() -> Path:
@@ -102,6 +105,13 @@ def run_doctor(db_override: str = "", check_runner: bool = False) -> dict:
         runner = KaliRunner(cfg.kali, scope, cfg)
         ping = runner.run(["echo", "oniops-doctor-ok"], timeout=10)
         checks["runner_ok"] = bool(ping.ok and "oniops-doctor-ok" in (ping.out or ""))
+    # Warnings do not fail the check; they flag a weaker but working setup.
+    warnings: list[str] = []
+    signing_key = usable_signing_key(cfg.auth.secret_key or os.getenv("ONIOPS_SECRET_KEY", ""))
+    checks["signing_key_set"] = bool(signing_key)
+    if not signing_key:
+        warnings.append(SIGNING_KEY_WARNING)
+    checks["warnings"] = warnings
     checks["ok"] = (integrity == "ok" and len(scope.cidrs) > 0 and len(pbs) > 0)
     return checks
 
@@ -193,6 +203,8 @@ def cli_main(argv: list[str] | None = None) -> int:
 
     if ns.cmd == "doctor":
         res = run_doctor(db_override=ns.db, check_runner=ns.check_runner)
+        for w in res.get("warnings") or []:
+            print(f"[OniOps][WARNING] {w}", file=sys.stderr)
         print(json.dumps(res, indent=2))
         return 0 if res.get("ok") else 1
 

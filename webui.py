@@ -39,7 +39,13 @@ from oniops.findings import (
     redact_secrets,
 )
 from oniops.graph import build_graph
-from oniops.greybox import analyze_source_code, discover_js_endpoints, probe_openapi, sanitize_auth_header
+from oniops.greybox import (
+    analyze_source_code,
+    discover_js_endpoints,
+    probe_graphql_introspection,
+    probe_openapi,
+    sanitize_auth_header,
+)
 from oniops.jobs import JobManager, current_job_id
 from oniops.kali import KaliRunner
 from oniops.pdf import markdown_to_pdf
@@ -443,7 +449,8 @@ def api_report_pdf():
     filename = re.sub(r"[^a-zA-Z0-9._-]", "-", (data.get("filename") or "oniops-report.pdf"))
     if not filename.endswith(".pdf"):
         filename += ".pdf"
-    pdf_bytes = markdown_to_pdf(md, title=title)
+    # The markdown comes from the browser; mask any credential that slipped in.
+    pdf_bytes = markdown_to_pdf(redact_secrets(md), title=redact_secrets(title))
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
@@ -662,6 +669,13 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
                 raw_sections.append(oa["raw_section"])
                 finding_count += len(oa["findings"])
                 openapi_findings.extend(oa["findings"])
+
+            # Anonymous GraphQL introspection check (one bounded POST to /graphql).
+            gq = probe_graphql_introspection(target_ip, pn, scheme, _run)
+            if gq:
+                raw_sections.append(f"=== WAPT: GraphQL ({url}) ===\n- [VULNERABLE/{gq['severity']}] {gq['title']}")
+                finding_count += 1
+                openapi_findings.append(gq)
 
             emit_event("WAPT_JS", "busy", f"[WAPT] SPA / JS bundle route extraction {url}")
             js_disc = discover_js_endpoints(target_ip, pn, scheme, _run, ctl=ctl)

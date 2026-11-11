@@ -33,10 +33,15 @@ from .demo_target import ADMIN_HEADER, USER_A_HEADER, USER_B_HEADER, DemoTarget
 from .findings import FindingsLedger, validate_evidence
 from .greybox import discover_js_endpoints, probe_graphql_introspection, probe_openapi
 from .local_runner import LocalRunner
+from .ratelimit import RateLimiter
 from .scope import Scope
 
 DEMO_SCOPE = "127.0.0.1/32"
 DEMO = "[DEMO]"
+# The demo target lives in this process, so the courtesy limit is set very high
+# (one request per millisecond): the real RateLimiter still paces every request,
+# it just never makes the one-minute demo slow.
+DEMO_RATE_PER_MIN = 60000
 
 
 def demo_config() -> Config:
@@ -62,6 +67,11 @@ def demo_config() -> Config:
 
 def demo_scope() -> Scope:
     return Scope(demo_config())
+
+
+def demo_runner(scope: Scope | None = None) -> LocalRunner:
+    """LocalRunner for the demo/e2e tests, with the high-rate demo limiter."""
+    return LocalRunner(scope or demo_scope(), limiter=RateLimiter(DEMO_RATE_PER_MIN))
 
 
 def run_assessment(target_ip: str, port: int, runner: LocalRunner, ledger: FindingsLedger,
@@ -91,7 +101,7 @@ def run_assessment(target_ip: str, port: int, runner: LocalRunner, ledger: Findi
     # 3. GraphQL introspection.
     gql = probe_graphql_introspection(target_ip, port, scheme, run_fn)
     if gql:
-        ledger.upsert(target_ip=target_ip, port=port, title=gql["title"], category="api_security",
+        ledger.upsert(target_ip=target_ip, port=port, title=gql["title"], category=gql.get("category", "graphql"),
                       severity=gql["severity"], status=gql["status"], evidence=gql["evidence"],
                       repro_cmd=gql["repro_cmd"])
 
@@ -151,7 +161,7 @@ def run_demo(*, db_path: str | Path | None = None, out: TextIO | None = None,
     say()
 
     scope = demo_scope()
-    runner = LocalRunner(scope)
+    runner = demo_runner(scope)
     ledger = FindingsLedger(db_file)
     try:
         with DemoTarget() as target:
@@ -178,19 +188,33 @@ def run_demo(*, db_path: str | Path | None = None, out: TextIO | None = None,
                     say(f"  {line.lstrip('- ').strip()}")
             say()
 
-            target_f = next((f for f in items if "/api/v1/debug/env" in f["title"]), None)
-            if target_f:
-                fid = int(target_f["id"])
-                say(f"Zero-token retest of finding #{fid} (replays its stored curl command, no LLM):")
-                r1 = ledger.retest(fid, runner, scope)
-                say(f"  before fix: {r1['previous_status']} -> {r1['status']}   $ {r1['repro_cmd']}")
-                if show_fixed:
-                    target.set_fixed(True)
-                    r2 = ledger.retest(fid, runner, scope)
-                    say(f"  after the demo target is switched to its fixed state: {r2['status']}")
-                say("  Known beta gap: retest is not yet reliable for credentialed BOLA/BFLA, GraphQL")
-                say("  and SQLi/XSS findings (see the xfail tests in tests/test_e2e_demo_target.py).")
-                say()
+            say("Zero-token retest of every finding (replays each stored curl command, no LLM;")
+            say("credentials in replay commands are shown masked):")
+            ids = [int(f["id"]) for f in sorted(items, key=lambda f: int(f["id"]))]
+            before = {i: ledger.retest(i, runner, scope) for i in ids}
+            after = {}
+            if show_fixed:
+                target.set_fixed(True)
+                after = {i: ledger.retest(i, runner, scope) for i in ids}
+            for i in ids:
+                b = before[i]
+                line = f"  #{i:<2} now {b['status']:<11}"
+                if after:
+                    line += f" after fix {after[i]['status']:<11}"
+                say(f"{line} {_clip(b['title'], 70)}")
+            cred = next((before[i] for i in ids if "[REDACTED-CREDENTIAL]" in before[i]["repro_cmd"]), None)
+            if cred:
+                say(f"  e.g. #{cred['id']} replays as the low-privilege identity: $ {cred['repro_cmd']}")
+            if after:
+                say("  The service itself stays live after the fix, so its row stays VERIFIED.")
+            owner = next((f for f in items if f["title"].startswith("BOLA/BFLA privilege boundary bypass on /api/v1/users/")), None)
+            if owner:
+                say(f"  Known false positive: #{owner['id']} - user A owns object 1, and the low-privilege")
+                say("  check has no notion of object ownership yet, so a legitimate owner read is still")
+                say("  reported. The cross-user check is the real BOLA signal on that route.")
+            say("  A 401 on a credentialed replay is reported UNCONFIRMED (the credential may have")
+            say("  expired), never FIXED.")
+            say()
     finally:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)

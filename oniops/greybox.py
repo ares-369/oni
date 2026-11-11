@@ -126,12 +126,15 @@ def probe_graphql_introspection(ip: str, port: int, scheme: str, run_fn) -> dict
     (OWASP API8:2023 / WSTG-APIT-01)."""
     url = f"{scheme}://{ip}:{port}/graphql"
     query = '{"query":"{__schema{queryType{name}}}"}'
-    cmd = ["curl", "-ksS", "--max-time", "5", "-X", "POST", "-H", "Content-Type: application/json", "-d", query, url]
+    # -i keeps the status line so a retest can tell a live reply from no reply;
+    # the proof check below only looks for the GraphQL introspection keys.
+    cmd = ["curl", "-kisS", "--max-time", "5", "-X", "POST", "-H", "Content-Type: application/json", "-d", query, url]
     out = (run_fn(cmd, 7) or "").strip()
     if '"__schema"' in out or '"queryType"' in out:
         return {
             "port": port,
             "title": "Exposed GraphQL schema introspection on /graphql (API8:2023)",
+            "category": "graphql",
             "severity": "MEDIUM",
             "status": "VERIFIED",
             "evidence": f"POST {url} returned GraphQL __schema introspection: {out[:200]}",
@@ -222,6 +225,7 @@ def probe_openapi(
     clean_peer = sanitize_auth_header(peer_auth_header) if peer_auth_header else ""
     spec_data = None
     spec_url = ""
+    spec_cmd: list[str] = []
 
     for path in OPENAPI_PATHS:
         if ctl is not None and not ctl.checkpoint():
@@ -235,6 +239,7 @@ def probe_openapi(
             try:
                 spec_data = json.loads(out)
                 spec_url = url
+                spec_cmd = cmd
                 break
             except Exception:
                 continue
@@ -307,7 +312,9 @@ def probe_openapi(
                 "severity": "HIGH" if valid_body else "MEDIUM",
                 "status": status,
                 "evidence": ev,
-                "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
+                # Replay AS the low-privilege identity; an anonymous replay would
+                # get 401 and look fixed. Masked whenever it is displayed.
+                "repro_cmd": ["curl", "-kisS", "--max-time", "5", "-H", clean_low, u],
             })
             tag = "VULNERABLE/HIGH" if valid_body else "PROBABLE/MEDIUM"
             lines.append(f"- [{tag} BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200} ({confidence})")
@@ -333,7 +340,8 @@ def probe_openapi(
                             f"GET {u} with peer identity returned HTTP 200 matching User A object "
                             f"({peer_reason})"
                         ),
-                        "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
+                        # Replay AS the peer identity (masked on display).
+                        "repro_cmd": ["curl", "-kisS", "--max-time", "5", "-H", clean_peer, u],
                     })
                     lines.append(f"- [VULNERABLE/HIGH HORIZONTAL-BOLA] {ep['path']}: peer_user=200 ({peer_reason})")
 
@@ -345,7 +353,9 @@ def probe_openapi(
             "severity": "MEDIUM",
             "status": "UNCONFIRMED",
             "evidence": f"OpenAPI schema exposes writable privilege properties ({fields_str}) without readOnly protection",
-            "repro_cmd": ["curl", "-kisS", "--max-time", "5", f"{base}{bopla['path']}"],
+            # Schema-only finding: the replay re-fetches the spec so a retest can
+            # re-evaluate the schema instead of reading a GET status code.
+            "repro_cmd": list(spec_cmd),
         })
         lines.append(f"- [BOPLA/MASS-ASSIGNMENT] {bopla['method']} {bopla['path']}: writable [{fields_str}]")
 

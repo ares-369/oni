@@ -37,7 +37,7 @@ def test_demo_cli_runs_with_no_config(no_config, capsys):
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert lines and all(ln.startswith("[DEMO]") for ln in lines)
     assert "VERIFIED" in out and "fix-first score" in out
-    assert "after the demo target is switched to its fixed state: FIXED" in out
+    assert "after fix FIXED" in out and "Known beta gap" not in out
     assert "AI features are off in demo mode" in out
     assert not no_config.exists() and not no_config.parent.exists()   # real ledger untouched
 
@@ -48,7 +48,7 @@ def test_demo_kept_db_is_separate(no_config, tmp_path):
     buf = io.StringIO()
     assert run_demo(db_path=keep, out=buf, show_fixed=False) == 0
     assert keep.exists() and not no_config.exists()
-    assert "fixed state" not in buf.getvalue()
+    assert "after fix" not in buf.getvalue()
 
 
 def test_demo_refuses_real_ledger_path(no_config, capsys):

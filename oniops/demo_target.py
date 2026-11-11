@@ -29,8 +29,10 @@ Secure twins (must NOT be reported):
   S2  GET  /api/v1/tokens/status    200 with an empty body, no API content-type
   S3  GET  /api/v1/internal/metrics 403 to everyone, always
 
-`set_fixed(True)` switches the target to a remediated state (W2-W4, W6-W8
-closed) so a zero-token retest can be shown flipping a finding to FIXED.
+`set_fixed(True)` switches the target to a remediated state (W2-W8 closed;
+W1 stays live, now with security headers) so a zero-token retest can be shown
+flipping findings to FIXED. `set_tokens_valid(False)` makes every demo token
+answer 401, as if the credentials had expired.
 """
 from __future__ import annotations
 
@@ -71,8 +73,10 @@ def is_loopback_host(host: str) -> bool:
         return False
 
 
-def openapi_spec() -> dict:
-    """The demo app's OpenAPI document (what OniOps discovers at /openapi.json)."""
+def openapi_spec(fixed: bool = False) -> dict:
+    """The demo app's OpenAPI document (what OniOps discovers at /openapi.json).
+    In fixed mode the privilege fields are marked readOnly (W5 closed)."""
+    ro = {"readOnly": True} if fixed else {}
     bearer = [{"bearerAuth": []}]
     ok = {"200": {"description": "OK"}}
     return {
@@ -86,8 +90,8 @@ def openapi_spec() -> dict:
                     "type": "object",
                     "properties": {
                         "email": {"type": "string"},
-                        "role": {"type": "string"},
-                        "is_admin": {"type": "boolean"},
+                        "role": {"type": "string", **ro},
+                        "is_admin": {"type": "boolean", **ro},
                     },
                 },
             },
@@ -129,6 +133,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _role(self) -> str:
         auth = self.headers.get("Authorization", "")
         if auth.lower().startswith("bearer "):
+            if not getattr(self.server, "tokens_valid", True):
+                return "invalid"
             return _TOKENS.get(auth[7:].strip(), "invalid")
         return "anonymous"
 
@@ -174,7 +180,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, page, "text/html; charset=utf-8", extra)
 
         if path == "/openapi.json":
-            return self._json(200, openapi_spec())
+            return self._json(200, openapi_spec(fixed))
 
         if path == "/api/v1/debug/env":
             # W2: unauthenticated debug route (fixed: admin only).
@@ -302,12 +308,19 @@ class DemoTarget:
             raise RuntimeError("Demo target is not running.")
         self._httpd.fixed = bool(fixed)  # type: ignore[attr-defined]
 
+    def set_tokens_valid(self, valid: bool = True) -> None:
+        """Simulate expired credentials: every demo token then gets HTTP 401."""
+        if not self._httpd:
+            raise RuntimeError("Demo target is not running.")
+        self._httpd.tokens_valid = bool(valid)  # type: ignore[attr-defined]
+
     def start(self) -> DemoTarget:
         if self._httpd:
             return self
         httpd = ThreadingHTTPServer((self.host, self._requested_port), _Handler)
         httpd.daemon_threads = True
         httpd.fixed = False  # type: ignore[attr-defined]
+        httpd.tokens_valid = True  # type: ignore[attr-defined]
         # Re-check what the OS actually bound, in case of an odd resolver.
         if not is_loopback_host(str(httpd.server_address[0])):
             httpd.server_close()

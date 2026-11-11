@@ -38,7 +38,11 @@ def connect_sqlite(db_path: str | Path, timeout: float = 30.0) -> sqlite3.Connec
 # Patterns for automatic secret redaction in evidence and reports.
 _REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[A-Za-z0-9._\-+/=]{8,}"), r"\1[REDACTED-TOKEN]"),
+    (re.compile(r"(?i)(authorization\s*:\s*(?:basic|token|digest|apikey|api-key|negotiate|ntlm)\s+)[A-Za-z0-9._~+/=\-]{6,}"),
+     r"\1[REDACTED-TOKEN]"),
     (re.compile(r"(?i)(cookie\s*:\s*)[^\r\n]{8,}"), r"\1[REDACTED-COOKIE]"),
+    (re.compile(r"(?i)\b(x-[a-z0-9\-]*(?:token|key|auth|session|secret|credential)[a-z0-9\-]*\s*:\s*)[^\s'\"]{6,}"),
+     r"\1[REDACTED]"),
     (re.compile(r"\bsk-[A-Za-z0-9_\-]{12,}\b"), "sk-[REDACTED]"),
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}\b"), "gh_[REDACTED]"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AKIA[REDACTED]"),
@@ -55,6 +59,45 @@ def redact_secrets(text: str) -> str:
     for pat, repl in _REDACT_PATTERNS:
         out = pat.sub(repl, out)
     return out
+
+
+# Request headers that never carry a credential and may be shown as-is.
+_SAFE_HEADERS = frozenset({"content-type", "accept", "user-agent", "accept-language", "content-length"})
+
+
+def mask_command(cmd: list) -> list[str]:
+    """Return a display-safe copy of a stored replay argv.
+
+    Replay commands are stored UNREDACTED (an authenticated retest needs the
+    real credential). Before an argv leaves the server, every request-header
+    value except a few harmless ones is fully masked, whatever the header is
+    called, and the generic secret patterns are applied to every argument."""
+    out: list[str] = []
+    prev = ""
+    for raw in cmd or []:
+        x = str(raw)
+        hdr = None
+        if prev in ("-H", "--header"):
+            hdr = x
+        elif x.startswith("--header="):
+            hdr = x[len("--header="):]
+        if hdr is not None and ":" in hdr:
+            name, _val = hdr.split(":", 1)
+            if name.strip().lower() not in _SAFE_HEADERS:
+                masked = f"{name.strip()}: [REDACTED-CREDENTIAL]"
+                out.append(masked if prev in ("-H", "--header") else f"--header={masked}")
+                prev = str(raw)
+                continue
+        out.append(redact_secrets(x))
+        prev = str(raw)
+    return out
+
+
+# Titles probe_openapi gives findings that were PROVEN with a low-privilege or
+# peer identity. Replaying them anonymously proves nothing about the fix.
+_DIFFERENTIAL_TITLE_RE = re.compile(r"^(?:BOLA/BFLA privilege boundary bypass|Cross-user horizontal BOLA) on ")
+_BOPLA_TITLE_RE = re.compile(r"^BOPLA / Mass Assignment risk on (POST|PUT|PATCH) (\S+)")
+_CRED_HEADER_RE = re.compile(r"(?i)\s*(authorization|cookie|x-api-key|x-auth-token|x-[a-z0-9\-]*(?:token|key|auth|session))\s*:")
 
 
 def _now_iso() -> str:
@@ -80,7 +123,7 @@ def map_finding_coverage(category: str, title: str = "") -> dict[str, list[str]]
     OWASP ASVS 5.0, and MITRE ATT&CK control/technique identifiers."""
     cat = (category or "").lower()
     t = (title or "").lower()
-    if cat in ("api_security", "bola", "bfla") or "bola" in t or "bfla" in t or "openapi" in t:
+    if cat in ("api_security", "bola", "bfla", "graphql") or "bola" in t or "bfla" in t or "openapi" in t:
         api_ids = ["API1:2023-BOLA"]
         if "bfla" in t or "admin" in t or "privilege" in t:
             api_ids.append("API5:2023-BFLA")
@@ -121,8 +164,8 @@ def get_remediation_guide(category: str, title: str = "") -> dict[str, object]:
     finding category and title."""
     cat = (category or "").lower()
     t = (title or "").lower()
-    if cat in ("api_security", "bola", "bfla") or "bola" in t or "bfla" in t or "openapi" in t:
-        if "graphql" in t:
+    if cat in ("api_security", "bola", "bfla", "graphql") or "bola" in t or "bfla" in t or "openapi" in t:
+        if "graphql" in t or cat == "graphql":
             return {
                 "cwe": "CWE-200",
                 "summary": "Disable GraphQL schema introspection in production and enforce resolver-level authorization.",
@@ -353,7 +396,7 @@ def evaluate_finding_confidence(category: str, status: str, evidence: str) -> st
     cat = (category or "").lower()
     ev = (evidence or "").strip()
     if st in ("VERIFIED", "FIXED"):
-        if cat in ("nuclei", "api_security", "agent_validation"):
+        if cat in ("nuclei", "api_security", "agent_validation", "graphql"):
             return "HIGH"
         if cat == "service_exposure" and re.search(r"HTTP/[\d.]+\s+2\d\d", ev):
             return "HIGH"
@@ -363,6 +406,95 @@ def evaluate_finding_confidence(category: str, status: str, evidence: str) -> st
     if cat in ("cve", "exploitdb"):
         return "MEDIUM" if "CVSS" in ev or "EDB-" in ev else "LOW"
     return "LOW"
+
+
+_CRED_401_NOTE = "credential rejected (401) — it may have expired; retest with a fresh token. "
+
+
+def _first_json_object(text: str):
+    i = (text or "").find("{")
+    if i < 0:
+        return None
+    try:
+        return json.loads(text[i:])
+    except Exception:
+        return None
+
+
+def _judge_retest(f: dict, cat: str, title: str, out: str, *, authed: bool,
+                  differential: bool) -> tuple[str, str]:
+    """Decide a retest outcome from the replay output.
+
+    Rule for every category: VERIFIED only when the original proof reproduces;
+    FIXED only on positive evidence the issue is gone; otherwise UNCONFIRMED
+    (with a note saying why). Returns (status, note)."""
+    m = re.search(r"HTTP/[\d.]+\s+(\d{3})", out or "")
+    code = int(m.group(1)) if m else None
+    if code in (429, 503):
+        return "UNCONFIRMED", f"target throttled the replay (HTTP {code}); retest later. "
+
+    if cat == "service_exposure":
+        if code is not None:
+            return ("AUTH-GATED" if code in (401, 403) else "VERIFIED"), ""
+        return "FIXED", ""
+
+    if cat == "nuclei":
+        return ("VERIFIED" if out and f["target_ip"] in out else "FIXED"), ""
+
+    bopla = _BOPLA_TITLE_RE.match(title)
+    if bopla:
+        # Schema-only finding: re-evaluate the OpenAPI document, never a GET status.
+        from .greybox import extract_bopla_mass_assignment_risks
+        method, path = bopla.group(1), bopla.group(2)
+        spec = _first_json_object(out)
+        if not (isinstance(spec, dict) and isinstance(spec.get("paths"), dict)):
+            return "UNCONFIRMED", ("schema-only finding: the replay did not return an OpenAPI document "
+                                   "(saved by an older version, or the spec moved); re-run the assessment. ")
+        still = [r for r in extract_bopla_mass_assignment_risks(spec)
+                 if r["method"] == method and r["path"] == path]
+        if still:
+            fields = ", ".join(still[0]["writable_privilege_fields"])
+            return "UNCONFIRMED", (f"OpenAPI schema still exposes writable privilege fields ({fields}) on "
+                                   f"{method} {path}; schema-only signal, confirm by request. ")
+        return "FIXED", f"OpenAPI schema no longer exposes writable privilege fields on {method} {path}. "
+
+    if cat in ("api_security", "bola", "bola_horizontal", "bfla") or "bola" in cat or "bfla" in cat:
+        if differential:
+            # Replayed AS the low-privilege/peer identity that proved it.
+            if code in (200, 201, 204):
+                from .greybox import validate_bola_response_content
+                ok, reason = validate_bola_response_content(out)
+                if ok:
+                    return "VERIFIED", ""
+                return "UNCONFIRMED", f"HTTP {code} to the low-privilege/peer identity but {reason}. "
+            if code == 403:
+                return "FIXED", "the low-privilege/peer identity is now denied (403). "
+            if code == 401:
+                return "UNCONFIRMED", _CRED_401_NOTE
+            return "UNCONFIRMED", (f"HTTP {code} to the low-privilege/peer identity; cannot tell whether "
+                                   "access is now denied. " if code else
+                                   "no HTTP response; cannot tell whether access is now denied. ")
+        if code in (200, 201, 204):
+            return "VERIFIED", ""
+        if code == 401 and authed:
+            return "UNCONFIRMED", _CRED_401_NOTE
+        if code in (401, 403, 404):
+            return "FIXED", ""
+        return "UNCONFIRMED", ""
+
+    # Everything else (sqli, xss, lfi, ssrf, rce, graphql, agent categories,
+    # cve, exploitdb, ...): re-run the category's proof check on the output.
+    indicator = str(f.get("proof_indicator") or "")
+    if cat not in _VULN_PROOF_PATTERNS and not indicator:
+        return "UNCONFIRMED", (f"no stored proof signature for category '{cat or 'unknown'}'; retest "
+                               "cannot confirm or rule it out. ")
+    if validate_evidence(out, expected_indicator=indicator, category=cat) == "VERIFIED":
+        return "VERIFIED", "proof signature reproduced. "
+    if code is None:
+        return "UNCONFIRMED", "no HTTP response to check the proof signature against. "
+    if code == 401 and authed:
+        return "UNCONFIRMED", _CRED_401_NOTE
+    return "FIXED", f"HTTP {code} response no longer contains the proof signature. "
 
 
 class FindingsLedger:
@@ -401,6 +533,10 @@ class FindingsLedger:
                 con.execute("ALTER TABLE findings ADD COLUMN evidence_sha256 TEXT DEFAULT ''")
             if "confidence" not in cols:
                 con.execute("ALTER TABLE findings ADD COLUMN confidence TEXT DEFAULT 'MEDIUM'")
+            if "proof_indicator" not in cols:
+                # The indicator that proved the finding (e.g. an agent's
+                # expected_indicator); retest re-checks it on the replay output.
+                con.execute("ALTER TABLE findings ADD COLUMN proof_indicator TEXT DEFAULT ''")
             con.commit()
 
     def upsert(
@@ -415,6 +551,7 @@ class FindingsLedger:
         evidence: str,
         repro_cmd: list[str] | str,
         confidence: str = "",
+        indicator: str = "",
     ) -> int:
         """Insert or update a deduplicated finding with secret-redacted evidence,
         calibrated confidence, and SHA-256 cryptographic provenance."""
@@ -434,8 +571,8 @@ class FindingsLedger:
             cur = con.execute(
                 """
                 INSERT INTO findings
-                    (target_ip, port, title, category, severity, status, confidence, evidence, evidence_sha256, repro_cmd, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (target_ip, port, title, category, severity, status, confidence, evidence, evidence_sha256, repro_cmd, proof_indicator, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(target_ip, port, title) DO UPDATE SET
                     severity = excluded.severity,
                     status = excluded.status,
@@ -443,10 +580,12 @@ class FindingsLedger:
                     evidence = excluded.evidence,
                     evidence_sha256 = excluded.evidence_sha256,
                     repro_cmd = CASE WHEN excluded.repro_cmd != '[]' THEN excluded.repro_cmd ELSE findings.repro_cmd END,
+                    proof_indicator = CASE WHEN excluded.proof_indicator != '' THEN excluded.proof_indicator ELSE findings.proof_indicator END,
                     last_seen = excluded.last_seen
                 """,
                 (target_ip, int(port or 0), title[:200], category[:60],
-                 severity.upper(), status.upper(), conf, clean_evidence, ev_hash, cmd_str, ts, ts),
+                 severity.upper(), status.upper(), conf, clean_evidence, ev_hash, cmd_str,
+                 str(indicator or "")[:200], ts, ts),
             )
             con.commit()
             if cur.lastrowid:
@@ -545,7 +684,7 @@ class FindingsLedger:
                 target_ip=target_ip,
                 port=int(of.get("port") or 80),
                 title=of.get("title", "API Exposure"),
-                category="api_security",
+                category=of.get("category") or "api_security",
                 severity=of.get("severity", "MEDIUM"),
                 status=of.get("status", "VERIFIED"),
                 evidence=of.get("evidence", ""),
@@ -559,8 +698,10 @@ class FindingsLedger:
     def _enrich(d: dict) -> dict:
         try:
             cmd_list = json.loads(d.get("repro_cmd") or "[]")
-            d["repro_display"] = redact_secrets(shlex.join(cmd_list)) if cmd_list else ""
-            d["repro_cmd"] = json.dumps([redact_secrets(str(x)) for x in cmd_list])
+            masked = mask_command(cmd_list)
+            d["repro_display"] = shlex.join(masked) if masked else ""
+            d["repro_cmd"] = json.dumps(masked)
+            d["proof_indicator"] = redact_secrets(str(d.get("proof_indicator") or ""))
         except Exception:
             d["repro_display"] = ""
             d["repro_cmd"] = "[]"
@@ -624,6 +765,22 @@ class FindingsLedger:
             )
         scope.guard_command(" ".join(cmd))
 
+        cat = (f.get("category") or "").lower()
+        title = f.get("title") or ""
+        # Was this finding made with credentials? Then a 401 on replay usually
+        # means the credential expired, not that the issue was fixed.
+        authed = any(_CRED_HEADER_RE.match(str(x)) for x in cmd)
+        differential = bool(_DIFFERENTIAL_TITLE_RE.match(title))
+
+        if differential and not authed:
+            # Proven with a low-privilege/peer identity, but the stored replay
+            # (saved before v0.4.5) carries no credential. An anonymous replay
+            # would get 401 and wrongly look fixed, so do not run it at all.
+            note = ("this finding was proven with a low-privilege/peer identity but its stored replay "
+                    "has no credential (saved by an older version); re-run the assessment with the "
+                    "low-privilege and peer headers to retest it. ")
+            return self._record_retest(f, cmd, "UNCONFIRMED", note, "")
+
         res = runner.run(cmd, timeout=30)
         raw_out = (res.out or "").strip()
         # If the replay could not run at all (attack host unreachable, timeout,
@@ -633,41 +790,15 @@ class FindingsLedger:
                 f"Retest of finding #{finding_id} could not run on the attack host "
                 f"({raw_out[:120]}). Status left unchanged."
             )
-        out = redact_secrets(raw_out)
+        new_status, note = _judge_retest(f, cat, title, raw_out, authed=authed, differential=differential)
+        return self._record_retest(f, cmd, new_status, note, redact_secrets(raw_out))
+
+    def _record_retest(self, f: dict, cmd: list, new_status: str, note: str, out: str) -> dict:
+        finding_id = int(f["id"])
         ts = _now_iso()
-        # Was this finding made with credentials? Then a 401 on replay usually
-        # means the credential expired, not that the issue was fixed.
-        authed = any(re.match(r"(?i)\s*(authorization|cookie|x-api-key|x-auth-token)\s*:", str(x)) for x in cmd)
-        note = ""
-
-        # Determine whether the issue still reproduces.
-        cat = f.get("category", "")
-        if cat == "service_exposure":
-            m = re.search(r"HTTP/[\d.]+\s+(\d{3})", out)
-            if m:
-                code = int(m.group(1))
-                new_status = "AUTH-GATED" if code in (401, 403) else "VERIFIED"
-            else:
-                new_status = "FIXED"
-        elif cat == "nuclei":
-            new_status = "VERIFIED" if out and f["target_ip"] in out else "FIXED"
-        elif cat in ("api_security", "bola", "bola_horizontal", "bfla") or "bola" in cat or "bfla" in cat:
-            m = re.search(r"HTTP/[\d.]+\s+(\d{3})", out)
-            code = int(m.group(1)) if m else None
-            if code in (200, 201, 204):
-                new_status = "VERIFIED"
-            elif code == 401 and authed:
-                new_status = "UNCONFIRMED"
-                note = "credential rejected (401) — it may have expired; retest with a fresh token. "
-            elif code in (401, 403, 404):
-                new_status = "FIXED"
-            else:
-                new_status = "UNCONFIRMED"
-        else:
-            new_status = "VERIFIED" if (res.ok and out) else "FIXED"
-
         new_ev = f"[Retest {ts[:19]}] {note}{out[:400] or '(no output — appears remediated/closed)'}"
         new_hash = hashlib.sha256(new_ev.encode("utf-8")).hexdigest()
+        cat = f.get("category", "")
         new_conf = evaluate_finding_confidence(cat, new_status, out)
         with self._conn() as con:
             con.execute(
@@ -684,7 +815,7 @@ class FindingsLedger:
             "confidence": new_conf,
             "evidence": new_ev,
             "evidence_sha256": new_hash,
-            "repro_cmd": redact_secrets(shlex.join(cmd)),
+            "repro_cmd": shlex.join(mask_command(cmd)),
             "last_retest": ts,
         }
 
