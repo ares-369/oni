@@ -7,6 +7,8 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.7-beta] — 2026-11-12
+
 ### Added
 - A labeled, loopback-only live fixture benchmark: `oniops benchmark --demo-evaluation`. It reports
   precision, recall, F1, negative checks, one-to-one finding matching and its explicit fixture-only
@@ -332,7 +334,9 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.4-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.7-beta...HEAD
+[0.4.7-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.7-beta
+[0.4.6-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.6-beta
 [0.4.4-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.4-beta
 [0.4.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.3-beta
 [0.4.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.2-beta

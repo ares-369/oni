@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oniops"
-version = "0.4.6b0"
+version = "0.4.7b0"
 description = "OniOps — Offensive Neural Intelligence: a provider-agnostic autonomous red-team framework"
 readme = "README.md"
 requires-python = ">=3.10"
