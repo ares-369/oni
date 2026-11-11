@@ -11,14 +11,16 @@ cross-platform; install it wherever is convenient on your network.
 | **Docker / Compose** | `docker compose up -d` | Everyone — one command, works on Linux/Windows/macOS |
 | **Proxmox LXC** | `deploy/proxmox-lxc.sh` on a PVE host | Homelabs / self-hosters |
 | **Windows (native)** | `deploy/windows-install.ps1` | Windows users (no WSL needed) |
-| **Bare Linux + systemd** | venv + `deploy/systemd/oniops.service` | Servers, VMs |
-| **pipx** | `pipx install oniops` | Quick local CLI run |
+| **Bare Linux** | `bash scripts/install.sh` | Quick local install, one command |
+| **Bare Linux + systemd** | `scripts/install.sh` + `deploy/systemd/oniops.service` | Servers, VMs |
 
 ### Docker
 ```bash
 cp config.example.yaml config.yaml && cp .env.example .env
+# set auth.mode: "local" in config.yaml, and ONIOPS_AUTH_PASSWORD + ONIOPS_SECRET_KEY in .env
 docker compose up -d
 ```
+The container listens on `0.0.0.0`, so OniOps refuses to start until a login is configured.
 If your Kali host / LLMs are on the same LAN, uncomment `network_mode: host`.
 
 ### Proxmox LXC
@@ -37,13 +39,17 @@ powershell -ExecutionPolicy Bypass -File deploy\windows-install.ps1
 The Kali connection uses pure-Python SSH, so no OpenSSH client or WSL is needed.
 For a background service, wrap `python -m oniops` with NSSM.
 
-### Bare Linux + systemd
+### Bare Linux
 ```bash
-python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-cp config.example.yaml config.yaml && cp .env.example .env
-sudo cp deploy/systemd/oniops.service /etc/systemd/system/
-sudo systemctl enable --now oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
+bash scripts/install.sh        # venv, deps, config.yaml, .env, ONIOPS_SECRET_KEY; safe to re-run
+venv/bin/python -m oniops
 ```
+
+### Bare Linux + systemd
+The unit expects the install in `/opt/oniops` and runs as user `oniops`. The full, step-by-step
+version (create the user, clone to `/opt/oniops`, `scripts/install.sh`, `chown`, enable the unit,
+check `/healthz`) is in the README under "Option D".
 
 ## Where else OniOps can run
 

@@ -1,5 +1,21 @@
+# Deny everything, then allow only what the two images need. config.yaml, .env,
+# secrets/ and data/ are mounted at runtime and never enter the build context.
 **
 !.dockerignore
+
+# Dockerfile (OniOps controller image)
+!requirements.txt
+!pyproject.toml
+!oniops/
+!webui.py
+!playbooks/
+!templates/
+!static/
+
+# Dockerfile.worker (scanner worker image)
 !Dockerfile.worker
 !scripts/
 !scripts/oniops-worker-entrypoint
+
+**/__pycache__
+**/*.pyc

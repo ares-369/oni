@@ -9,19 +9,23 @@ services:
       - "127.0.0.1:8501:8501"
     environment:
       # Inside the container OniOps must listen on 0.0.0.0 for the port mapping
-      # above to reach it. That is safe ONLY because the port is published on
-      # 127.0.0.1. If you publish it on your network (e.g. "8501:8501") or use
-      # network_mode: host, DELETE the next line and set auth.mode in
-      # config.yaml - OniOps will then refuse to start without a login.
+      # above to reach it. Because of that, OniOps REFUSES to start unless
+      # config.yaml sets a login (auth.mode: local, basic, oidc or proxy). Set
+      # auth.mode: local and ONIOPS_AUTH_PASSWORD / ONIOPS_SECRET_KEY in .env first.
       ONIOPS_BIND_HOST: "0.0.0.0"
-      ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK: "1"
+      # !!! DANGER - leave this commented out. It turns off the login guard, so
+      # !!! anyone who can reach the port can drive your attack host. Only for a
+      # !!! port that stays published on 127.0.0.1 and is reachable by you alone.
+      # ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK: "1"
     volumes:
       # Your environment-specific files (kept out of the image / git):
       - ./config.yaml:/app/config.yaml:ro
       - ./.env:/app/.env:ro
+      # secrets/ is read-only, so keep kali.known_hosts in data/ (the example config
+      # already does: "./data/known_hosts"), otherwise trust-on-first-use cannot save.
       - ./secrets:/app/secrets:ro
       - ./data:/app/data
     # OniOps reaches your Kali host and LLMs over the network; if those live on
     # the Docker host's LAN, host networking is often simplest
-    # (remove ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK and enable a login first):
+    # (a login is required either way):
     # network_mode: host

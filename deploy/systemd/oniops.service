@@ -1,5 +1,13 @@
+# OniOps systemd unit. Expects an install in /opt/oniops (see "Run as a systemd
+# service" in README.md): a venv in /opt/oniops/venv, plus config.yaml and .env
+# next to it. For another location, replace every /opt/oniops below.
+#
+# .env is loaded by OniOps itself (python-dotenv reads it from WorkingDirectory),
+# so there is no EnvironmentFile= line on purpose: systemd would parse .env
+# differently. Data (SQLite ledger, activity log) is written to /opt/oniops/data.
 [Unit]
 Description=OniOps - Offensive Neural Intelligence
+Documentation=https://github.com/ares-369/oniops
 After=network-online.target
 Wants=network-online.target
 
@@ -7,10 +15,16 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/oniops
 Environment=ONIOPS_CONFIG=/opt/oniops/config.yaml
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/oniops/venv/bin/python -m oniops
 Restart=on-failure
 RestartSec=5
-# Hardening (adjust if OniOps needs broader filesystem access):
+# Dedicated unprivileged user (see README): sudo useradd --system --home-dir /opt/oniops
+# --shell /usr/sbin/nologin oniops; sudo chown -R oniops:oniops /opt/oniops
+User=oniops
+Group=oniops
+# Hardening (adjust if OniOps needs broader filesystem access; ProtectHome=true
+# makes an install under /home invisible to the service):
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true

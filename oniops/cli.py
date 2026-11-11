@@ -3,6 +3,7 @@
 Usage examples:
   python -m oniops                                  # start Waitress WebUI server (default)
   python -m oniops serve                            # start Waitress WebUI server
+  python -m oniops demo                             # one-minute practice run, no config needed
   python -m oniops version                          # print version
   python -m oniops doctor                           # run self-diagnostics (DB, scope, playbooks, runner)
   python -m oniops whitebox ./repo --fail-on HIGH --sarif results.sarif
@@ -13,7 +14,6 @@ Usage examples:
   python -m oniops findings --target 10.0.0.150
   python -m oniops diff 2
   python -m oniops playbooks
-  python -m oniops demo                             # one-minute practice run, no config needed
   python -m oniops crawl https://app.example.test   # bounded, scoped browser discovery
   python -m oniops container-scan app:latest        # scan a local attack-host image offline
   python -m oniops cloud-audit aws --account-id 123456789012  # read-only AWS account checks
@@ -41,6 +41,22 @@ _SEV_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
 SIGNING_KEY_WARNING = ("No persistent signing key (ONIOPS_SECRET_KEY / auth.secret_key): assessment "
                        "manifests and webhook alerts will be unsigned.")
+
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_NEEDS_CHECKOUT = ("The web app (webui.py, templates/, static/) lives in the source checkout, not in the "
+                   "installed package. Run OniOps from a checkout of the repository: `pip install -e .` "
+                   "inside it, or `python -m oniops` from its top-level folder.")
+
+
+def _ensure_checkout_importable() -> None:
+    """Make ``import webui`` work when ``oniops`` is launched through the console script.
+
+    ``python -m oniops`` puts the working directory on sys.path; the ``oniops`` entry
+    point does not, so ``webui.py`` at the checkout root would not be found.
+    """
+    if (_REPO_ROOT / "webui.py").exists() and str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
 
 
 def _default_db_path() -> Path:
@@ -115,19 +131,26 @@ def run_doctor(db_override: str = "", check_runner: bool = False) -> dict:
     if not signing_key:
         warnings.append(SIGNING_KEY_WARNING)
     checks["warnings"] = warnings
-    checks["ok"] = (integrity == "ok" and len(scope.cidrs) > 0 and len(pbs) > 0)
+    checks["ok"] = (integrity == "ok" and len(scope.cidrs) > 0 and len(pbs) > 0
+                    and (not check_runner or checks.get("runner_ok", False)))
     return checks
 
 
 def cli_main(argv: list[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
-    if not args_list or args_list[0] == "serve":
-        from .server import main as serve_main
-        serve_main()
-        return 0
+    if not args_list:
+        return _serve()
 
-    parser = argparse.ArgumentParser(prog="oniops", description="OniOps — Offensive Neural Intelligence CLI & CI Gate")
+    parser = argparse.ArgumentParser(
+        prog="oniops", description="OniOps — Offensive Neural Intelligence CLI & CI Gate",
+        epilog="With no subcommand, `oniops` starts the web UI (same as `oniops serve`). "
+               "New here? Run `oniops demo` first: it needs no config. "
+               "Config is read from $ONIOPS_CONFIG, ./config.yaml or <checkout>/config.yaml.")
+    parser.add_argument("-V", "--version", action="version", version=f"OniOps {__version__}")
     sub = parser.add_subparsers(dest="cmd")
+
+    sub.add_parser("serve", help="Start the web UI (the default with no subcommand); "
+                                 "address and port come from config.yaml (oniops.bind_host / oniops.bind_port)")
 
     sub.add_parser("version", help="Print OniOps version")
     sub.add_parser("playbooks", help="List loaded YAML playbooks and AI safety probe packs")
@@ -153,7 +176,7 @@ def cli_main(argv: list[str] | None = None) -> int:
 
     rt = sub.add_parser("retest", help="Run zero-token deterministic PoC retest on stored findings")
     rt.add_argument("--id", type=int, default=0, help="Specific finding ID to retest")
-    rt.add_argument("--all", action="store_true", help="Retest all stored findings")
+    rt.add_argument("--all", action="store_true", help="Retest all stored findings (needed unless --id is given)")
     rt.add_argument("--target", default="", help="Filter batch retest by target IP")
     rt.add_argument("--db", default="", help="Path to oniops.sqlite")
 
@@ -230,6 +253,40 @@ def cli_main(argv: list[str] | None = None) -> int:
                     help="Exit with code 1 when any finding meets or exceeds this severity")
 
     ns = parser.parse_args(args_list)
+
+    try:
+        return _dispatch(ns, parser)
+    except FileNotFoundError as exc:
+        if "config.yaml" not in str(exc):
+            raise
+        print(f"[OniOps] error: {exc}", file=sys.stderr)
+        print("[OniOps] Tip: `oniops demo` runs without any config; see README.md (Quick start) "
+              "to create one.", file=sys.stderr)
+        return 2
+    except sqlite3.Error as exc:
+        print(f"[OniOps] database error: {exc}", file=sys.stderr)
+        return 2
+    except (PermissionError, ScopeViolation) as exc:
+        print(f"[OniOps] error: {exc}", file=sys.stderr)
+        return 2
+
+
+def _serve() -> int:
+    _ensure_checkout_importable()
+    from .server import main as serve_main
+    try:
+        serve_main()
+    except ModuleNotFoundError as exc:
+        if exc.name != "webui":
+            raise
+        print(f"[OniOps] error: {_NEEDS_CHECKOUT}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _dispatch(ns, parser) -> int:
+    if ns.cmd == "serve":
+        return _serve()
 
     if ns.cmd == "demo":
         from .demo import run_demo
@@ -364,11 +421,19 @@ def cli_main(argv: list[str] | None = None) -> int:
     if ns.cmd == "retest":
         cfg = get_config()
         scope = Scope(cfg)
+        if not ns.id and not ns.all:
+            print("error: retest needs --id N (one finding) or --all [--target IP] (every stored finding)",
+                  file=sys.stderr)
+            return 2
         db_path = ns.db or _default_db_path()
         ledger = FindingsLedger(db_path)
         runner = KaliRunner(cfg.kali, scope, cfg)
         if ns.id:
-            res = ledger.retest(ns.id, runner, scope)
+            try:
+                res = ledger.retest(ns.id, runner, scope)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
             print(json.dumps(res, indent=2))
             return 0
         res = ledger.retest_all(runner, scope, target_ip=ns.target)
@@ -377,27 +442,60 @@ def cli_main(argv: list[str] | None = None) -> int:
 
     if ns.cmd == "backup":
         db_path = ns.db or _default_db_path()
-        print(json.dumps(backup_sqlite(db_path, ns.destination), indent=2))
+        try:
+            print(json.dumps(backup_sqlite(db_path, ns.destination), indent=2))
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         return 0
 
     if ns.cmd == "restore":
         db_path = ns.db or _default_db_path()
-        print(json.dumps(restore_sqlite(ns.source, db_path), indent=2))
+        try:
+            print(json.dumps(restore_sqlite(ns.source, db_path), indent=2))
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         return 0
 
     if ns.cmd == "assess":
-        import webui
-        rt = webui.scope.resolve(ns.target)
-        res = webui._run_assessment(
-            rt.ip, rt.label, ns.profile,
-            auth_header=ns.auth_header, low_priv_header=ns.low_priv_header,
-        )
+        _ensure_checkout_importable()
+        try:
+            import webui
+        except ModuleNotFoundError as exc:
+            if exc.name != "webui":
+                raise
+            print(f"[OniOps] error: {_NEEDS_CHECKOUT}", file=sys.stderr)
+            return 2
+        known = sorted(webui.ALLOWED_PROFILES | set(webui.PLAYBOOKS))
+        if ns.profile not in known:
+            print(f"error: unknown profile '{ns.profile}'. Choose one of: {', '.join(known)}", file=sys.stderr)
+            return 2
+        try:
+            rt = webui.scope.resolve(ns.target)
+            res = webui._run_assessment(
+                rt.ip, rt.label, ns.profile,
+                auth_header=ns.auth_header, low_priv_header=ns.low_priv_header,
+            )
+        except (ScopeViolation, ValueError, PermissionError, FileNotFoundError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps(res, indent=2))
         return 0
 
     if ns.cmd == "diff":
         db_path = ns.db or _default_db_path()
-        print(json.dumps(diff_assessments(db_path, ns.assessment_id), indent=2))
+        try:
+            print(json.dumps(diff_assessments(db_path, ns.assessment_id), indent=2))
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc):
+                raise
+            print(f"error: no assessments recorded in {db_path} yet (run an assessment first, "
+                  "or pass --db PATH to the ledger that has it).", file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         return 0
 
     if ns.cmd in ("selftest", "benchmark"):
@@ -410,13 +508,13 @@ def cli_main(argv: list[str] | None = None) -> int:
         if ns.cmd == "benchmark" and ns.suite:
             from .bench_harness import MARKDOWN_HEADER, SuiteError, markdown_row, run_suite
             if not ns.target:
-                print("error: --suite needs --target <ip> (the assessed lab target)")
+                print("error: --suite needs --target <ip> (the assessed lab target)", file=sys.stderr)
                 return 2
             try:
                 res = run_suite(ns.suite, ns.db or _default_db_path(), ns.target, since=ns.since,
                                 triage_path=ns.triage, profile=ns.profile_label, model=ns.model_label)
             except (SuiteError, OSError) as exc:
-                print(f"error: {exc}")
+                print(f"error: {exc}", file=sys.stderr)
                 return 2
             serialized = json.dumps(res, indent=2)
             if ns.output:

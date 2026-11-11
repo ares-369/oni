@@ -30,6 +30,26 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 ---
 
+## Quick start
+
+Needs Python 3.10+ and a network connection to a package index (PyPI) for the install.
+
+```bash
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
+bash scripts/install.sh            # venv + dependencies + config.yaml + .env (safe to re-run)
+venv/bin/python -m oniops demo        # one-minute practice run, no config needed
+venv/bin/python -m oniops             # web UI on http://127.0.0.1:8501
+```
+
+`scripts/install.sh` never overwrites an existing `config.yaml` or `.env`, and only
+generates a random `ONIOPS_SECRET_KEY` when `.env` has none. For a real assessment you
+still edit `config.yaml` (scope and attack host), see
+[Step-by-step installation](#step-by-step-installation). To run it as a service, see
+[Run as a systemd service](#option-d--bare-linux--systemd) or use Docker
+([Option A](#option-a--docker-recommended-works-on-linuxwindowsmacos)).
+
+---
+
 ## Features
 
 - **Any LLM** — Ollama (local), Anthropic Claude, Google Gemini, OpenAI, Azure
@@ -119,6 +139,14 @@ flowchart LR
     AITarget -->|"OWASP / ATLAS / NIST / SAIF"| GRC["Executive & GRC Reports\n(.md / .html / .pdf / .sarif)"]
 ```
 
+### Naming and layout
+
+The framework is **OniOps**. The PyPI/distribution name in `pyproject.toml` is `oniops`, the
+command and the Python package are `oniops` (`oniops demo`, `python -m oniops`, `import oniops`), and the
+repository is `ares-369/oniops`. They all refer to the same project. The web app (`webui.py`,
+`templates/`, `static/`) and `playbooks/` sit at the top of the checkout next to the `oniops/`
+package, which is why OniOps is run from a checkout.
+
 ### How it works
 
 OniOps has two parts you provide:
@@ -137,12 +165,13 @@ key) powers the AI reports and the autonomous agent.
 ## Try it in one minute
 
 You can see what OniOps does before setting up an attack host, SSH keys, an LLM
-or a scope. With Python 3.10+ and `curl` installed:
+or a scope. With Python 3.10+ and `curl` installed. If you already ran the Quick start above, just
+run the last command. Otherwise:
 
 ```bash
 git clone https://github.com/ares-369/oniops.git oniops && cd oniops
-pip install -r requirements.txt
-python -m oniops demo
+python3 -m venv venv && venv/bin/pip install -r requirements.txt
+venv/bin/python -m oniops demo
 ```
 
 `oniops demo` starts a small, deliberately flawed practice app inside the same
@@ -191,23 +220,37 @@ cp .env.example .env
 #    scope.allowed_cidrs  (the network(s) you may test, e.g. ["192.168.1.0/24"])
 #    kali.host / kali.user / kali.ssh_key  (your attack host)
 #    llm.providers.ollama.base_url  (or configure a cloud provider)
+#    auth.mode: "local"   (REQUIRED in Docker: the container listens on 0.0.0.0, and
+#                          OniOps refuses to start without a login)
 nano config.yaml
 
 # 4. Put the attack host's SSH private key where config.yaml points
 mkdir -p secrets && cp /path/to/kali_key secrets/kali_id_rsa && chmod 600 secrets/kali_id_rsa
 
-# 5. (Optional) add cloud API keys to .env (ANTHROPIC_API_KEY, GEMINI_API_KEY, ...)
+# 5. In .env set ONIOPS_AUTH_PASSWORD and ONIOPS_SECRET_KEY (for example
+#    python3 -c "import secrets;print(secrets.token_hex(32))"), and optionally cloud
+#    API keys (ANTHROPIC_API_KEY, GEMINI_API_KEY, ...)
+nano .env
 
 # 6. Start it
 docker compose up -d
 
-# 7. Open the UI (published on this machine only)
+# 7. Open the UI (published on this machine only) and log in
 #    http://localhost:8501
 ```
 
-To reach it from other machines, change the port mapping in `docker-compose.yml`,
-remove the `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK` line there, and enable a login
-(`auth.mode`) in `config.yaml`. OniOps refuses to start exposed without a login.
+Because the container must listen on `0.0.0.0` for the port mapping to work, OniOps will
+not start in Docker until a login is configured. `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK` is
+left commented out in `docker-compose.yml` on purpose; do not enable it unless the port is
+reachable only by you.
+
+The image is built from the `Dockerfile` by `docker compose up -d` (the first start takes a
+few minutes). Keep `kali.known_hosts` pointing into `data/` (the example config does) because
+`secrets/` is mounted read-only. `docker compose ps` shows the container health, which uses
+`/healthz`.
+
+To reach it from other machines, change the port mapping in `docker-compose.yml`
+(the login from step 3 is then already in place).
 
 If your attack host / LLM are on the same LAN as the Docker host, uncomment
 `network_mode: host` in `docker-compose.yml`.
@@ -243,24 +286,61 @@ powershell -ExecutionPolicy Bypass -File deploy\windows-install.ps1
 
 ### Option D — Bare Linux + systemd
 
+The unit file [`deploy/systemd/oniops.service`](deploy/systemd/oniops.service) expects the install
+in `/opt/oniops`. It runs `/opt/oniops/venv/bin/python -m oniops` from that directory with
+`ONIOPS_CONFIG=/opt/oniops/config.yaml`; OniOps reads `/opt/oniops/.env` itself, so keep your
+keys there. Data (the SQLite ledger and activity log) lives in `/opt/oniops/data`.
+
 ```bash
-git clone https://github.com/ares-369/oniops.git oniops && cd oniops
-python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
-cp config.example.yaml config.yaml && cp .env.example .env
-nano config.yaml                       # set scope + attack host + LLM
-mkdir -p secrets data                   # add your SSH key to secrets/
-sudo cp deploy/systemd/oniops.service /etc/systemd/system/
+sudo useradd --system --home-dir /opt/oniops --shell /usr/sbin/nologin oniops
+sudo git clone https://github.com/ares-369/oniops.git /opt/oniops
+cd /opt/oniops
+sudo bash scripts/install.sh              # venv, dependencies, config.yaml, .env, secret key
+sudo nano config.yaml                      # set scope + attack host + LLM
+sudo cp /path/to/kali_key secrets/kali_id_rsa && sudo chmod 600 secrets/kali_id_rsa
+sudo chown -R oniops:oniops /opt/oniops             # the service runs as user "oniops" and writes data/
+sudo -u oniops venv/bin/python -m oniops doctor  # check the setup before starting
+sudo cp deploy/systemd/oniops.service /etc/systemd/system/oniops.service
+sudo systemctl daemon-reload
 sudo systemctl enable --now oniops
-# UI on http://127.0.0.1:8501 (see below to open it to your network)
+systemctl status oniops                       # logs: journalctl -u oniops -f
+curl -s http://127.0.0.1:8501/healthz      # {"ok":true}
 ```
+
+To install somewhere other than `/opt/oniops`, edit the three `/opt/oniops` paths in the unit
+before copying it (for example
+`sed 's#/opt/oniops#/srv/oniops#g' deploy/systemd/oniops.service | sudo tee /etc/systemd/system/oniops.service`).
+Avoid `/home`: the unit sets `ProtectHome=true`. The unit runs as the unprivileged user
+`oniops`; that user must own `data/` (it writes the ledger and `known_hosts` there) and be able
+to read `config.yaml`, `.env` and `secrets/` (keep them `chmod 600`, owned by `oniops`).
 
 By default OniOps listens on `127.0.0.1` only. To open it from other machines, set
 `oniops.bind_host: "0.0.0.0"` **and** a login (`auth.mode`: basic, local, oidc or
 proxy) in `config.yaml`. OniOps refuses to start on a network address without a login,
 and refuses proxy mode without `auth.proxy_trusted_ips`.
 
-More targets (pipx, WSL2, Raspberry Pi, cloud VM, Kubernetes, Unraid,
+Run OniOps from a checkout of this repository (`python -m oniops`, or `oniops` after
+`pip install -e .` inside it). A plain `pip install .` installs the CLI, which is enough for
+`oniops demo`, `doctor`, `whitebox` and the like, but not the web UI: `webui.py`, `templates/` and
+`static/` are not part of the installed package, and `oniops serve` will say so.
+
+More targets (WSL2, Raspberry Pi, cloud VM, Kubernetes, Unraid,
 air-gapped) are covered in [`docs/INSTALL.md`](docs/INSTALL.md).
+
+### Configuration files and environment variables
+
+| What | Where | Notes |
+| --- | --- | --- |
+| `config.yaml` | `$ONIOPS_CONFIG`, else `./config.yaml`, else next to the `oniops/` package | Layout, scope, attack host, LLM roles. |
+| `.env` | `./.env`, else next to the `oniops/` package | Secrets and API keys. Keep comments on their own lines. |
+| `data/` | `data/` in the checkout (`/app/data` in Docker) | SQLite ledger `oniops.sqlite` and `activity.jsonl`. Back it up with `oniops backup`. |
+| `ONIOPS_DB_PATH` | environment | Ledger path for CLI commands only (`findings`, `retest`, `diff`, `backup`, `restore`, `doctor`). The web UI always uses `data/oniops.sqlite`. |
+| `ONIOPS_BIND_HOST` | environment | Overrides `oniops.bind_host` (Docker sets `0.0.0.0`). |
+| `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK` | environment | Set to `1` only if something else restricts access. |
+| `ONIOPS_SECRET_KEY` | `.env` | Signs sessions, manifests and webhooks. `scripts/install.sh` generates one. |
+| `ONIOPS_PLAYBOOKS_DIR` | environment | Use a different playbooks folder. |
+
+Health check for monitoring: `GET /healthz` returns HTTP 200 without a login.
 
 ---
 
@@ -339,24 +419,6 @@ Traefik/NPM). See the Authentication section of `config.example.yaml`.
 
 OniOps can be driven headlessly from a terminal, cron job, or CI/CD pipeline:
 
-To build the optional non-root scanner worker on the attack host:
-
-```bash
-docker build -f Dockerfile.worker -t oniops-worker:stable .
-docker network create oniops-worker-net
-```
-
-Set `kali.execution_mode: docker` and `kali.worker_image: oniops-worker:stable` in
-`config.yaml`. CI builds the image and smoke-tests Nmap and Nuclei as non-root
-with a read-only filesystem and networking disabled during the smoke test. Each
-worker starts in a pre-created user-defined bridge network namespace, applies an egress firewall
-from the effective scope CIDRs (including exclusions), then drops its temporary
-firewall capability and runs the scanner as `worker_user`. Docker host networking
-is rejected because it would bypass that boundary. The configured CIDRs are
-therefore the worker's network allowlist; DNS uses Docker's embedded resolver.
-The configured Docker network must be user-defined (the default `oniops-worker-net`)
-so the worker's DNS exception points only at Docker's embedded resolver.
-
 ```bash
 # Practice run against the bundled loopback target (no config needed)
 python -m oniops demo
@@ -395,6 +457,27 @@ python -m oniops diff 2
 python -m oniops backup ./backups/oniops-snapshot.sqlite
 python -m oniops restore ./backups/oniops-snapshot.sqlite
 ```
+
+Run `python -m oniops --help` or `python -m oniops <command> --help` for every option. With no
+command, `python -m oniops` starts the web UI.
+
+To build the optional non-root scanner worker on the attack host:
+
+```bash
+docker build -f Dockerfile.worker -t oniops-worker:stable .
+docker network create oniops-worker-net
+```
+
+Set `kali.execution_mode: docker` and `kali.worker_image: oniops-worker:stable` in
+`config.yaml`. CI builds the image and smoke-tests Nmap and Nuclei as non-root
+with a read-only filesystem and networking disabled during the smoke test. Each
+worker starts in a pre-created user-defined bridge network namespace, applies an egress firewall
+from the effective scope CIDRs (including exclusions), then drops its temporary
+firewall capability and runs the scanner as `worker_user`. Docker host networking
+is rejected because it would bypass that boundary. The configured CIDRs are
+therefore the worker's network allowlist; DNS uses Docker's embedded resolver.
+The configured Docker network must be user-defined (the default `oniops-worker-net`)
+so the worker's DNS exception points only at Docker's embedded resolver.
 
 ---
 

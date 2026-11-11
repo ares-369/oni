@@ -5,9 +5,9 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Minimal build deps for paramiko/cryptography wheels.
+# curl is needed by the local runner (oniops demo, grey-box checks).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt pyproject.toml ./
@@ -17,10 +17,15 @@ RUN pip install -r requirements.txt \
 
 COPY oniops/ ./oniops/
 COPY webui.py ./
+COPY playbooks/ ./playbooks/
 COPY templates/ ./templates/
 COPY static/ ./static/
 
 EXPOSE 8501
+
+# /healthz answers 200 without a login. Assumes the default oniops.bind_port (8501).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8501/healthz', timeout=4)" || exit 1
 
 # config.yaml, .env, secrets/ and data/ are mounted at runtime (see compose).
 CMD ["python", "-m", "oniops"]

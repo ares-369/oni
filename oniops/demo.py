@@ -224,7 +224,7 @@ def run_demo(*, db_path: str | Path | None = None, out: TextIO | None = None,
     say()
     say("Next step for a real assessment:")
     say("  1. cp config.example.yaml config.yaml and set scope.allowed_cidrs to networks you may test")
-    say("  2. point attack_hosts at a tooled Linux box (Kali or similar) reachable over SSH")
+    say("  2. point kali.host (or attack_hosts) at a tooled Linux box (Kali or similar) reachable over SSH")
     say("  3. optionally configure an LLM, then run `python -m oniops` and accept the terms in the UI")
     say("This is beta software: the demo shows how the pipeline works, not how well it finds")
     say("issues on real systems.")
