@@ -1,0 +1,16 @@
+# Public benchmark lab: OWASP Juice Shop and VAmPI.
+# Binds to 127.0.0.1 by default. To scan from a separate attack host, change the
+# bind address to a lab-only interface and add it to scope.allowed_cidrs.
+# crAPI ships its own multi-service compose file; see docs/BENCHMARKS.md.
+services:
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    ports: ["127.0.0.1:3000:3000"]
+    restart: "no"
+  vampi:
+    image: erev0s/vampi:latest
+    environment:
+      vulnerable: "1"
+      tokentimetolive: "3600"
+    ports: ["127.0.0.1:5000:5000"]
+    restart: "no"

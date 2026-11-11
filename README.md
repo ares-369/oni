@@ -364,6 +364,9 @@ python -m oniops demo
 # Ground-truth run through the real assessment pipeline; reports fixture precision and recall
 python -m oniops benchmark --demo-evaluation --json
 
+# Score an assessment of a public vulnerable app (crAPI, Juice Shop, VAmPI) against labeled bugs
+python -m oniops benchmark --suite vampi --target 10.10.0.5 --markdown   # see docs/BENCHMARKS.md
+
 # Bounded browser discovery of a target inside the configured scope
 python -m oniops crawl https://app.example.test --max-pages 50 --output crawl.json
 
@@ -430,6 +433,8 @@ real-world testing — please treat findings as leads to verify, and
 [open an issue](https://github.com/ares-369/oniops/issues) when something is wrong.
 The demo benchmark measures only its bundled, labeled loopback fixture; it is useful for regression
 tracking and does not estimate production detection accuracy or compare OniOps with other scanners.
+A [public-app benchmark harness](docs/BENCHMARKS.md) scores runs against labeled bugs in crAPI,
+OWASP Juice Shop and VAmPI. No public results are published yet.
 
 ## Acknowledgements
 

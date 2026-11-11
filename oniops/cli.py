@@ -183,6 +183,19 @@ def cli_main(argv: list[str] | None = None) -> int:
             st.add_argument("--demo-evaluation", action="store_true",
                             help="Run the real assessment pipeline against the bundled ground-truth target")
             st.add_argument("--output", default="", help="Write benchmark JSON to this path")
+            st.add_argument("--suite", default="",
+                            help="Score an existing assessment against a labeled public-app suite "
+                                 "(crapi, juice_shop, vampi, or a YAML path)")
+            st.add_argument("--list-suites", action="store_true", help="List bundled benchmark suites")
+            st.add_argument("--target", default="", help="Target IP whose ledger findings are scored")
+            st.add_argument("--db", default="", help="Path to oniops.sqlite")
+            st.add_argument("--since", default="",
+                            help="Only score findings last seen at/after this ISO timestamp")
+            st.add_argument("--triage", default="",
+                            help="YAML mapping unlabeled finding ids to true/false (real bug or not)")
+            st.add_argument("--profile-label", default="", help="Profile name recorded in the result")
+            st.add_argument("--model-label", default="", help="Model name recorded in the result")
+            st.add_argument("--markdown", action="store_true", help="Print a README-ready table row")
 
     dm = sub.add_parser("demo", help="Practice run against a bundled loopback target (no config, attack host or LLM needed)")
     dm.add_argument("--db", default="",
@@ -388,6 +401,36 @@ def cli_main(argv: list[str] | None = None) -> int:
         return 0
 
     if ns.cmd in ("selftest", "benchmark"):
+        if ns.cmd == "benchmark" and ns.list_suites:
+            from .bench_harness import list_suites
+            for s in list_suites():
+                print(f"{s['id']:<12} v{s['version']}  {s['name']}  "
+                      f"({s['positives']} labeled bugs, {s['negatives']} negative checks)")
+            return 0
+        if ns.cmd == "benchmark" and ns.suite:
+            from .bench_harness import MARKDOWN_HEADER, SuiteError, markdown_row, run_suite
+            if not ns.target:
+                print("error: --suite needs --target <ip> (the assessed lab target)")
+                return 2
+            try:
+                res = run_suite(ns.suite, ns.db or _default_db_path(), ns.target, since=ns.since,
+                                triage_path=ns.triage, profile=ns.profile_label, model=ns.model_label)
+            except (SuiteError, OSError) as exc:
+                print(f"error: {exc}")
+                return 2
+            serialized = json.dumps(res, indent=2)
+            if ns.output:
+                Path(ns.output).expanduser().write_text(serialized + "\n", encoding="utf-8")
+            if ns.markdown:
+                print(MARKDOWN_HEADER)
+                print(markdown_row(res))
+            elif ns.json or not ns.output:
+                print(serialized)
+            m = res["metrics"]
+            if m["needs_triage"]:
+                print(f"note: {m['needs_triage']} verified finding(s) match no label; "
+                      "triage them with --triage to get a final precision", file=sys.stderr)
+            return 0
         if ns.cmd == "benchmark" and ns.demo_evaluation:
             from .evaluation import run_demo_evaluation
             res = run_demo_evaluation()

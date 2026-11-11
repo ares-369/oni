@@ -7,6 +7,14 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+### Added
+- Public-app benchmark harness: `oniops benchmark --suite <crapi|juice_shop|vampi> --target <ip>`
+  scores the findings of an ordinary assessment against labeled known bugs. Only verified findings
+  count, matching is one-to-one, and verified findings outside the labels are listed for triage, so
+  precision is reported as a range until they are classified with `--triage`. Results record the
+  OniOps, suite and target versions plus profile and model. `--markdown` prints a README table
+  row. See `docs/BENCHMARKS.md` and `benchmarks/docker-compose.yml`.
+
 ## [0.4.7-beta] — 2026-11-12
 
 ### Added

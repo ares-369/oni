@@ -1,0 +1,65 @@
+# Labels for OWASP Juice Shop. Only server-observable bugs are labeled; challenges
+# that need a human in a browser (most DOM XSS, CAPTCHA, social challenges) are out of scope.
+id: juice_shop
+name: OWASP Juice Shop
+version: "1"
+target_version: "latest (docker bkimminich/juice-shop)"
+source: https://pwning.owasp-juice.shop/companion-guide/latest/part2/
+positives:
+  - id: sqli_login
+    title: SQL injection in login (admin login bypass)
+    owasp: A03:2021
+    match:
+      any: 'rest/user/login'
+      title: 'SQL|injection'
+  - id: sqli_product_search
+    title: SQL injection in product search
+    owasp: A03:2021
+    match:
+      any: 'rest/products/search'
+      title: 'SQL|injection'
+  - id: exposed_ftp_directory
+    title: Exposed /ftp directory listing with confidential files
+    owasp: A01:2021
+    match:
+      any: '/ftp'
+      title: 'directory|listing|exposed|sensitive|disclos'
+  - id: exposed_metrics
+    title: Unauthenticated Prometheus /metrics
+    owasp: A05:2021
+    match:
+      any: '/metrics'
+      title: 'unauth|exposed|metrics|disclos'
+  - id: exposed_api_docs
+    title: Exposed Swagger/OpenAPI docs (/api-docs)
+    owasp: A05:2021
+    match:
+      any: 'api-docs|swagger'
+      title: 'exposed|swagger|openapi|docs'
+  - id: bola_basket
+    title: BOLA - view another user's basket
+    owasp: A01:2021
+    match:
+      any: 'rest/basket'
+      title: 'BOLA|object level|IDOR|cross-user'
+  - id: nosqli_reviews
+    title: NoSQL injection / manipulation in product reviews
+    owasp: A03:2021
+    match:
+      any: 'reviews'
+      title: 'NoSQL|injection'
+  - id: verbose_errors
+    title: Verbose error/stack trace disclosure
+    owasp: A05:2021
+    match:
+      any: 'rest/|api/'
+      title: 'verbose|stack trace|error disclos|SQL error'
+  - id: reflected_xss_track_order
+    title: Reflected XSS in track order id
+    owasp: A03:2021
+    match:
+      any: 'track-order|track-result'
+      title: 'XSS|cross-site scripting'
+informational:
+  - '^Exposed HTTP service on port'
+  - '^Open port'

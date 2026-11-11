@@ -1,0 +1,85 @@
+# Labels for OWASP crAPI (Completely Ridiculous API).
+# Matching: every pattern given must match a VERIFIED finding (regex, case-insensitive).
+# "any" searches title + evidence. Keep patterns tied to the endpoint so a generic
+# finding cannot satisfy a specific label.
+id: crapi
+name: OWASP crAPI
+version: "1"
+target_version: "develop (docker compose)"
+source: https://github.com/OWASP/crAPI/blob/develop/docs/challenges.md
+notes: >
+  Covers the API-level challenges OniOps is designed to test. Challenges that need
+  a mail inbox, video upload, or chaining several steps by hand are not labeled yet.
+
+positives:
+  - id: bola_vehicle_location
+    title: BOLA - another user's vehicle location
+    owasp: API1:2023
+    match:
+      any: 'vehicle/[^\s]*location'
+      title: 'BOLA|object level|IDOR|cross-user'
+  - id: bola_mechanic_report
+    title: BOLA - another user's mechanic report
+    owasp: API1:2023
+    match:
+      any: 'mechanic_report'
+      title: 'BOLA|object level|IDOR|cross-user'
+  - id: excessive_data_community_posts
+    title: Excessive data exposure - other users' emails/vehicle IDs in community posts
+    owasp: API3:2023
+    match:
+      any: 'community/api/v2/community/posts'
+      title: 'exposure|BOPLA|sensitive|PII|leak'
+  - id: bfla_admin_video_delete
+    title: BFLA - delete another user's video via the admin endpoint
+    owasp: API5:2023
+    match:
+      any: 'admin/videos'
+      title: 'BFLA|function level|privilege'
+  - id: mass_assignment_order_return
+    title: Mass assignment - change order status/quantity
+    owasp: API3:2023
+    match:
+      any: 'shop/orders'
+      title: 'mass assignment|BOPLA'
+  - id: mass_assignment_video_conversion
+    title: Mass assignment - conversion_params on user video
+    owasp: API3:2023
+    match:
+      any: 'user/videos'
+      title: 'mass assignment|BOPLA'
+  - id: ssrf_contact_mechanic
+    title: SSRF via mechanic_api in contact_mechanic
+    owasp: API7:2023
+    match:
+      any: 'contact_mechanic'
+      title: 'SSRF|server-side request'
+  - id: nosqli_validate_coupon
+    title: NoSQL injection in validate-coupon
+    owasp: API8:2023
+    match:
+      any: 'validate-coupon'
+      title: 'NoSQL|injection'
+  - id: sqli_apply_coupon
+    title: SQL injection in apply_coupon
+    owasp: API8:2023
+    match:
+      any: 'apply_coupon'
+      title: 'SQL|injection'
+  - id: otp_bruteforce_v2
+    title: Missing rate limit on OTP check (v2 endpoint)
+    owasp: API4:2023
+    match:
+      any: 'check-otp'
+      title: 'rate limit|brute|OTP'
+
+negatives:
+  - id: login_not_sqli
+    title: Login endpoint is not SQL-injectable
+    match:
+      any: 'auth/login'
+      title: 'SQL'
+
+informational:
+  - '^Exposed HTTP service on port'
+  - '^Open port'

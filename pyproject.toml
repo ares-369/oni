@@ -48,6 +48,9 @@ Issues = "https://github.com/ares-369/oniops/issues"
 [tool.setuptools.packages.find]
 include = ["oniops*"]
 
+[tool.setuptools.package-data]
+oniops = ["bench_suites/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -1,0 +1,52 @@
+# Labels for VAmPI (vulnerable REST API, run with vulnerable=1).
+id: vampi
+name: VAmPI
+version: "1"
+target_version: "latest (docker erev0s/vampi, vulnerable=1)"
+source: https://github.com/erev0s/VAmPI#description
+positives:
+  - id: sqli_user_lookup
+    title: SQL injection in /users/v1/{username}
+    owasp: API8:2019
+    match:
+      any: 'users/v1/'
+      title: 'SQL|injection'
+  - id: bola_books
+    title: BOLA - read another user's book secret
+    owasp: API1:2019
+    match:
+      any: 'books/v1/'
+      title: 'BOLA|object level|IDOR|cross-user'
+  - id: excessive_data_debug
+    title: Excessive data exposure in /users/v1/_debug
+    owasp: API3:2019
+    match:
+      any: '_debug'
+      title: 'exposure|unauth|sensitive|disclos|leak'
+  - id: mass_assignment_register_admin
+    title: Mass assignment - register as admin
+    owasp: API6:2019
+    match:
+      any: 'users/v1/register'
+      title: 'mass assignment|BOPLA'
+  - id: bfla_password_change
+    title: Change another user's password
+    owasp: API5:2019
+    match:
+      any: '/password'
+      title: 'BFLA|BOLA|privilege|function level'
+  - id: user_enumeration
+    title: User and password enumeration in login
+    owasp: API2:2019
+    match:
+      any: 'users/v1/login'
+      title: 'enumerat'
+  - id: no_rate_limit_login
+    title: Lack of rate limiting on login
+    owasp: API4:2019
+    match:
+      any: 'users/v1/login'
+      title: 'rate limit|brute'
+informational:
+  - '^Exposed HTTP service on port'
+  - '^Open port'
