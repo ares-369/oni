@@ -24,6 +24,7 @@ pytestmark = pytest.mark.skipif(shutil.which("curl") is None, reason="curl binar
 
 ADMIN_CFG = "BOLA/BFLA privilege boundary bypass on /api/v1/admin/config"
 HORIZONTAL = "Cross-user horizontal BOLA on /api/v1/users/{id}"
+ORDER_HORIZONTAL = "Cross-user horizontal BOLA on /api/v1/orders/{order_ref}"
 OWNER_READ = "BOLA/BFLA privilege boundary bypass on /api/v1/users/{id}"
 BOPLA = "BOPLA / Mass Assignment risk on PATCH /api/v1/users/{id}"
 
@@ -82,6 +83,7 @@ def _retest(live, needle):
     ("Exposed HTTP service on port", "VERIFIED", "MEDIUM", "HIGH"),               # W1
     ("Unauthenticated API access on /api/v1/debug/env", "VERIFIED", "HIGH", "HIGH"),  # W2
     (HORIZONTAL, "VERIFIED", "HIGH", "HIGH"),                                     # W3
+    (ORDER_HORIZONTAL, "VERIFIED", "HIGH", "HIGH"),                               # W9 (mined string id)
     (ADMIN_CFG, "VERIFIED", "HIGH", "HIGH"),                                      # W4
     (BOPLA, "UNCONFIRMED", "MEDIUM", "LOW"),                                      # W5
     ("Exposed GraphQL schema introspection on /graphql", "VERIFIED", "MEDIUM", "HIGH"),  # W6
@@ -103,9 +105,33 @@ def test_owner_read_is_reported_known_false_positive(assessed):
 
 
 def test_exact_finding_count(assessed):
-    # 8 planted weaknesses -> 9 findings (W3's route also yields the known
-    # owner-read false positive above). Guards against new false positives.
-    assert len(assessed["findings"]) == 9
+    # 9 planted weaknesses -> 10 findings. W1-W8 give 8 (W3's /api/v1/users/{id}
+    # route also yields the known owner-read false positive, so W2-W8 openapi/
+    # input weaknesses plus that extra = 9), and W9 (the mined-string-id
+    # cross-user BOLA on /api/v1/orders/{order_ref}) adds the 10th. The secure
+    # wallet twin (S4) and every other twin stay unreported. Guards against new
+    # false positives.
+    assert len(assessed["findings"]) == 10
+
+
+def test_mined_string_id_cross_user_bola_detected(assessed):
+    """W9: ONIOPS resolves the real order reference (mined from /api/v1/orders,
+    never the literal '1') and proves user A reading user B's order."""
+    f = _find(assessed["findings"], ORDER_HORIZONTAL)
+    assert f["status"] == "VERIFIED" and f["severity"] == "HIGH"
+    # The peer-owned reference (ord-b1), not '1', is baked into the replay, and
+    # the replay runs AS the low-privilege identity (user A).
+    assert "ord-b1" in f["repro_display"]
+    assert USER_A_TOKEN not in f["repro_display"]  # credential masked on display
+    raw = json.loads(assessed["ledger"]._get_raw(f["id"])["repro_cmd"])
+    assert f"Authorization: Bearer {USER_A_TOKEN}" in raw and "ord-b1" in " ".join(raw)
+
+
+def test_owner_only_object_twin_not_reported(assessed):
+    """S4: the correctly-owned wallet route yields no cross-user finding -
+    user A cannot read user B's wallet, so there is no false BOLA."""
+    assert not [f for f in assessed["findings"]
+                if "/api/v1/wallets" in f["title"] or "/api/v1/wallets" in f["evidence"]]
 
 
 def test_graphql_finding_has_own_category(assessed):
@@ -178,6 +204,7 @@ def test_agent_indicator_finding_retest(tmp_path):
     "Unauthenticated API access on /api/v1/debug/env",
     ADMIN_CFG,
     HORIZONTAL,
+    ORDER_HORIZONTAL,   # mined-id cross-user BOLA: fixed target 404s the peer id
     "Exposed GraphQL schema introspection",
     "Verbose SQL error",
     "Reflected XSS",
