@@ -75,7 +75,8 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 - **Safe & reproducible by design** — explicit CIDR/host scope allow-list with
   multi-record DNS rebinding and embedded command IP verification,
   non-destructive command guard, SHA-256 cryptographic evidence provenance,
-  HMAC-SHA256 signed execution manifests, SQLite WAL concurrent persistence,
+  execution manifests with a SHA-256 hash (HMAC-SHA256 signed when
+  `ONIOPS_SECRET_KEY` is set), SQLite WAL concurrent persistence,
   OWASP-compliant 600,000-iteration PBKDF2 password hashing, 3-tier RBAC
   (`viewer` / `operator` / `admin`), login brute-force rate limiting, CSRF
   same-origin protection, pause/stop on running jobs, and pluggable auth (`none`
@@ -245,6 +246,15 @@ drive the attack host, turn on auth whenever it is reachable beyond localhost:
 - `oidc` — **SSO with any OpenID Connect provider** (Authentik, Keycloak, Google,
   Azure AD, Okta…); `pip install 'oniops[oidc]'`
 - `proxy` — trust a reverse-proxy forward-auth header
+
+`ONIOPS_SECRET_KEY` (or `auth.secret_key` in `config.yaml`) is also the key that
+signs assessment manifests; webhook alerts are signed with `ONIOPS_SECRET_KEY`
+from the environment only. Set it to a random value of 32+
+bytes, for example `python -c "import secrets;print(secrets.token_hex(32))"`,
+and keep it the same across restarts. If it is unset, manifests are still
+produced with their SHA-256 hash but are marked unsigned, and webhooks carry no
+signature header. OniOps does not sign with a per-process random key, because
+such a signature could not be checked after a restart.
 
 For production, front OniOps with a **TLS-terminating reverse proxy** (nginx/Caddy/
 Traefik/NPM). See the Authentication section of `config.example.yaml`.
