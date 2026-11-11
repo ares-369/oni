@@ -87,7 +87,7 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
   and S3 inventory is account-level.
 - **AI / LLM Red Team & GRC** — probe any LLM endpoint across **14 single-turn
   probes** (incl. RAG context poisoning, MCP tool-description poisoning, and
-  cross-tenant leakage), **6 composable prompt converters** (`leetspeak`,
+  cross-tenant leakage), **5 composable prompt converters** (`leetspeak`,
   `rot13`, `unicode_homoglyph`, `markdown_wrap`, `json_smuggle`), and a **3-turn
   Crescendo escalation loop**, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI
   RMF, and Google SAIF / ISO 42001.
@@ -407,6 +407,23 @@ and LLM red-teaming in one place.
 | A mature autonomous pentest agent | [PentAGI](https://github.com/vxcontrol/pentagi), [Strix](https://github.com/usestrix/strix) | A lightweight single-process deploy (Python + SQLite + SSH to your own Kali box) |
 | Dedicated LLM vulnerability scanning | [garak](https://github.com/NVIDIA/garak), [promptfoo](https://github.com/promptfoo/promptfoo), [PyRIT](https://github.com/Azure/PyRIT) | LLM probes side by side with network/web testing, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI RMF |
 | Enterprise autonomous pentesting | Commercial platforms such as NodeZero or XBOW | A free, open-source, homelab-to-small-team option you fully control |
+| Deterministic web/network scanning | [Nuclei](https://github.com/projectdiscovery/nuclei), [OWASP ZAP](https://www.zaproxy.org) | Runs those tools as part of a scoped assessment, then checks each finding with a proof rule and replays it with zero LLM tokens |
+| Cloud security posture | [Prowler](https://github.com/prowler-cloud/prowler), [ScoutSuite](https://github.com/nccgroup/ScoutSuite) | A small set of read-only AWS identity and exposure checks next to network findings (not a replacement for a full CSPM) |
+
+### At a glance
+
+How each tool is focused, by our reading of its public docs. All of these
+projects move fast, so please check their docs and
+[open an issue](https://github.com/ares-369/oniops/issues) if this is out of date.
+
+| | OniOps | PentAGI / Strix | garak / PyRIT / promptfoo | Nuclei / ZAP |
+| --- | --- | --- | --- | --- |
+| Main focus | Network + web + LLM testing in one ledger | Autonomous AI pentesting | LLM red-teaming | Deterministic scanning |
+| Deploy footprint | One Python process + SQLite, SSH to your own Kali host | Docker-based stacks | Python/Node library or CLI | Single binary / app |
+| Scanner isolation | Optional disposable non-root Docker worker with an egress firewall locked to scope | Sandboxed containers | n/a | Runs on the host |
+| How findings are confirmed | Per-category proof rule; LLM claims alone are never marked verified | Agent-driven validation/PoCs | Detectors / graders | Template matchers |
+| Retest | Deterministic replay as the proving identity, zero LLM tokens | Re-run the agent | Re-run the suite | Re-run the scan |
+| Maturity | Beta, solo-maintained | Larger communities | Mature | Very mature |
 
 OniOps is **beta** software. Many features are unit-tested but have had limited
 real-world testing — please treat findings as leads to verify, and
