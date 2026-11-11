@@ -175,6 +175,7 @@ def _report_finding(runner, ip, args):
                 status=status,
                 evidence=probe_out[:800] or f"Indicator '{indicator}' not matched",
                 repro_cmd=stored_repro,
+                indicator=indicator,   # retest re-checks this on the replay output
             )
         except Exception:
             pass

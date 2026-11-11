@@ -130,14 +130,18 @@ python -m oniops demo
 process, bound to `127.0.0.1` on a random port, with fake data only. It then
 probes that app with OniOps's real grey-box API checks and validators (scope
 locked to `127.0.0.1/32`, every request is a local `curl`), prints what it found
-with a proof snippet and fix-first score, replays one finding with the
-zero-token retest, switches the app to a "fixed" state and retests it again.
+with a proof snippet and fix-first score, replays every finding with the
+zero-token retest (credentialed BOLA/BFLA findings are replayed as the
+low-privilege or peer identity that proved them, shown masked), switches the
+app to a "fixed" state and retests them again.
 Everything it prints is labelled `[DEMO]`. Findings go into a temporary ledger
 that is deleted afterwards (`--db PATH` keeps it); your real `oniops.sqlite` is
 never opened. No LLM is called in demo mode.
 
-Honest caveats: the practice app was written by the author to exercise these
-checks, so the demo shows how the pipeline works, not how well OniOps finds
+Honest caveats: the demo also shows one known false positive (the
+low-privilege check does not yet understand object ownership, so a user reading
+their own record is flagged). The practice app was written by the author to
+exercise these checks, so the demo shows how the pipeline works, not how well OniOps finds
 issues on real systems. It covers the deterministic parts only (service check,
 OpenAPI BOLA/BFLA/BOPLA, GraphQL introspection, SQL-error and reflected-XSS
 proofs); nmap, nuclei, ffuf and the other attack-host tools, CVE intel and the
