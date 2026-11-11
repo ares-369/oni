@@ -98,6 +98,7 @@ def test_worker_firewall_is_fail_closed_and_drops_privileges():
     script = Path(__file__).parents[1].joinpath("scripts/oniops-worker-entrypoint").read_text()
     assert "iptables -w -P OUTPUT DROP" in script
     assert "ip6tables -w -P OUTPUT DROP" in script
+    assert "/proc/net/if_inet6" in script
     assert "127.0.0.11/32" in script
     assert "--bounding-set=-all" in script
     assert "exec setpriv" in script

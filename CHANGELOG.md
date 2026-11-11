@@ -22,7 +22,8 @@ behaviour may still change between releases.
   dropped Linux capabilities, resource limits and command timeouts; sample image in `Dockerfile.worker`.
 - Docker workers now apply a fail-closed egress firewall using effective scope CIDRs, drop bootstrap
   capabilities before scanner execution, and reject built-in Docker network modes. They require a
-  user-defined bridge so DNS stays on Docker's embedded resolver.
+  user-defined bridge so DNS stays on Docker's embedded resolver; IPv4-only kernels are handled
+  explicitly while IPv6 scopes fail closed if IPv6 is unavailable.
 - CI builds the worker image, exercises the firewall against allowed and denied container targets,
   and runs Nmap/Nuclei as a non-root user with a read-only filesystem; `.dockerignore` prevents
   unrelated workspace files from entering its build context.

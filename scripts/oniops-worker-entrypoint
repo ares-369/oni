@@ -23,22 +23,34 @@ fi
 # worker unable to connect, and NET_ADMIN is removed before the scanner runs.
 iptables -w -P OUTPUT DROP
 iptables -w -F OUTPUT
-ip6tables -w -P OUTPUT DROP
-ip6tables -w -F OUTPUT
 iptables -w -A OUTPUT -o lo -j ACCEPT
-ip6tables -w -A OUTPUT -o lo -j ACCEPT
 iptables -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-ip6tables -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # Docker's embedded resolver is loopback-addressed inside the network namespace.
 iptables -w -A OUTPUT -d 127.0.0.11/32 -p udp --dport 53 -j ACCEPT
 iptables -w -A OUTPUT -d 127.0.0.11/32 -p tcp --dport 53 -j ACCEPT
+
+# Some container hosts ship an IPv4-only kernel. If IPv6 is available, its
+# firewall is mandatory; if the requested scope includes IPv6 but the kernel
+# lacks it, fail explicitly instead of pretending that target can be reached.
+ipv6_enabled=0
+if [ -s /proc/net/if_inet6 ]; then
+    ipv6_enabled=1
+    ip6tables -w -P OUTPUT DROP
+    ip6tables -w -F OUTPUT
+    ip6tables -w -A OUTPUT -o lo -j ACCEPT
+    ip6tables -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+elif case ",$ONIOPS_SCOPE_CIDRS," in *:* ) true ;; *) false ;; esac; then
+    echo "IPv6 is in scope but unavailable in the worker kernel" >&2
+    exit 126
+fi
 
 old_ifs=$IFS
 IFS=,
 for cidr in $ONIOPS_SCOPE_CIDRS; do
     [ -n "$cidr" ] || { echo "empty scope CIDR" >&2; exit 126; }
     case "$cidr" in
-        *:*) ip6tables -w -A OUTPUT -d "$cidr" -j ACCEPT ;;
+        *:*) [ "$ipv6_enabled" -eq 1 ] || { echo "IPv6 scope is unavailable" >&2; exit 126; }
+             ip6tables -w -A OUTPUT -d "$cidr" -j ACCEPT ;;
         *) iptables -w -A OUTPUT -d "$cidr" -j ACCEPT ;;
     esac
 done
