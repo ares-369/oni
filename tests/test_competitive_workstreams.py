@@ -101,6 +101,8 @@ def test_worker_firewall_is_fail_closed_and_drops_privileges():
     assert "iptables -w -P OUTPUT DROP" in script
     assert "ip6tables -w -P OUTPUT DROP" in script
     assert "/proc/net/if_inet6" in script
+    assert "require_command setpriv 123" in script
+    assert 'require_command "$1" 124' in script
     assert "127.0.0.11/32" in script
     assert "--bounding-set=-all" in script
     assert "exec setpriv" in script

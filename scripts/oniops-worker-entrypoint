@@ -18,6 +18,17 @@ if [ "$#" -eq 0 ]; then
     echo "worker command is missing" >&2
     exit 126
 fi
+require_command() {
+    name=$1
+    code=$2
+    if ! command -v "$name" >/dev/null 2>&1; then
+        echo "required worker command is missing: $name" >&2
+        exit "$code"
+    fi
+}
+require_command iptables 121
+require_command setpriv 123
+require_command "$1" 124
 
 # Install DROP before removing any inherited rules. A failure leaves the
 # worker unable to connect, and NET_ADMIN is removed before the scanner runs.
@@ -35,6 +46,7 @@ iptables -w -A OUTPUT -d 127.0.0.11/32 -p tcp --dport 53 -j ACCEPT
 ipv6_enabled=0
 if [ -s /proc/net/if_inet6 ]; then
     ipv6_enabled=1
+    require_command ip6tables 122
     ip6tables -w -P OUTPUT DROP
     ip6tables -w -F OUTPUT
     ip6tables -w -A OUTPUT -o lo -j ACCEPT
