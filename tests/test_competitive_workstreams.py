@@ -27,6 +27,8 @@ def test_docker_worker_argv_is_bounded_and_non_root():
     assert "--read-only" in cmd
     assert "--cap-drop=ALL" in cmd
     assert "--cap-add=NET_ADMIN" in cmd
+    assert "--cap-add=SETUID" in cmd
+    assert "--cap-add=SETGID" in cmd
     assert "--security-opt=no-new-privileges" in cmd
     assert cmd[cmd.index("--env") + 1] == "HOME=/tmp"
     assert "ONIOPS_SCOPE_CIDRS=10.0.0.0/24" in cmd

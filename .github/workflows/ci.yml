@@ -85,12 +85,18 @@ jobs:
 
       - name: Verify worker bootstrap and Nmap startup
         run: |
-          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
+          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --cap-add=SETUID --cap-add=SETGID --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
           docker run --rm --network none $worker_args --env ONIOPS_SCOPE_CIDRS=127.0.0.1/32 oniops-worker:ci nmap --version
+
+      - name: Verify scanner identity and capability drop
+        run: |
+          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --cap-add=SETUID --cap-add=SETGID --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
+          docker run --rm --network none $worker_args --env ONIOPS_SCOPE_CIDRS=127.0.0.1/32 oniops-worker:ci \
+            python3 -c 'import os; status=open("/proc/self/status").read(); caps=int(next(x.split()[1] for x in status.splitlines() if x.startswith("CapEff:")),16); assert os.getuid()==65534; assert caps==0, hex(caps)'
 
       - name: Verify Nuclei startup in the worker
         run: |
-          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
+          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --cap-add=SETUID --cap-add=SETGID --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
           docker run --rm --network none $worker_args --env ONIOPS_SCOPE_CIDRS=127.0.0.1/32 oniops-worker:ci nuclei -version
 
       - name: Set up isolated egress test targets
@@ -107,13 +113,13 @@ jobs:
 
       - name: Allow an in-scope container target
         run: |
-          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
+          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --cap-add=SETUID --cap-add=SETGID --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
           docker run --rm --network oniops-worker-net $worker_args --env ONIOPS_SCOPE_CIDRS="$ONIOPS_ALLOWED_IP/32" \
             oniops-worker:ci curl --fail --max-time 3 "http://$ONIOPS_ALLOWED_IP:8000/"
 
       - name: Block an out-of-scope container target
         run: |
-          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
+          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --cap-add=SETUID --cap-add=SETGID --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
           if docker run --rm --network oniops-worker-net $worker_args --env ONIOPS_SCOPE_CIDRS="$ONIOPS_ALLOWED_IP/32" \
             oniops-worker:ci curl --fail --connect-timeout 2 --max-time 3 "http://$ONIOPS_DENIED_IP:8000/"; then
             echo "worker reached an out-of-scope container"
