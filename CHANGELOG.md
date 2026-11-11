@@ -7,7 +7,25 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
-## [0.4.5-beta] — 2026-11-11
+## [0.4.6-beta] — 2026-11-11
+
+### Fixed
+- **Horizontal (cross-user) BOLA on parameterised object routes was silently
+  missed.** The grey-box OpenAPI probe filled every path parameter with the
+  literal `1`, so a route like `/users/v1/{username}` became `/users/v1/1` — a
+  non-existent object that returns 404 — and the cross-user check (which needs a
+  real object) never ran. The probe now resolves a real identifier for a
+  parameterised object route by mining its sibling collection endpoint
+  (`/users/v1`), per identity, and falls back to the old placeholder only when
+  nothing can be mined. For the horizontal cross-user check it selects an object
+  the peer identity can see but the low-privilege identity does not own, then has
+  the low-privilege identity request it; a 200 with the peer's object content is
+  reported VERIFIED/HIGH, the replay stored as that identity (credential masked
+  on display). When ownership cannot be established — for example an API that
+  returns the full collection to every caller — the result is reported
+  UNCONFIRMED for manual review rather than as a false positive. The zero-token
+  retest treats such a finding as FIXED only when the peer-owned object is now
+  denied (HTTP 403 or 404).
 
 ### Security
 - **Forgeable signatures removed.** Earlier releases fell back to a built-in
