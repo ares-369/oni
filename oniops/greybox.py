@@ -87,13 +87,60 @@ _PRIVILEGE_PROPS = {"role", "roles", "is_admin", "isadmin", "admin", "tenant_id"
 
 
 def extract_bopla_mass_assignment_risks(spec: dict) -> list[dict]:
-    """Inspect OpenAPI POST/PUT/PATCH schemas for writable privilege properties
-    (OWASP API3:2023 BOPLA / Mass Assignment)."""
+    """Inspect request schemas for writable privilege properties.
+
+    Supports OpenAPI 3 media types, OpenAPI 2 body parameters, nested local
+    ``$ref`` values, and schema composition. External references are ignored;
+    fetching them would make a passive spec inspection perform network I/O.
+    """
     if not isinstance(spec, dict):
         return []
     paths = spec.get("paths") or {}
-    components = ((spec.get("components") or {}).get("schemas") or {}) if isinstance(spec.get("components"), dict) else {}
     risks: list[dict] = []
+
+    def resolve_ref(ref: str) -> dict:
+        if not ref.startswith("#/"):
+            return {}
+        value: object = spec
+        for part in ref[2:].split("/"):
+            part = part.replace("~1", "/").replace("~0", "~")
+            if not isinstance(value, dict) or part not in value:
+                return {}
+            value = value[part]
+        return value if isinstance(value, dict) else {}
+
+    def privileged_fields(schema: dict, ref_stack: frozenset[str] = frozenset()) -> list[str]:
+        exposed: list[str] = []
+        ref = schema.get("$ref")
+        if isinstance(ref, str) and ref not in ref_stack:
+            target = resolve_ref(ref)
+            if target:
+                exposed.extend(privileged_fields(target, ref_stack | {ref}))
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            for name, child in properties.items():
+                if not isinstance(name, str):
+                    continue
+                if name.lower() in _PRIVILEGE_PROPS and not (
+                    isinstance(child, dict) and child.get("readOnly") is True
+                ):
+                    exposed.append(name)
+                if isinstance(child, dict):
+                    exposed.extend(privileged_fields(child, ref_stack))
+        for keyword in ("allOf", "oneOf", "anyOf"):
+            branches = schema.get(keyword)
+            if isinstance(branches, list):
+                for branch in branches:
+                    if isinstance(branch, dict):
+                        exposed.extend(privileged_fields(branch, ref_stack))
+        for keyword in ("items", "additionalProperties"):
+            child = schema.get(keyword)
+            if isinstance(child, dict):
+                exposed.extend(privileged_fields(child, ref_stack))
+        # Preserve source order while collapsing the same field found through
+        # repeated/allOf references.
+        return list(dict.fromkeys(exposed))
+
     for route, item in paths.items():
         if not isinstance(item, dict):
             continue
@@ -101,17 +148,25 @@ def extract_bopla_mass_assignment_risks(spec: dict) -> list[dict]:
             op = item.get(method)
             if not isinstance(op, dict):
                 continue
-            rb = op.get("requestBody") or {}
-            content = (rb.get("content") or {}).get("application/json") or {}
-            schema = content.get("schema") or {}
-            if "$ref" in schema:
-                ref_name = str(schema["$ref"]).rsplit("/", 1)[-1]
-                schema = components.get(ref_name) or {}
-            props = schema.get("properties") or {}
-            exposed = [
-                k for k, v in props.items()
-                if k.lower() in _PRIVILEGE_PROPS and not (isinstance(v, dict) and v.get("readOnly"))
-            ]
+            exposed: list[str] = []
+            request_body = op.get("requestBody")
+            content = request_body.get("content") if isinstance(request_body, dict) else None
+            if isinstance(content, dict):
+                for media in content.values():
+                    if isinstance(media, dict) and isinstance(media.get("schema"), dict):
+                        exposed.extend(privileged_fields(media["schema"]))
+            parameters = op.get("parameters")
+            if isinstance(parameters, list):
+                for parameter in parameters:
+                    if not isinstance(parameter, dict):
+                        continue
+                    if parameter.get("in") == "body" and isinstance(parameter.get("schema"), dict):
+                        exposed.extend(privileged_fields(parameter["schema"]))
+                    elif parameter.get("in") == "formData":
+                        name = parameter.get("name")
+                        if isinstance(name, str) and name.lower() in _PRIVILEGE_PROPS:
+                            exposed.append(name)
+            exposed = list(dict.fromkeys(exposed))
             if exposed:
                 risks.append({
                     "path": route,
@@ -547,6 +602,12 @@ def probe_openapi(
             auth_out = fetch(clean_hdr, u)
             auth_code = _status_code(auth_out)
 
+        cross_user = None
+        if clean_low and clean_peer and "{" in ep["path"] and low_code == 200:
+            cross_user = _cross_user_bola_finding(
+                base, ep, u, low_out, port, fetch, clean_low=clean_low, clean_peer=clean_peer,
+            )
+
         sensitive_route = bool(re.search(r"admin|user|config|secret|token|internal|debug|export|key|role|tenant|billing", ep["path"], re.I))
         if un_code == 200 and (ep["auth_declared"] or sensitive_route):
             valid_body, body_reason = validate_bola_response_content(unauth_out, auth_out)
@@ -565,7 +626,7 @@ def probe_openapi(
                 "repro_cmd": ["curl", "-kisS", "--max-time", "5", u],
             })
             lines.append(f"- [VULNERABLE/{sev}] {ep['path']}: HTTP 200 unauthenticated ({body_reason})")
-        elif clean_low and low_code == 200 and un_code in (401, 403) and sensitive_route:
+        elif clean_low and low_code == 200 and un_code in (401, 403) and sensitive_route and cross_user is None:
             # The STATUS DIFFERENTIAL itself (anon 401/403 -> low-priv 200 on a
             # sensitive route) is the authz-boundary signal, so it is reported
             # regardless of body. Body content only upgrades confidence: with
@@ -574,13 +635,19 @@ def probe_openapi(
             valid_body, body_reason = validate_bola_response_content(low_out, auth_out)
             status = "VERIFIED" if valid_body else "UNCONFIRMED"
             confidence = "data confirmed" if valid_body else f"data exposure unconfirmed — {body_reason}"
-            title = f"BOLA/BFLA privilege boundary bypass on {ep['path']} (low-priv HTTP 200)"
+            owner_unknown = "{" in ep["path"]
+            title = (f"Unconfirmed object access on {ep['path']} (ownership not established)"
+                     if owner_unknown else
+                     f"BOLA/BFLA privilege boundary bypass on {ep['path']} (low-priv HTTP 200)")
+            if owner_unknown:
+                status = "UNCONFIRMED"
+                confidence = f"object ownership could not be established — {body_reason}"
             ev = (f"GET {u} blocked unauthenticated ({un_code}) but returned HTTP 200 to "
                   f"low-privilege role on sensitive route ({confidence})")
             findings.append({
                 "port": port,
                 "title": title,
-                "severity": "HIGH" if valid_body else "MEDIUM",
+                "severity": "MEDIUM" if owner_unknown else "HIGH" if valid_body else "MEDIUM",
                 "status": status,
                 "evidence": ev,
                 # Replay AS the low-privilege identity; an anonymous replay would
@@ -596,13 +663,11 @@ def probe_openapi(
 
         # Horizontal Cross-User BOLA check (low-priv A vs. peer B on a
         # parameterised object route, using a real mined object id).
-        if clean_low and clean_peer and "{" in ep["path"] and low_code == 200:
-            cu = _cross_user_bola_finding(base, ep, u, low_out, port, fetch,
-                                          clean_low=clean_low, clean_peer=clean_peer)
-            if cu is not None:
-                findings.append(cu)
-                tag = "VULNERABLE/HIGH" if cu["status"] == "VERIFIED" else "PROBABLE/MEDIUM"
-                lines.append(f"- [{tag} HORIZONTAL-BOLA] {ep['path']}: {cu['status']} ({cu['title'].rsplit('(', 1)[-1].rstrip(')')})")
+        if cross_user is not None:
+            findings.append(cross_user)
+            tag = "VULNERABLE/HIGH" if cross_user["status"] == "VERIFIED" else "PROBABLE/MEDIUM"
+            lines.append(f"- [{tag} HORIZONTAL-BOLA] {ep['path']}: {cross_user['status']} "
+                         f"({cross_user['title'].rsplit('(', 1)[-1].rstrip(')')})")
 
     for bopla in extract_bopla_mass_assignment_risks(spec_data):
         fields_str = ", ".join(bopla["writable_privilege_fields"])

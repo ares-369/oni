@@ -105,6 +105,7 @@ def _now_iso() -> str:
 
 
 _VULN_PROOF_PATTERNS: dict[str, re.Pattern[str]] = {
+    "debug_header": re.compile(r"(?im)^x-(?:debug|admin|internal)[a-z0-9-]*\s*:\s*(?:enabled|true|on|1)\s*$"),
     "lfi": re.compile(r"(?:root:x:0:0:|\[boot loader\]|\[extensions\]|/bin/(?:bash|sh|zsh))", re.I),
     "sqli": re.compile(
         r"(?:SQL syntax.*MySQL|Warning.*mysql_|PostgreSQL.*ERROR|ORA-\d{5}|"
@@ -115,6 +116,24 @@ _VULN_PROOF_PATTERNS: dict[str, re.Pattern[str]] = {
     "rce": re.compile(r"(?:uid=\d+\([a-z0-9_.\-]+\)\s+gid=\d+|Linux\s+\S+\s+\d+\.\d+)", re.I),
     "xss": re.compile(r"(?:<script[^>]*>.*?alert\(|onerror\s*=|onload\s*=)", re.I),
     "graphql": re.compile(r'(?:"__schema"\s*:|"queryType"\s*:)', re.I),
+    "sensitive_disclosure": re.compile(
+        r"(?:\b(?:database_url|db_password|api[_-]?key|access[_-]?token)\b['\"]?\s*[:=]\s*"
+        r"['\"]?(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s'\"<>]+|"
+        r"\bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{16,}\b|\bsk-[A-Za-z0-9_-]{12,}\b)", re.I,
+    ),
+}
+
+_AGENT_TITLE_PATTERNS: dict[str, re.Pattern[str]] = {
+    "debug_header": re.compile(r"debug|internal|admin header", re.I),
+    "lfi": re.compile(r"\b(lfi|local file inclusion|path traversal)\b", re.I),
+    "sqli": re.compile(r"\b(sqli|sql injection|sql error)\b", re.I),
+    "ssrf": re.compile(r"\b(ssrf|server.side request forgery)\b", re.I),
+    "rce": re.compile(r"\b(rce|remote code execution|command injection)\b", re.I),
+    "xss": re.compile(r"\b(xss|cross.site scripting)\b", re.I),
+    "graphql": re.compile(r"\bgraphql\b", re.I),
+    "sensitive_disclosure": re.compile(r"\b(secret|credential|token|sensitive|database.?url|key disclosure)\b", re.I),
+    "service_exposure": re.compile(r"\b(service|server|port|exposure|exposed)\b", re.I),
+    "exposure": re.compile(r"\b(service|server|port|exposure|exposed)\b", re.I),
 }
 
 
@@ -359,8 +378,8 @@ def validate_evidence(evidence: str, expected_indicator: str = "", category: str
     if cat in _VULN_PROOF_PATTERNS:
         if _VULN_PROOF_PATTERNS[cat].search(text):
             return "VERIFIED"
-        if expected_indicator and expected_indicator.strip().lower() in text.lower():
-            return "VERIFIED"
+        # A caller-supplied string cannot replace category-specific exploit
+        # evidence. Otherwise an LLM could label any reflected text as SQLi/RCE.
         return "UNCONFIRMED"
     if expected_indicator:
         ind = expected_indicator.strip()
@@ -387,6 +406,21 @@ def validate_evidence(evidence: str, expected_indicator: str = "", category: str
     # No indicator, no vuln-proof pattern, no HTTP status line -> we cannot
     # independently confirm anything. Never VERIFIED on content length alone.
     return "UNCONFIRMED"
+
+
+def validate_agent_finding(evidence: str, *, category: str, title: str) -> str:
+    """Strict validation for model-proposed findings.
+
+    The model may suggest a category and title, but its expected string alone
+    never proves a vulnerability. Only categories with a deterministic proof
+    signature (or self-proving service exposure) can become VERIFIED, and the
+    title must describe the same supported claim class.
+    """
+    cat = (category or "").lower().strip()
+    title_pattern = _AGENT_TITLE_PATTERNS.get(cat)
+    if not title_pattern or not title_pattern.search(title or ""):
+        return "UNCONFIRMED"
+    return validate_evidence(evidence, category=cat)
 
 
 def evaluate_finding_confidence(category: str, status: str, evidence: str) -> str:
@@ -486,19 +520,21 @@ def _judge_retest(f: dict, cat: str, title: str, out: str, *, authed: bool,
             return "FIXED", ""
         return "UNCONFIRMED", ""
 
-    # Everything else (sqli, xss, lfi, ssrf, rce, graphql, agent categories,
-    # cve, exploitdb, ...): re-run the category's proof check on the output.
-    indicator = str(f.get("proof_indicator") or "")
-    if cat not in _VULN_PROOF_PATTERNS and not indicator:
-        return "UNCONFIRMED", (f"no stored proof signature for category '{cat or 'unknown'}'; retest "
+    # Replay only deterministic, category-bound signatures. A model-supplied
+    # indicator by itself is not a proof and cannot establish that a fix worked.
+    if cat not in _AGENT_TITLE_PATTERNS:
+        return "UNCONFIRMED", (f"no trusted proof rule for category '{cat or 'unknown'}'; retest "
                                "cannot confirm or rule it out. ")
-    if validate_evidence(out, expected_indicator=indicator, category=cat) == "VERIFIED":
+    proof_status = validate_agent_finding(out, category=cat, title=title)
+    if proof_status == "VERIFIED":
         return "VERIFIED", "proof signature reproduced. "
     if code is None:
         return "UNCONFIRMED", "no HTTP response to check the proof signature against. "
     if code == 401 and authed:
         return "UNCONFIRMED", _CRED_401_NOTE
-    return "FIXED", f"HTTP {code} response no longer contains the proof signature. "
+    if 200 <= code < 500:
+        return "FIXED", f"HTTP {code} response no longer contains the proof signature. "
+    return "UNCONFIRMED", f"HTTP {code} did not reproduce the proof; fix status is unclear. "
 
 
 class FindingsLedger:

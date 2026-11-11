@@ -22,6 +22,16 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     assert client.post("/api/terms/accept",
                        json={"confirm": True, "version": webui.terms.TERMS_VERSION}).status_code == 200
 
+    # Intrusive community packs are visible but cannot execute without the
+    # explicit Rules-of-Engagement opt-in, on either synchronous or queued APIs.
+    monkeypatch.setitem(webui.PLAYBOOKS, "intrusive_fixture", {
+        "id": "intrusive_fixture", "name": "Intrusive fixture", "safety": "intrusive", "steps": [],
+    })
+    for route in ("/api/assess", "/api/assess/start"):
+        blocked = client.post(route, json={"profile": "intrusive_fixture", "target": "10.0.0.150"})
+        assert blocked.status_code == 403
+        assert "Intrusive playbooks are disabled" in blocked.get_json()["error"]
+
     # 1. Health & Index UI
     r_health = client.get("/healthz")
     assert r_health.status_code == 200

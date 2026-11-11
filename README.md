@@ -41,6 +41,11 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
   body & JSON schema validation to filter out HTML SPA shells and empty `{}` stubs), extract
   hidden API routes from SPA JavaScript bundles, and scan source code for routes
   and dangerous sinks.
+- **Bounded browser discovery** — optional Playwright crawling renders JavaScript pages, inventories
+  links, form methods and field metadata, and records API-call status/content type without response
+  bodies or field values. It flags observed sensitive GET forms and cleartext credential forms,
+  blocks mutating requests, and sends explicit auth headers only to the starting origin. Install with
+  `pip install 'oniops[browser]'` and `playwright install chromium`.
 - **41 Kali Arsenal Tools + 12 Bounded ReAct Agent Tools** — manages and executes a
   full catalog of **41 offensive tools** across YAML Playbooks, scan profiles, and the
   Arsenal UI, while restricting the autonomous LLM ReAct loop to a curated subset of
@@ -55,7 +60,9 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
   stores structured findings with automatic secret redaction, 1-click single or
   batch deterministic SSH replay (`POST /api/findings/retest-all`: `VERIFIED` /
   `AUTH-GATED` / `FIXED` / `regressed`) with zero LLM tokens, and assessment
-  posture drift diffing (`GET /api/assessments/<id>/diff`).
+  posture drift diffing (`GET /api/assessments/<id>/diff`). Agent-proposed findings
+  require a supported category proof and matching claim title; a model-supplied
+  indicator by itself is never enough to mark a vulnerability verified.
 - **Correlated Attack Paths & Blast Radius** — correlates open services,
   verified findings, and high-value internal ports into multi-stage attack paths
   with a `0–100` Blast Radius score.
@@ -65,7 +72,19 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
   EPSS** 30-day exploitation probability enrichment.
 - **Declarative YAML Playbooks & AI Probe Packs** — drop `.yaml` network/WAPT
   playbooks into `playbooks/` and custom AI safety probe packs into
-  `playbooks/ai_probes/` without touching Python code.
+  `playbooks/ai_probes/` without touching Python code. See [pack format](docs/SECURITY_PACKS.md).
+- **Versioned security packs** — pack metadata includes semantic versions and content hashes; nested
+  directories load and duplicate IDs are rejected.
+- **Disposable scanner workers and local image scanning** — optionally run each scanner command in a
+  non-root Docker worker with a read-only filesystem, dropped capabilities and resource limits.
+  `oniops container-scan` scans an image already present on the attack host with Trivy offline; it never
+  pulls an image.
+- **Cloud identity posture checks** — optional AWS SDK checks use the local boto3 credential chain,
+  verify the expected account ID with STS before inventory, and run read-only root/IAM MFA and key,
+  password-policy (selectable AWS CIS-style or NIST 800-63B-4 profile), public security-group,
+  public EKS API endpoint, S3 policy/ACL and encryption checks. Install with
+  `pip install 'oniops[cloud]'`. EC2 and EKS inventory is limited to the selected `--region`; IAM
+  and S3 inventory is account-level.
 - **AI / LLM Red Team & GRC** — probe any LLM endpoint across **14 single-turn
   probes** (incl. RAG context poisoning, MCP tool-description poisoning, and
   cross-tenant leakage), **6 composable prompt converters** (`leetspeak`,
@@ -138,11 +157,9 @@ Everything it prints is labelled `[DEMO]`. Findings go into a temporary ledger
 that is deleted afterwards (`--db PATH` keeps it); your real `oniops.sqlite` is
 never opened. No LLM is called in demo mode.
 
-Honest caveats: the demo also shows one known false positive (the
-low-privilege check does not yet understand object ownership, so a user reading
-their own record is flagged). The practice app was written by the author to
-exercise these checks, so the demo shows how the pipeline works, not how well OniOps finds
-issues on real systems. It covers the deterministic parts only (service check,
+The practice app was written by the author to exercise these checks, so the demo
+shows how the pipeline works, not how well OniOps finds issues on arbitrary real
+systems. It covers the deterministic parts only (service check,
 OpenAPI BOLA/BFLA/BOPLA, GraphQL introspection, SQL-error and reflected-XSS
 proofs); nmap, nuclei, ffuf and the other attack-host tools, CVE intel and the
 AI agent are not part of it. The demo does not record terms acceptance; for any
@@ -322,9 +339,39 @@ Traefik/NPM). See the Authentication section of `config.example.yaml`.
 
 OniOps can be driven headlessly from a terminal, cron job, or CI/CD pipeline:
 
+To build the optional non-root scanner worker on the attack host:
+
+```bash
+docker build -f Dockerfile.worker -t oniops-worker:stable .
+docker network create oniops-worker-net
+```
+
+Set `kali.execution_mode: docker` and `kali.worker_image: oniops-worker:stable` in
+`config.yaml`. CI builds the image and smoke-tests Nmap and Nuclei as non-root
+with a read-only filesystem and networking disabled during the smoke test. Each
+worker starts in a pre-created user-defined bridge network namespace, applies an egress firewall
+from the effective scope CIDRs (including exclusions), then drops its temporary
+firewall capability and runs the scanner as `worker_user`. Docker host networking
+is rejected because it would bypass that boundary. The configured CIDRs are
+therefore the worker's network allowlist; DNS uses Docker's embedded resolver.
+The configured Docker network must be user-defined (the default `oniops-worker-net`)
+so the worker's DNS exception points only at Docker's embedded resolver.
+
 ```bash
 # Practice run against the bundled loopback target (no config needed)
 python -m oniops demo
+
+# Ground-truth run through the real assessment pipeline; reports fixture precision and recall
+python -m oniops benchmark --demo-evaluation --json
+
+# Bounded browser discovery of a target inside the configured scope
+python -m oniops crawl https://app.example.test --max-pages 50 --output crawl.json
+
+# Scan a local image already loaded in the attack host's Docker daemon
+python -m oniops container-scan my-app:latest --fail-on HIGH --output image-scan.json
+
+# Read-only identity and exposure checks for one explicitly selected AWS account
+python -m oniops cloud-audit aws --account-id 123456789012 --profile audit --region us-east-1
 
 # Self-diagnostics (config, scope, SQLite integrity, playbooks, attack runner)
 python -m oniops doctor --check-runner
@@ -364,6 +411,8 @@ and LLM red-teaming in one place.
 OniOps is **beta** software. Many features are unit-tested but have had limited
 real-world testing — please treat findings as leads to verify, and
 [open an issue](https://github.com/ares-369/oniops/issues) when something is wrong.
+The demo benchmark measures only its bundled, labeled loopback fixture; it is useful for regression
+tracking and does not estimate production detection accuracy or compare OniOps with other scanners.
 
 ## Acknowledgements
 

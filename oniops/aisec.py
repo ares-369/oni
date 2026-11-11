@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import codecs
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -262,12 +263,23 @@ def load_yaml_probes(probe_dir: str | Path | None = None) -> list[dict]:
     if not d.exists() or not d.is_dir():
         return []
     custom: list[dict] = []
-    for fp in sorted(d.glob("*.y*ml")):
+    seen: set[str] = set()
+    for fp in sorted((*d.rglob("*.yaml"), *d.rglob("*.yml"))):
         try:
             doc = yaml.safe_load(fp.read_text(encoding="utf-8")) or {}
         except Exception:
             continue
         items = doc.get("probes") if isinstance(doc, dict) else (doc if isinstance(doc, list) else [])
+        pack_meta = doc.get("pack") or {} if isinstance(doc, dict) else {}
+        if not isinstance(pack_meta, dict):
+            continue
+        pack_id = str(pack_meta.get("id") or fp.stem).strip()
+        pack_version = str(pack_meta.get("version") or "1.0.0").strip()
+        if not re.fullmatch(r"[a-z0-9_][a-z0-9_.-]{1,63}", pack_id):
+            continue
+        if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", pack_version):
+            continue
+        file_hash = hashlib.sha256(fp.read_bytes()).hexdigest()
         for item in items or []:
             if not isinstance(item, dict):
                 continue
@@ -278,6 +290,13 @@ def load_yaml_probes(probe_dir: str | Path | None = None) -> list[dict]:
             regex_pat = str(item.get("regex") or "").strip()
             if not (pid and prompt and (canary or regex_pat)):
                 continue
+            if not re.fullmatch(r"[a-z0-9_][a-z0-9_.-]{1,63}", pid) or len(prompt) > 12000:
+                continue
+            if pid in seen:
+                continue
+            if regex_pat and len(regex_pat) > 300:
+                continue
+            seen.add(pid)
             if canary:
                 detect_fn = _has(canary)
             else:
@@ -292,7 +311,10 @@ def load_yaml_probes(probe_dir: str | Path | None = None) -> list[dict]:
                 "saif": str(item.get("saif") or "Input validation & sanitization"),
                 "detect": detect_fn,
                 "severity": str(item.get("severity") or "MEDIUM").upper(),
-                "source": fp.name,
+                "source": str(fp.relative_to(d)),
+                "pack_id": pack_id,
+                "pack_version": pack_version,
+                "pack_sha256": file_hash,
             })
     return custom
 

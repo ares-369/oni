@@ -109,6 +109,41 @@ class TestGuardCommand:
         # Exploitation tooling must NOT be blocked by the destructive guard.
         scope.guard_command(cmd)
 
+    @pytest.mark.parametrize("cmd", [
+        "nmap 10.0.0.0/23",       # starts in scope but extends into 10.0.1.0/24
+        "nmap 10.0.0.0-10",       # includes explicitly excluded 10.0.0.1
+        "nmap 10.0.0.250-10.0.1.5",
+    ])
+    def test_nmap_ranges_must_be_fully_in_scope(self, scope, cmd):
+        with pytest.raises(ScopeViolation):
+            scope.guard_command(cmd)
+
+    def test_nmap_range_inside_allowed_network(self, scope):
+        scope.guard_command("nmap 10.0.0.20-30")
+
+    def test_nmap_cidr_covering_exclusion_is_blocked(self, scope):
+        with pytest.raises(ScopeViolation):
+            scope.guard_command("nmap 10.0.0.0/24")
+
+    def test_nmap_partial_octet_ranges_are_rejected_until_expanded(self, scope):
+        with pytest.raises(ScopeViolation, match="Unsupported nmap target expression"):
+            scope.guard_command("nmap 10.0.0-1.5")
+
+    def test_nmap_ipv6_is_scope_checked(self, scope):
+        with pytest.raises(ScopeViolation, match="outside the authorized"):
+            scope.guard_command("nmap 2001:db8::1")
+
+    def test_url_hostnames_are_resolved_and_scope_checked(self, scope, monkeypatch):
+        monkeypatch.setattr("socket.gethostbyname", lambda _host: "8.8.8.8")
+        with pytest.raises(ScopeViolation, match="outside the authorized"):
+            scope.guard_command("curl https://outside.example/path")
+
+        monkeypatch.setattr("socket.gethostbyname", lambda _host: "10.0.0.8")
+        monkeypatch.setattr("socket.getaddrinfo", lambda _host, _port: [
+            (2, 1, 6, "", ("10.0.0.8", 0)),
+        ])
+        scope.guard_command("curl https://inside.example/path")
+
     def test_guard_off_when_non_destructive_disabled(self, cfg_path):
         # With non_destructive=false the guard is a no-op even for rm -rf.
         text = cfg_path.read_text().replace("non_destructive: true", "non_destructive: false")

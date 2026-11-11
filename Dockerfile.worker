@@ -1,0 +1,19 @@
+# Disposable, non-root scanner worker image for `kali.execution_mode: docker`.
+# Add only the scanner packages your enabled playbooks require.
+FROM kalilinux/kali-rolling
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates curl ffuf iptables nikto nmap nuclei python3 python3-yaml \
+       util-linux whatweb \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/oniops-worker-entrypoint /usr/local/sbin/oniops-worker-entrypoint
+RUN chmod 0755 /usr/local/sbin/oniops-worker-entrypoint
+
+# The entrypoint needs root only to install the per-container egress firewall;
+# it drops all capabilities and switches to ONIOPS_WORKER_UID_GID before exec.
+USER 0:0
+WORKDIR /tmp
+ENTRYPOINT ["/usr/local/sbin/oniops-worker-entrypoint"]

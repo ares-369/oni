@@ -1,4 +1,12 @@
 id: tls_crypto_audit
+version: 1.0.0
+pack:
+  id: oniops_core_network
+  author: OniOps
+  homepage: https://github.com/ares-369/oniops
+required_tools: [nmap]
+safety: passive
+tags: [tls, network, cryptography]
 name: "TLS & Cryptographic Posture Audit"
 description: "Audit TLS certificates, weak cipher suites, expired certs, and HTTP security headers across web ports."
 steps:

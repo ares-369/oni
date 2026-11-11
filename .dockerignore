@@ -1,0 +1,5 @@
+**
+!.dockerignore
+!Dockerfile.worker
+!scripts/
+!scripts/oniops-worker-entrypoint

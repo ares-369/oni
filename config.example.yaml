@@ -35,6 +35,7 @@ scope:
   rate_limit_per_min: 120
   mode: "active"             # active | passive | stealth
   non_destructive: true      # hard-block destructive tool flags (keep true)
+  allow_intrusive_playbooks: false # require explicit opt-in for packs using sqlmap/hydra
   # active_window: "22:00-06:00"   # optional: only scan in this local window
 
 # ---------------------------------------------------------------------
@@ -51,6 +52,16 @@ kali:
   connect_timeout: 6
   verify_host_key: "tofu"    # tofu (trust-on-first-use) | strict | insecure
   known_hosts: "./secrets/known_hosts"
+  # Optional: launch each scanner command in a disposable, resource-limited
+  # Docker container on the attack host. Build/provide an image containing the
+  # tools used by your selected playbooks. The default SSH mode remains above.
+  # execution_mode: "docker"
+  # worker_image: "your-registry/oniops-worker:stable"
+  # worker_network: "oniops-worker-net" # pre-create with `docker network create oniops-worker-net`
+  # worker_memory_mb: 1024
+  # worker_cpus: 2
+  # worker_pids_limit: 256
+  # worker_user: "65534:65534"
 
 # ...OR define MULTIPLE attack hosts and switch between them in the UI (Settings).
 # If present, attack_hosts takes precedence over the single `kali:` block above.

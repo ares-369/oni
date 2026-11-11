@@ -216,3 +216,43 @@ def test_horizontal_peer_bola_and_bopla_and_graphql():
     )
     assert gql is not None
     assert "GraphQL" in gql["title"]
+
+
+def test_bopla_follows_nested_local_refs_composition_and_vendor_json():
+    spec = {
+        "openapi": "3.0.3",
+        "components": {"schemas": {
+            "Envelope": {"properties": {"account": {"$ref": "#/components/schemas/Account"}}},
+            "Account": {
+                "properties": {
+                    "is_admin": {"type": "boolean", "readOnly": True},
+                    "profile": {"$ref": "#/components/schemas/Profile"},
+                },
+                "allOf": [{"$ref": "#/components/schemas/Permissions"}],
+            },
+            "Profile": {"properties": {"tenant_id": {"type": "string"}}},
+            "Permissions": {"properties": {"roles": {"type": "array", "items": {"type": "string"}}}},
+        }},
+        "paths": {"/accounts": {"patch": {"requestBody": {"content": {
+            "application/vnd.example+json": {"schema": {"$ref": "#/components/schemas/Envelope"}},
+        }}}}},
+    }
+    risks = extract_bopla_mass_assignment_risks(spec)
+    assert len(risks) == 1
+    assert set(risks[0]["writable_privilege_fields"]) == {"tenant_id", "roles"}
+
+
+def test_bopla_supports_openapi2_body_and_form_data_params():
+    spec = {
+        "swagger": "2.0",
+        "definitions": {"UserPatch": {"properties": {
+            "permissions": {"type": "array", "items": {"type": "string"}},
+            "manager": {"$ref": "#/definitions/UserPatch"},  # cycle must terminate
+        }}},
+        "paths": {"/users": {"post": {"parameters": [
+            {"in": "body", "name": "user", "schema": {"$ref": "#/definitions/UserPatch"}},
+            {"in": "formData", "name": "tenant_id", "type": "string"},
+        ]}}},
+    }
+    risks = extract_bopla_mass_assignment_risks(spec)
+    assert risks[0]["writable_privilege_fields"] == ["permissions", "tenant_id"]

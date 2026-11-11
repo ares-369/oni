@@ -60,6 +60,7 @@ class ScopeConfig:
     rate_limit_per_min: int = 120
     mode: str = "active"            # active | passive | stealth
     non_destructive: bool = True
+    allow_intrusive_playbooks: bool = False
     active_window: str | None = None
 
 
@@ -77,6 +78,14 @@ class HostConfig:
     # insecure = auto-accept any key (not recommended).
     verify_host_key: str = "tofu"
     known_hosts: str = "./secrets/known_hosts"
+    # Optional disposable container per tool invocation on the attack host.
+    execution_mode: str = "ssh"       # ssh | docker
+    worker_image: str = ""
+    worker_network: str = "oniops-worker-net"  # pre-created user-defined bridge required
+    worker_memory_mb: int = 1024
+    worker_cpus: float = 2.0
+    worker_pids_limit: int = 256
+    worker_user: str = "65534:65534"
 
 
 # Back-compat alias (older code / imports referenced KaliConfig).
@@ -166,10 +175,31 @@ def load_config() -> Config:
         rate_limit_per_min=int(scope_raw.get("rate_limit_per_min", 120)),
         mode=mode,
         non_destructive=bool(scope_raw.get("non_destructive", True)),
+        allow_intrusive_playbooks=bool(scope_raw.get("allow_intrusive_playbooks", False)),
         active_window=scope_raw.get("active_window"),
     )
 
     def _mk_host(h: dict, default_name: str) -> HostConfig:
+        execution_mode = str(h.get("execution_mode", "ssh")).lower().strip()
+        worker_image = str(h.get("worker_image", "")).strip()
+        worker_network = str(h.get("worker_network", "oniops-worker-net")).strip()
+        memory_mb = int(h.get("worker_memory_mb", 1024))
+        cpus = float(h.get("worker_cpus", 2.0))
+        pids_limit = int(h.get("worker_pids_limit", 256))
+        worker_user = str(h.get("worker_user", "65534:65534")).strip()
+        if execution_mode not in {"ssh", "docker"}:
+            raise ValueError("attack host execution_mode must be 'ssh' or 'docker'.")
+        if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", worker_network)
+                or worker_network.lower() in {"bridge", "host", "none"}):
+            raise ValueError("docker worker_network must name a pre-created user-defined bridge; built-in modes bypass DNS/scope isolation.")
+        if execution_mode == "docker" and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]{0,200}", worker_image):
+            raise ValueError("docker execution requires a valid attack_hosts.worker_image image reference.")
+        if not 128 <= memory_mb <= 32768 or not 0.25 <= cpus <= 32 or not 32 <= pids_limit <= 4096:
+            raise ValueError("worker resource limits are outside safe configured bounds.")
+        if not re.fullmatch(r"\d{1,6}:\d{1,6}", worker_user):
+            raise ValueError("worker_user must be a numeric uid:gid pair.")
+        if int(worker_user.split(":", 1)[0]) == 0:
+            raise ValueError("docker worker_user must use a non-root uid.")
         return HostConfig(
             host=str(h.get("host", "")),
             name=str(h.get("name", default_name)),
@@ -179,6 +209,13 @@ def load_config() -> Config:
             connect_timeout=int(h.get("connect_timeout", 6)),
             verify_host_key=str(h.get("verify_host_key", "tofu")),
             known_hosts=str(h.get("known_hosts", "./secrets/known_hosts")),
+            execution_mode=execution_mode,
+            worker_image=worker_image,
+            worker_network=worker_network,
+            worker_memory_mb=memory_mb,
+            worker_cpus=cpus,
+            worker_pids_limit=pids_limit,
+            worker_user=worker_user,
         )
 
     # One or many attack hosts. Back-compat: a single `kali:` block = one host.
@@ -289,6 +326,8 @@ def _build_updated_config(updates: dict) -> tuple[Any, str, dict]:
             data["scope"]["mode"] = su["mode"]
         if "non_destructive" in su:
             data["scope"]["non_destructive"] = bool(su["non_destructive"])
+        if "allow_intrusive_playbooks" in su:
+            data["scope"]["allow_intrusive_playbooks"] = bool(su["allow_intrusive_playbooks"])
         if "rate_limit_per_min" in su:
             data["scope"]["rate_limit_per_min"] = max(1, int(su["rate_limit_per_min"]))
 

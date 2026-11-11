@@ -11,6 +11,7 @@ import ipaddress
 import re
 import socket
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from .config import Config, get_config
 
@@ -37,6 +38,10 @@ _NET_TOOLS_RE = re.compile(
     re.IGNORECASE,
 )
 _IPV4_RE = re.compile(r"\b((?:\d{1,3}\.){3}\d{1,3})\b")
+_HTTP_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_NMAP_IPV4_TARGET_RE = re.compile(
+    r"\b((?:\d{1,3}\.){3}\d{1,3})(?:/((?:\d{1,3}\.){3}\d{1,3}|\d{1,2})|-(\d{1,3}(?:\.\d{1,3}){0,3}))?\b"
+)
 
 
 class ScopeViolation(Exception):
@@ -116,28 +121,145 @@ class Scope:
 
     # ---- command safety ----
     def guard_command(self, command: str) -> None:
-        """Refuse destructive commands and network commands targeting out-of-scope IPs."""
+        """Refuse destructive commands and network commands targeting out-of-scope IPs.
+
+        For nmap, validate full CIDR and address-range targets too: checking only
+        the first address would let a command starting in scope scan beyond the
+        authorized network.
+        """
         if self.cfg.scope.non_destructive and _DESTRUCTIVE_RE.search(command):
             raise ScopeViolation(
                 "Blocked: command matches a destructive/DoS pattern and "
                 "scope.non_destructive is enabled."
             )
         if _NET_TOOLS_RE.search(command or ""):
-            for m in _IPV4_RE.finditer(command):
+            for match in _HTTP_URL_RE.finditer(command):
+                parsed = urlsplit(match.group(0).rstrip(")],;"))
+                if parsed.hostname:
+                    self.resolve(parsed.hostname)
+            is_nmap = bool(re.match(r"^\s*(?:sudo\s+)?nmap\b", command or "", re.I))
+            if is_nmap:
+                # Nmap also accepts wildcard and per-octet expressions such as
+                # 10.0.0-2.4. Until those forms have a complete expander, reject
+                # them instead of validating only a partial address substring.
+                for token in re.findall(r"(?<!\S)[^\s]+", command):
+                    if ":" in token and not token.startswith("-"):
+                        try:
+                            network = (ipaddress.ip_network(token, strict=False) if "/" in token
+                                       else ipaddress.ip_network(f"{token}/128"))
+                        except ValueError:
+                            raise ScopeViolation(
+                                f"Unsupported nmap IPv6 target expression: {token}. "
+                                "Use an explicit IPv6 address or CIDR."
+                            ) from None
+                        if not self._range_in_scope(network.network_address, network.broadcast_address):
+                            raise ScopeViolation(
+                                f"Scope violation in command: target {token} is outside the authorized "
+                                f"Rules of Engagement ({', '.join(self.cfg.scope.allowed_cidrs)})."
+                            )
+                    if token.startswith("-") or "." not in token or not any(ch in token for ch in "-*/, "):
+                        continue
+                    for item in token.split(","):
+                        try:
+                            if "/" in item:
+                                ipaddress.ip_network(item, strict=False)
+                            elif "-" in item:
+                                base, end = item.split("-", 1)
+                                ipaddress.IPv4Address(base)
+                                if "." in end:
+                                    ipaddress.IPv4Address(end)
+                                elif not end.isdigit() or int(end) > 255:
+                                    raise ValueError("invalid range")
+                            else:
+                                ipaddress.IPv4Address(item)
+                        except ValueError:
+                            raise ScopeViolation(
+                                f"Unsupported nmap target expression: {item}. Use explicit IPv4 addresses, "
+                                "CIDRs, or full-address ranges."
+                            ) from None
+            matches = (_NMAP_IPV4_TARGET_RE.finditer(command) if is_nmap
+                       else _IPV4_RE.finditer(command))
+            for m in matches:
                 cand = m.group(1)
                 try:
-                    ipaddress.IPv4Address(cand)
+                    first = ipaddress.IPv4Address(cand)
                 except ValueError:
                     continue
-                if not self.is_in_scope(cand):
+                last = first
+                if is_nmap and m.group(2):
+                    try:
+                        network = ipaddress.ip_network(f"{cand}/{m.group(2)}", strict=False)
+                    except ValueError:
+                        raise ScopeViolation(f"Invalid nmap network target: {m.group(0)}") from None
+                    first, last = network.network_address, network.broadcast_address
+                elif is_nmap and m.group(3):
+                    end = m.group(3)
+                    try:
+                        last = (ipaddress.IPv4Address(end) if "." in end
+                                else ipaddress.IPv4Address(int(first) - (int(first) % 256) + int(end)))
+                    except ValueError:
+                        raise ScopeViolation(f"Invalid nmap address range: {m.group(0)}") from None
+                    if last < first:
+                        raise ScopeViolation(f"Invalid nmap address range: {m.group(0)}")
+                if not self._range_in_scope(first, last):
                     raise ScopeViolation(
-                        f"Scope violation in command: {cand} is outside the authorized "
+                        f"Scope violation in command: target {m.group(0)} is outside the authorized "
                         f"Rules of Engagement ({', '.join(self.cfg.scope.allowed_cidrs)})."
                     )
+
+    def _range_in_scope(self, first: ipaddress.IPv4Address | ipaddress.IPv6Address,
+                        last: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        """Return true only when every address in a range is allowed and not excluded."""
+        if first.version != last.version:
+            return False
+        version = first.version
+        lo, hi = int(first), int(last)
+        allowed = sorted((int(net.network_address), int(net.broadcast_address))
+                         for net in self._allowed if net.version == version)
+        cursor = lo
+        for start, end in allowed:
+            if end < cursor:
+                continue
+            if start > cursor:
+                return False
+            cursor = max(cursor, end + 1)
+            if cursor > hi:
+                break
+        if cursor <= hi:
+            return False
+        return not any(
+            net.version == version and int(net.network_address) <= hi and int(net.broadcast_address) >= lo
+            for net in self._excluded
+        )
 
     @property
     def cidrs(self) -> list[str]:
         return list(self.cfg.scope.allowed_cidrs)
+
+    @property
+    def effective_cidrs(self) -> list[str]:
+        """Return allow networks with excluded networks removed.
+
+        Docker workers use these networks for kernel-level egress filtering,
+        so an excluded subnet must not remain hidden inside a broader allowlist.
+        """
+        effective = list(self._allowed)
+        for excluded in self._excluded:
+            next_effective = []
+            for allowed in effective:
+                if allowed.version != excluded.version or not allowed.overlaps(excluded):
+                    next_effective.append(allowed)
+                elif excluded.supernet_of(allowed) or excluded == allowed:
+                    continue
+                else:
+                    next_effective.extend(allowed.address_exclude(excluded))
+            effective = next_effective
+        collapsed = []
+        for version in (4, 6):
+            collapsed.extend(ipaddress.collapse_addresses(
+                network for network in effective if network.version == version
+            ))
+        return [str(network) for network in collapsed]
 
 
 def autodetect_subnet() -> str | None:

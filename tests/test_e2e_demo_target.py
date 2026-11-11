@@ -25,7 +25,6 @@ pytestmark = pytest.mark.skipif(shutil.which("curl") is None, reason="curl binar
 ADMIN_CFG = "BOLA/BFLA privilege boundary bypass on /api/v1/admin/config"
 HORIZONTAL = "Cross-user horizontal BOLA on /api/v1/users/{id}"
 ORDER_HORIZONTAL = "Cross-user horizontal BOLA on /api/v1/orders/{order_ref}"
-OWNER_READ = "BOLA/BFLA privilege boundary bypass on /api/v1/users/{id}"
 BOPLA = "BOPLA / Mass Assignment risk on PATCH /api/v1/users/{id}"
 
 
@@ -96,22 +95,20 @@ def test_planted_weakness_found(assessed, needle, status, severity, confidence):
     assert f["evidence_sha256"] and f["repro_display"].startswith("curl ")
 
 
-def test_owner_read_is_reported_known_false_positive(assessed):
-    """Documents a real detection limit: user A owns object 1, yet the
-    low-privilege differential (anon 401 -> low-priv 200 on a sensitive route)
-    reports it, because probe_openapi has no notion of object ownership."""
-    f = _find(assessed["findings"], OWNER_READ)
-    assert f["status"] == "VERIFIED"
+def test_owner_read_is_not_duplicated_as_a_verified_bola(assessed):
+    """The peer-object proof should be the verified BOLA record; reading one's
+    own object must not create a second verified privilege-bypass finding."""
+    assert not [f for f in assessed["findings"]
+                if f["title"].startswith("BOLA/BFLA privilege boundary bypass on /api/v1/users/")]
+    assert _find(assessed["findings"], HORIZONTAL)["status"] == "VERIFIED"
 
 
 def test_exact_finding_count(assessed):
-    # 9 planted weaknesses -> 10 findings. W1-W8 give 8 (W3's /api/v1/users/{id}
-    # route also yields the known owner-read false positive, so W2-W8 openapi/
-    # input weaknesses plus that extra = 9), and W9 (the mined-string-id
-    # cross-user BOLA on /api/v1/orders/{order_ref}) adds the 10th. The secure
+    # 9 planted weaknesses -> 9 findings. W1-W8 give 8, and W9 (the mined-string-id
+    # cross-user BOLA on /api/v1/orders/{order_ref}) adds the 9th. The secure
     # wallet twin (S4) and every other twin stay unreported. Guards against new
     # false positives.
-    assert len(assessed["findings"]) == 10
+    assert len(assessed["findings"]) == 9
 
 
 def test_mined_string_id_cross_user_bola_detected(assessed):
@@ -174,7 +171,7 @@ def test_agent_report_finding_validator_e2e(tmp_path):
     runner = demo_runner()
     db = tmp_path / "agent.sqlite"
     with DemoTarget() as t:
-        real = _report_finding(runner, t.ip, {"port": t.port, "title": "SQL error", "category": "sqli",
+        real = _report_finding(runner, t.ip, {"port": t.port, "title": "SQL injection error", "category": "sqli",
                                               "path": "/api/v1/search?q=%27", "_db_path": str(db)})
         fake = _report_finding(runner, t.ip, {"port": t.port, "title": "Claimed SQLi on secrets",
                                               "category": "sqli", "path": "/api/v1/secrets/1",
@@ -189,14 +186,29 @@ def test_agent_indicator_finding_retest(tmp_path):
     runner = demo_runner(scope)
     ledger = FindingsLedger(tmp_path / "agent.sqlite")
     with DemoTarget() as t:
-        _report_finding(runner, t.ip, {"port": t.port, "title": "Debug env leaks DATABASE_URL",
-                                       "category": "agent_validation", "path": "/api/v1/debug/env",
+        _report_finding(runner, t.ip, {"port": t.port, "title": "Sensitive database URL disclosure",
+                                       "category": "sensitive_disclosure", "path": "/api/v1/debug/env",
                                        "expected_indicator": "DATABASE_URL", "_db_path": ledger.db_path})
-        f = _find(ledger.list_findings(), "Debug env leaks")
+        f = _find(ledger.list_findings(), "Sensitive database URL")
         assert f["status"] == "VERIFIED" and f["proof_indicator"] == "DATABASE_URL"
         assert ledger.retest(f["id"], runner, scope)["status"] == "VERIFIED"
         t.set_fixed(True)
         assert ledger.retest(f["id"], runner, scope)["status"] == "FIXED"
+
+
+def test_model_supplied_marker_alone_never_confirms_unknown_category(tmp_path):
+    scope = demo_scope()
+    runner = demo_runner(scope)
+    ledger = FindingsLedger(tmp_path / "agent-marker.sqlite")
+    with DemoTarget() as target:
+        _report_finding(runner, target.ip, {
+            "port": target.port, "title": "Debug env leaks DATABASE_URL",
+            "category": "agent_validation", "path": "/api/v1/debug/env",
+            "expected_indicator": "DATABASE_URL", "_db_path": ledger.db_path,
+        })
+        finding = _find(ledger.list_findings(), "Debug env leaks")
+        assert finding["status"] == "UNCONFIRMED"
+        assert ledger.retest(finding["id"], runner, scope)["status"] == "UNCONFIRMED"
 
 
 # ── zero-token retest: vulnerable -> fixed ──────────────────────────────────
@@ -313,7 +325,7 @@ def test_category_without_proof_is_unconfirmed(live):
                         category="cve", severity="HIGH", status="UNCONFIRMED", evidence="intel",
                         repro_cmd=["curl", "-kisS", f"{target.base_url}/"])
     r = ledger.retest(fid, live["runner"], live["scope"])
-    assert r["status"] == "UNCONFIRMED" and "no stored proof signature" in r["evidence"]
+    assert r["status"] == "UNCONFIRMED" and "no trusted proof rule" in r["evidence"]
 
 
 def test_proof_on_unreachable_target_is_unconfirmed(live):

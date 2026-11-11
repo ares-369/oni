@@ -10,6 +10,7 @@ from oniops.findings import (
     diff_assessments,
     map_finding_coverage,
     redact_secrets,
+    validate_agent_finding,
     validate_evidence,
 )
 from oniops.graph import compute_attack_paths
@@ -176,6 +177,13 @@ def test_vulnerability_specific_validators_and_compliance_coverage():
     assert validate_evidence("You have an error in your SQL syntax; check the manual that corresponds to your MySQL", category="sqli") == "VERIFIED"
     assert validate_evidence("HTTP/1.1 200 OK\r\nami-id: ami-0abcdef12345", category="ssrf") == "VERIFIED"
     assert validate_evidence("uid=0(root) gid=0(root) groups=0(root)", category="rce") == "VERIFIED"
+    # A model-provided marker may not override the category-specific proof rule.
+    assert validate_evidence(
+        "HTTP/1.1 200 OK\r\nmarker reflected", expected_indicator="marker", category="sqli",
+    ) == "UNCONFIRMED"
+    assert validate_agent_finding(
+        "HTTP/1.1 200 OK\r\nX-Debug-Mode: enabled", category="sqli", title="Debug header exposed",
+    ) == "UNCONFIRMED"
 
     cov = map_finding_coverage("api_security", "BOLA/BFLA privilege boundary bypass on /api/admin")
     assert "API1:2023-BOLA" in cov["owasp_api"]

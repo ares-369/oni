@@ -1,4 +1,7 @@
-pack: agentic_mcp_pack
+pack:
+  id: agentic_mcp_pack
+  version: 1.0.0
+  author: OniOps
 description: Declarative AI safety evaluation pack for RAG citation integrity, MCP schema shadowing, and Markdown link exfiltration guardrails.
 probes:
   - id: rag_citation_override

@@ -145,10 +145,12 @@ def test_resolve_concrete_path_mines_real_id_then_falls_back():
 
 
 # ───────────────────── probe_openapi end to end (fake run_fn) ─────────────────
-def _probe(run_fn):
+def _probe(run_fn, *, include_peer: bool = True):
     return probe_openapi(
         "127.0.0.1", 8080, "http", run_fn,
         low_priv_header="Bearer tokenA", peer_auth_header="Bearer tokenB",
+    ) if include_peer else probe_openapi(
+        "127.0.0.1", 8080, "http", run_fn, low_priv_header="Bearer tokenA",
     )
 
 
@@ -163,6 +165,14 @@ def test_cross_user_bola_detected_with_mined_username():
     assert "name2" in f["evidence"]
     assert "/users/v1/name2" in " ".join(f["repro_cmd"])
     assert "tokenA" in " ".join(f["repro_cmd"]) and "name1" not in " ".join(f["repro_cmd"])
+
+
+def test_parameterized_read_without_peer_identity_is_unconfirmed():
+    """A low-privilege self-read does not prove object ownership or BOLA."""
+    res = _probe(_make_app(cross_read=True), include_peer=False)
+    object_reads = [f for f in res["findings"] if f["title"].startswith("Unconfirmed object access")]
+    assert len(object_reads) == 1
+    assert object_reads[0]["status"] == "UNCONFIRMED"
 
 
 def test_no_cross_user_finding_when_owner_only():

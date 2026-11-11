@@ -151,6 +151,7 @@ def test_agent_report_finding_independent_validator(tmp_path, scope):
             "port": 8080,
             "path": "/debug",
             "title": "Exposed Debug Endpoint",
+            "category": "debug_header",
             "severity": "HIGH",
             "expected_indicator": "X-Debug-Mode: enabled",
             "_db_path": str(db),

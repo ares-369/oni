@@ -1,4 +1,12 @@
 id: ad_internal_enum
+version: 1.0.0
+pack:
+  id: oniops_core_identity
+  author: OniOps
+  homepage: https://github.com/ares-369/oniops
+required_tools: [enum4linux-ng]
+safety: active
+tags: [identity, smb, active-directory]
 name: "Identity & Internal Network (AD / SMB / LDAP)"
 description: "Enumerate Active Directory, SMB signing, shares, null sessions, LDAP anonymous bind, and Kerberos exposure."
 steps:

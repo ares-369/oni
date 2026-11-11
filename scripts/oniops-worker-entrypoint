@@ -1,0 +1,51 @@
+#!/bin/sh
+# Apply a fail-closed egress allowlist inside this disposable container's
+# network namespace, then permanently drop to the configured scanner identity.
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "worker firewall bootstrap must start as root" >&2
+    exit 126
+fi
+if [ -z "${ONIOPS_SCOPE_CIDRS:-}" ] || [ -z "${ONIOPS_WORKER_UID_GID:-}" ]; then
+    echo "worker scope or unprivileged identity is missing" >&2
+    exit 126
+fi
+case "$ONIOPS_WORKER_UID_GID" in
+    *[!0-9:]*|:*|*:) echo "invalid worker uid:gid" >&2; exit 126 ;;
+esac
+if [ "$#" -eq 0 ]; then
+    echo "worker command is missing" >&2
+    exit 126
+fi
+
+# Install DROP before removing any inherited rules. A failure leaves the
+# worker unable to connect, and NET_ADMIN is removed before the scanner runs.
+iptables -w -P OUTPUT DROP
+iptables -w -F OUTPUT
+ip6tables -w -P OUTPUT DROP
+ip6tables -w -F OUTPUT
+iptables -w -A OUTPUT -o lo -j ACCEPT
+ip6tables -w -A OUTPUT -o lo -j ACCEPT
+iptables -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+ip6tables -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# Docker's embedded resolver is loopback-addressed inside the network namespace.
+iptables -w -A OUTPUT -d 127.0.0.11/32 -p udp --dport 53 -j ACCEPT
+iptables -w -A OUTPUT -d 127.0.0.11/32 -p tcp --dport 53 -j ACCEPT
+
+old_ifs=$IFS
+IFS=,
+for cidr in $ONIOPS_SCOPE_CIDRS; do
+    [ -n "$cidr" ] || { echo "empty scope CIDR" >&2; exit 126; }
+    case "$cidr" in
+        *:*) ip6tables -w -A OUTPUT -d "$cidr" -j ACCEPT ;;
+        *) iptables -w -A OUTPUT -d "$cidr" -j ACCEPT ;;
+    esac
+done
+IFS=$old_ifs
+
+uid=${ONIOPS_WORKER_UID_GID%%:*}
+gid=${ONIOPS_WORKER_UID_GID#*:}
+[ "$uid" -gt 0 ] || { echo "worker uid must be non-root" >&2; exit 126; }
+exec setpriv --reuid "$uid" --regid "$gid" --clear-groups \
+    --bounding-set=-all --inh-caps=-all --ambient-caps=-all -- "$@"

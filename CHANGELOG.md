@@ -7,6 +7,52 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+### Added
+- A labeled, loopback-only live fixture benchmark: `oniops benchmark --demo-evaluation`. It reports
+  precision, recall, F1, negative checks, one-to-one finding matching and its explicit fixture-only
+  limitations. Unverified detections do not count as true positives; duplicate alerts count as FPs.
+- Optional Playwright browser discovery (`oniops crawl`) with bounded page/time budgets, in-scope
+  request routing, read-only navigation and start-origin-only credential forwarding.
+- Browser discovery now reports observed XHR/fetch status and content type plus value-free form
+  metadata, and flags credential-like fields on GET or cleartext forms as observations.
+- AWS password-policy findings now use an explicitly selected baseline. The AWS CIS-style profile
+  checks composition and rotation; the NIST 800-63B-4 profile checks its single-factor length rule
+  without requiring composition or periodic rotation.
+- Disposable Docker worker mode for scanner commands with a non-root user, read-only filesystem,
+  dropped Linux capabilities, resource limits and command timeouts; sample image in `Dockerfile.worker`.
+- Docker workers now apply a fail-closed egress firewall using effective scope CIDRs, drop bootstrap
+  capabilities before scanner execution, and reject built-in Docker network modes. They require a
+  user-defined bridge so DNS stays on Docker's embedded resolver.
+- CI builds the worker image, exercises the firewall against allowed and denied container targets,
+  and runs Nmap/Nuclei as a non-root user with a read-only filesystem; `.dockerignore` prevents
+  unrelated workspace files from entering its build context.
+- Offline Trivy scan of images already loaded on the attack host (`oniops container-scan`) and optional
+  read-only AWS account/IAM, security-group, EKS endpoint and S3 policy/ACL/encryption checks
+  (`oniops cloud-audit aws`).
+- Semantic versions, pack metadata, nested discovery and SHA-256 source hashes for network playbooks
+  and AI probe packs. See `docs/SECURITY_PACKS.md`.
+- OpenAPI BOPLA analysis now follows nested local references, composition and arrays, and reads
+  OpenAPI 2 body/form parameters plus OpenAPI 3 vendor JSON schemas without fetching external refs.
+- Playbook tool requirements now include every executed binary. `sqlmap` and `hydra` packs require
+  `safety: intrusive`, which remains disabled at assessment endpoints unless explicitly enabled in
+  scope configuration.
+- Scope enforcement now checks the full IPv4 CIDR and address range in nmap target arguments,
+  including explicit exclusions, rather than checking only the first address.
+- Network playbook steps are restricted to supported scanner commands and must include the assessed
+  `{target}`, preventing a custom YAML pack from invoking arbitrary commands on the attack host.
+
+### Fixed
+- A low-privilege user's own object read no longer creates a second verified BOLA finding. Object
+  ownership must be established; a peer-owned object read remains the verified horizontal BOLA proof.
+- Agent finding replay now rejects non-origin-relative paths and malformed indicators, caps response
+  size, disables redirects and only verifies successful command executions. Ledger write failures are
+  surfaced instead of silently discarded.
+- Agent-proposed findings and zero-token retests now require a supported category-specific proof rule
+  and a matching claim title. A model-supplied expected string alone remains UNCONFIRMED; 5xx retests
+  are also inconclusive rather than being called fixed.
+- AWS security-group rules without TCP/UDP ports (such as ICMP) are no longer classified as exposing
+  all ports; all-protocol and administrative-port rules retain their higher severity.
+
 ## [0.4.6-beta] — 2026-11-11
 
 ### Fixed

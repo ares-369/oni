@@ -14,6 +14,13 @@ def test_valid_scope_update_persists(cfg_path):
     assert data["scope"]["allowed_cidrs"] == ["10.10.0.0/16"]
 
 
+def test_intrusive_playbook_opt_in_defaults_off_and_persists(cfg_path):
+    assert get_config(reload=True).scope.allow_intrusive_playbooks is False
+    apply_updates({"scope": {"allow_intrusive_playbooks": True}})
+    assert yaml.safe_load(cfg_path.read_text())["scope"]["allow_intrusive_playbooks"] is True
+    assert get_config(reload=True).scope.allow_intrusive_playbooks is True
+
+
 def test_bad_cidr_rejected(cfg_path):
     before = cfg_path.read_text()
     with pytest.raises(ValueError):
@@ -77,3 +84,46 @@ def test_invalid_scope_mode_falls_back_to_active(cfg_path):
     cfg_path.write_text(cfg_path.read_text().replace("mode: active", "mode: strict"))
     cfg = get_config(reload=True)
     assert cfg.scope.mode == "active"
+
+
+def test_docker_worker_host_config_is_loaded(cfg_path):
+    data = yaml.safe_load(cfg_path.read_text())
+    data["attack_hosts"][0].update({
+        "execution_mode": "docker", "worker_image": "oniops-worker:stable",
+        "worker_memory_mb": 2048, "worker_network": "oniops-worker-net",
+    })
+    cfg_path.write_text(yaml.safe_dump(data))
+    cfg = get_config(reload=True)
+    assert cfg.kali.execution_mode == "docker"
+    assert cfg.kali.worker_image == "oniops-worker:stable"
+    assert cfg.kali.worker_memory_mb == 2048
+
+
+def test_docker_worker_requires_an_image(cfg_path):
+    data = yaml.safe_load(cfg_path.read_text())
+    data["attack_hosts"][0]["execution_mode"] = "docker"
+    cfg_path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="worker_image"):
+        get_config(reload=True)
+
+
+def test_docker_worker_rejects_host_network_mode(cfg_path):
+    data = yaml.safe_load(cfg_path.read_text())
+    data["attack_hosts"][0].update({
+        "execution_mode": "docker", "worker_image": "oniops-worker:stable",
+        "worker_network": "host",
+    })
+    cfg_path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="built-in modes bypass DNS/scope isolation"):
+        get_config(reload=True)
+
+
+def test_docker_worker_rejects_root_worker_identity(cfg_path):
+    data = yaml.safe_load(cfg_path.read_text())
+    data["attack_hosts"][0].update({
+        "execution_mode": "docker", "worker_image": "oniops-worker:stable",
+        "worker_user": "0:0",
+    })
+    cfg_path.write_text(yaml.safe_dump(data))
+    with pytest.raises(ValueError, match="non-root uid"):
+        get_config(reload=True)

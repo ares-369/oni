@@ -568,6 +568,13 @@ def _run(cmd: list[str], timeout: int) -> str:
 def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
                     auth_header: str = "", low_priv_header: str = "",
                     peer_auth_header: str = "") -> dict:
+    pb = PLAYBOOKS.get(profile)
+    if (pb and pb.get("safety") == "intrusive"
+            and not cfg.scope.allow_intrusive_playbooks):
+        raise PermissionError(
+            f"Playbook '{profile}' is classified intrusive. Set "
+            "scope.allow_intrusive_playbooks: true after confirming authorization and scope."
+        )
     started_at = now_iso()
     emit_event("RECON", "busy", f"[{profile}] on {hostname} ({target_ip}) from the attack host")
     clean_auth = sanitize_auth_header(auth_header) if auth_header else ""
@@ -940,6 +947,9 @@ def api_assess():
     profile = data.get("profile", "fast_recon")
     if profile not in (ALLOWED_PROFILES | set(PLAYBOOKS)):
         return jsonify({"error": f"Unknown profile '{profile}'."}), 400
+    pb = PLAYBOOKS.get(profile)
+    if pb and pb.get("safety") == "intrusive" and not cfg.scope.allow_intrusive_playbooks:
+        return jsonify({"error": "Intrusive playbooks are disabled by scope.allow_intrusive_playbooks."}), 403
     try:
         rt = scope.resolve(data.get("target", ""))
         auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""
@@ -960,6 +970,9 @@ def api_assess_start():
     profile = data.get("profile", "fast_recon")
     if profile not in (ALLOWED_PROFILES | set(PLAYBOOKS)):
         return jsonify({"error": f"Unknown profile '{profile}'."}), 400
+    pb = PLAYBOOKS.get(profile)
+    if pb and pb.get("safety") == "intrusive" and not cfg.scope.allow_intrusive_playbooks:
+        return jsonify({"error": "Intrusive playbooks are disabled by scope.allow_intrusive_playbooks."}), 403
     try:
         rt = scope.resolve(data.get("target", ""))
         auth_header = sanitize_auth_header(data.get("auth_header", "")) if data.get("auth_header") else ""

@@ -53,3 +53,59 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  browser-integration:
+    name: Browser Integration (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies and Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run loopback browser integration checks
+        run: pytest tests/test_browser_runtime.py -v
+
+  scanner-worker:
+    name: Scanner Worker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build disposable scanner image
+        run: docker build --file Dockerfile.worker --tag oniops-worker:ci .
+
+      - name: Verify worker bootstrap, tool startup, and target egress allowlist
+        run: |
+          set -eu
+          worker_args="--read-only --cap-drop=ALL --cap-add=NET_ADMIN --security-opt=no-new-privileges --pids-limit=64 --memory=512m --cpus=1 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HOME=/tmp --env TMPDIR=/tmp --env ONIOPS_WORKER_UID_GID=65534:65534"
+          docker run --rm --network none $worker_args --env ONIOPS_SCOPE_CIDRS=127.0.0.1/32 oniops-worker:ci nmap --version
+          docker run --rm --network none $worker_args --env ONIOPS_SCOPE_CIDRS=127.0.0.1/32 oniops-worker:ci nuclei -version
+
+          cleanup() {
+            docker rm -f oniops-scope-allowed oniops-scope-denied >/dev/null 2>&1 || true
+            docker network rm oniops-worker-net >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker network create oniops-worker-net >/dev/null
+          docker run -d --name oniops-scope-allowed --network oniops-worker-net \
+            --entrypoint python3 oniops-worker:ci -m http.server 8000 --bind 0.0.0.0 >/dev/null
+          docker run -d --name oniops-scope-denied --network oniops-worker-net \
+            --entrypoint python3 oniops-worker:ci -m http.server 8000 --bind 0.0.0.0 >/dev/null
+          allowed_ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' oniops-scope-allowed)
+          denied_ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' oniops-scope-denied)
+          docker run --rm --network oniops-worker-net $worker_args --env ONIOPS_SCOPE_CIDRS="$allowed_ip/32" \
+            oniops-worker:ci curl --fail --max-time 3 "http://$allowed_ip:8000/"
+          if docker run --rm --network oniops-worker-net $worker_args --env ONIOPS_SCOPE_CIDRS="$allowed_ip/32" \
+            oniops-worker:ci curl --fail --connect-timeout 2 --max-time 3 "http://$denied_ip:8000/"; then
+            echo "worker reached an out-of-scope container"
+            exit 1
+          fi

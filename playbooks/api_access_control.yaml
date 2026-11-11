@@ -1,4 +1,12 @@
 id: api_access_control
+version: 1.0.0
+pack:
+  id: oniops_core_web
+  author: OniOps
+  homepage: https://github.com/ares-369/oniops
+required_tools: [nmap, nuclei]
+safety: active
+tags: [web, api, access-control]
 name: "API & Microservice Exposure Audit"
 description: "Discover HTTP/API ports, fingerprint frameworks, crawl API routes, and scan for exposed specs and misconfigurations."
 steps:

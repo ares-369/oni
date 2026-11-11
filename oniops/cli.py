@@ -14,6 +14,9 @@ Usage examples:
   python -m oniops diff 2
   python -m oniops playbooks
   python -m oniops demo                             # one-minute practice run, no config needed
+  python -m oniops crawl https://app.example.test   # bounded, scoped browser discovery
+  python -m oniops container-scan app:latest        # scan a local attack-host image offline
+  python -m oniops cloud-audit aws --account-id 123456789012  # read-only AWS account checks
 """
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ from .findings import FindingsLedger, backup_sqlite, diff_assessments, restore_s
 from .greybox import analyze_source_code
 from .kali import KaliRunner
 from .playbooks import load_playbooks
-from .scope import Scope
+from .scope import Scope, ScopeViolation
 
 _SEV_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
@@ -173,14 +176,45 @@ def cli_main(argv: list[str] | None = None) -> int:
     df.add_argument("--db", default="", help="Path to oniops.sqlite")
 
     for name in ("selftest", "benchmark"):   # "benchmark" kept as an alias for old scripts
-        st = sub.add_parser(name, help="Check OniOps's own validators on built-in examples (not a detection-accuracy benchmark)")
+        st = sub.add_parser(name, help=("Run the validator self-test" if name == "selftest" else
+                                       "Run the validator self-test or labeled live fixture evaluation"))
         st.add_argument("--json", action="store_true", help="Print raw JSON results")
+        if name == "benchmark":
+            st.add_argument("--demo-evaluation", action="store_true",
+                            help="Run the real assessment pipeline against the bundled ground-truth target")
+            st.add_argument("--output", default="", help="Write benchmark JSON to this path")
 
     dm = sub.add_parser("demo", help="Practice run against a bundled loopback target (no config, attack host or LLM needed)")
     dm.add_argument("--db", default="",
                     help="Keep the DEMO ledger at this path (default: a temp file, deleted afterwards). "
                          "Must not be the real ledger.")
     dm.add_argument("--no-fixed", action="store_true", help="Skip the 'target fixed -> retest' step")
+
+    cr = sub.add_parser("crawl", help="Render and discover an in-scope web app without submitting forms")
+    cr.add_argument("start_url", help="HTTP(S) URL resolving inside scope.allowed_cidrs")
+    cr.add_argument("--max-pages", type=int, default=50, help="Page cap (1-200)")
+    cr.add_argument("--max-seconds", type=int, default=90, help="Wall-clock cap (5-300 seconds)")
+    cr.add_argument("--auth-header", default="", help="Optional header, sent only to the start URL origin")
+    cr.add_argument("--storage-state", default="", help="Optional Playwright storage-state JSON for authenticated browsing")
+    cr.add_argument("--json", action="store_true", help="Print machine-readable results")
+    cr.add_argument("--output", default="", help="Write JSON results to this path")
+
+    cs = sub.add_parser("container-scan", help="Scan a container image already present on the attack host")
+    cs.add_argument("image", help="Local Docker image name or digest (the image is never pulled)")
+    cs.add_argument("--output", default="", help="Write Trivy JSON results to this path")
+    cs.add_argument("--fail-on", default="", choices=["", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+                    help="Exit with code 1 when any finding meets or exceeds this severity")
+
+    ca = sub.add_parser("cloud-audit", help="Run read-only AWS IAM, security-group and S3 checks")
+    ca.add_argument("provider", choices=["aws"], help="Cloud provider to audit")
+    ca.add_argument("--account-id", required=True, help="Expected 12-digit AWS account ID; STS is checked first")
+    ca.add_argument("--profile", default="default", help="Local AWS credential profile")
+    ca.add_argument("--region", default="us-east-1", help="AWS region for regional checks")
+    ca.add_argument("--password-baseline", default="aws_cis", choices=["aws_cis", "nist_800_63b4"],
+                    help="Password policy profile; NIST 800-63B-4 does not require composition or periodic rotation")
+    ca.add_argument("--output", default="", help="Write JSON results to this path")
+    ca.add_argument("--fail-on", default="", choices=["", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+                    help="Exit with code 1 when any finding meets or exceeds this severity")
 
     ns = parser.parse_args(args_list)
 
@@ -196,6 +230,69 @@ def cli_main(argv: list[str] | None = None) -> int:
                       file=sys.stderr)
                 return 2
         return run_demo(db_path=demo_db, show_fixed=not ns.no_fixed)
+
+    if ns.cmd == "crawl":
+        from .browser import crawl_web_app
+        cfg = get_config()
+        try:
+            result = crawl_web_app(ns.start_url, Scope(cfg), max_pages=ns.max_pages,
+                                   max_seconds=ns.max_seconds, auth_header=ns.auth_header,
+                                   storage_state=ns.storage_state)
+        except (ValueError, RuntimeError, ScopeViolation) as exc:
+            print(f"[OniOps crawl] {exc}", file=sys.stderr)
+            return 2
+        serialized = json.dumps(result, indent=2)
+        if ns.output:
+            Path(ns.output).expanduser().write_text(serialized + "\n", encoding="utf-8")
+        if ns.json or not ns.output:
+            print(serialized)
+        else:
+            print(f"[OniOps crawl] visited {result['pages_visited']} page(s); "
+                  f"captured {len(result['api_requests'])} API request(s); "
+                  f"blocked {len(result['blocked_requests'])} request(s).")
+        return 0
+
+    if ns.cmd == "container-scan":
+        from .artifact_scan import scan_local_container_image
+        cfg = get_config()
+        try:
+            result = scan_local_container_image(ns.image, KaliRunner(cfg.kali, Scope(cfg), cfg))
+        except (ValueError, RuntimeError) as exc:
+            print(f"[OniOps container scan] {exc}", file=sys.stderr)
+            return 2
+        serialized = json.dumps(result, indent=2)
+        if ns.output:
+            Path(ns.output).expanduser().write_text(serialized + "\n", encoding="utf-8")
+        else:
+            print(serialized)
+        if ns.fail_on:
+            severity_rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+            threshold = severity_rank[ns.fail_on]
+            if any(severity_rank.get(k, 0) >= threshold and count
+                   for k, count in result["counts_by_severity"].items()):
+                return 1
+        return 0
+
+    if ns.cmd == "cloud-audit":
+        from .cloud_audit import audit_aws_account
+        try:
+            result = audit_aws_account(ns.account_id, profile=ns.profile, region=ns.region,
+                                       password_baseline=ns.password_baseline)
+        except (ValueError, RuntimeError, PermissionError) as exc:
+            print(f"[OniOps cloud audit] {exc}", file=sys.stderr)
+            return 2
+        serialized = json.dumps(result, indent=2)
+        if ns.output:
+            Path(ns.output).expanduser().write_text(serialized + "\n", encoding="utf-8")
+        else:
+            print(serialized)
+        if ns.fail_on:
+            severity_rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+            threshold = severity_rank[ns.fail_on]
+            if any(severity_rank.get(str(item.get("severity", "")).upper(), 0) >= threshold
+                   for item in result["findings"]):
+                return 1
+        return 0
 
     if ns.cmd == "version":
         print(f"OniOps {__version__}")
@@ -291,6 +388,20 @@ def cli_main(argv: list[str] | None = None) -> int:
         return 0
 
     if ns.cmd in ("selftest", "benchmark"):
+        if ns.cmd == "benchmark" and ns.demo_evaluation:
+            from .evaluation import run_demo_evaluation
+            res = run_demo_evaluation()
+            serialized = json.dumps(res, indent=2)
+            if ns.output:
+                Path(ns.output).expanduser().write_text(serialized + "\n", encoding="utf-8")
+            if ns.json or not ns.output:
+                print(serialized)
+            else:
+                m = res["metrics"]
+                print(f"[OniOps demo benchmark] precision={m['precision']:.3f} "
+                      f"recall={m['recall']:.3f} F1={m['f1']:.3f} "
+                      f"TP={m['true_positive']} FP={m['false_positive']} FN={m['false_negative']}")
+            return 0 if res["metrics"]["false_negative"] == 0 and res["metrics"]["false_positive"] == 0 else 1
         res = run_selftest()
         if ns.json:
             print(json.dumps(res, indent=2))

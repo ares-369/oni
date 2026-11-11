@@ -22,8 +22,9 @@ import unicodedata
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from .findings import FindingsLedger, redact_secrets, validate_evidence
+from .findings import FindingsLedger, redact_secrets, validate_agent_finding
 from .greybox import probe_openapi, sanitize_auth_header
 from .scope import Scope, ScopeViolation
 
@@ -138,8 +139,7 @@ def _openapi_probe(runner, ip, args):
 
 
 def _report_finding(runner, ip, args):
-    """Independently verify a candidate finding reported by the agent before
-    persisting it to the FindingsLedger."""
+    """Validate a model-proposed finding with category-specific proof before ledgering."""
     port = int(args.get("port") or 80)
     title = str(args.get("title") or "Agent-reported finding").strip()[:180]
     category = str(args.get("category") or "agent_validation").strip().lower()[:60] or "agent_validation"
@@ -147,38 +147,49 @@ def _report_finding(runner, ip, args):
     if severity not in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
         severity = "MEDIUM"
     path = str(args.get("path") or "/").strip()
+    if (len(path) > 2048 or any(ord(ch) < 0x20 for ch in path)
+            or "\\" in path or urlsplit(path).scheme or urlsplit(path).netloc):
+        return "Independent validator refused the finding: path must be a bounded, origin-relative URL path."
     if not path.startswith("/"):
         path = "/" + path
+    if path.startswith("//"):
+        return "Independent validator refused the finding: protocol-relative paths are not allowed."
     indicator = str(args.get("expected_indicator") or "").strip()
+    if len(indicator) > 200 or any(ord(ch) < 0x20 for ch in indicator):
+        return "Independent validator refused the finding: expected_indicator must be at most 200 printable characters."
     scheme = "https" if port in (443, 8443, 9443) else "http"
     url = f"{scheme}://{ip}:{port}{path}"
-    # GET with -i (headers + body) so an expected_indicator in the response BODY
-    # can match, not just response headers. Bounded, non-destructive.
-    repro_cmd = ["curl", "-kisS", "--max-time", "5", url]
-    if args.get("_auth_header"):
-        repro_cmd = ["curl", "-kisS", "--max-time", "5", "-H", args["_auth_header"], url]
+    # One bounded, non-destructive GET captures headers and body. The expected
+    # indicator is retained for context/retest, but cannot verify a claim alone.
+    repro_cmd = ["curl", "-kisS", "--max-time", "5", "--max-filesize", "1048576",
+                 "--max-redirs", "0", "--proto", "=http,https", url]
+    raw_auth = str(args.get("_auth_header") or "")
+    if raw_auth:
+        repro_cmd[-1:-1] = ["-H", sanitize_auth_header(raw_auth)]
     # The ledger stores the real command (needed for authenticated retests) and
     # masks secrets whenever it returns a finding to a client.
     stored_repro = list(repro_cmd)
-    probe_out = runner.run(repro_cmd, timeout=10).out or ""
-    status = validate_evidence(probe_out, expected_indicator=indicator, category=category)
+    probe_result = runner.run(repro_cmd, timeout=10)
+    probe_out = probe_result.out or ""
+    probe_rc = getattr(probe_result, "rc", 0 if getattr(probe_result, "ok", False) else 1)
+    status = (validate_agent_finding(probe_out, category=category, title=title)
+              if probe_rc == 0 else "UNCONFIRMED")
+    if probe_rc != 0:
+        probe_out = f"Validator command failed (exit {probe_rc}): {probe_out}"[:1200]
     db_path = args.get("_db_path")
     if db_path:
-        try:
-            ledger = FindingsLedger(db_path)
-            ledger.upsert(
-                target_ip=ip,
-                port=port,
-                title=title,
-                category=category,
-                severity=severity,
-                status=status,
-                evidence=probe_out[:800] or f"Indicator '{indicator}' not matched",
-                repro_cmd=stored_repro,
-                indicator=indicator,   # retest re-checks this on the replay output
-            )
-        except Exception:
-            pass
+        ledger = FindingsLedger(db_path)
+        ledger.upsert(
+            target_ip=ip,
+            port=port,
+            title=title,
+            category=category,
+            severity=severity,
+            status=status,
+            evidence=probe_out[:800] or f"Indicator '{indicator}' not matched",
+            repro_cmd=stored_repro,
+            indicator=indicator,   # retest re-checks this on the replay output
+        )
     return f"Independent validator result for '{title}' on {url}: status={status}\n{probe_out[:600]}"
 
 
@@ -202,7 +213,7 @@ TOOLS: dict[str, dict] = {
     "openapi_probe": {"needs_target": True,
                       "desc": "Discover OpenAPI/Swagger specs and test unauthenticated vs authenticated API routes. args: {target, port?}", "fn": _openapi_probe},
     "report_finding": {"needs_target": True,
-                       "desc": "Submit a discovered HTTP/service finding for independent verification & ledger persistence. args: {target, port, path, title, severity, expected_indicator}", "fn": _report_finding},
+                       "desc": "Submit a candidate finding for category-specific proof checking and ledger persistence. Generic model-supplied indicators alone remain unconfirmed. args: {target, port, path, title, category, severity, expected_indicator}", "fn": _report_finding},
     "enum4linux": {"needs_target": True,
                    "desc": "Enumerate SMB/Samba shares & users. args: {target}", "fn": _enum4linux},
     "searchsploit": {"needs_target": False,
