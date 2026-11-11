@@ -7,13 +7,65 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.8-beta] — 2026-11-12
+
+### Security
+- **Reverse-proxy identity header could be forged.** The web UI runs behind
+  Werkzeug's `ProxyFix`, which rewrites `REMOTE_ADDR` from `X-Forwarded-For`.
+  In `auth.mode: proxy` the trusted-proxy check compared that rewritten value,
+  so a client able to reach the port directly could send
+  `X-Forwarded-For: <trusted proxy>` plus the identity header and authenticate
+  as any user. The check now validates the real socket peer
+  (`werkzeug.proxy_fix.orig`), not the forgeable header.
+- **`python webui.py` ran the unhardened Flask dev server** and skipped the
+  startup security check. The entry point now routes through `oniops.server.main()`
+  (Waitress + the exposure/auth checks), the same as `python -m oniops`.
+
 ### Added
+- **Authenticated target sessions with refresh.** A `target_auth` config block
+  logs in to a target per role (`primary`/`low_priv`/`peer`): `json_login`
+  (token APIs such as VAmPI and Juice Shop) or `form_login` (form logins such as
+  DVWA). A role's session is re-minted and the request retried once on a 401/403,
+  so short-lived tokens (for example VAmPI's ~60s JWTs) no longer collapse the
+  access-control differential into anonymous requests. Credentials are referenced
+  only as `${ENV_VAR}` and never reach findings, logs or reports. See
+  `docs/TARGET_AUTH.md`.
+- **One-command install** (`scripts/install.sh`): creates a virtualenv, installs
+  OniOps, seeds `config.yaml`/`.env` from the examples without overwriting them,
+  and generates a random `ONIOPS_SECRET_KEY` when missing. Idempotent.
 - Public-app benchmark harness: `oniops benchmark --suite <crapi|juice_shop|vampi> --target <ip>`
-  scores the findings of an ordinary assessment against labeled known bugs. Only verified findings
+  scores an assessment's findings against labeled known bugs. Only verified findings
   count, matching is one-to-one, and verified findings outside the labels are listed for triage, so
-  precision is reported as a range until they are classified with `--triage`. Results record the
-  OniOps, suite and target versions plus profile and model. `--markdown` prints a README table
-  row. See `docs/BENCHMARKS.md` and `benchmarks/docker-compose.yml`.
+  precision is reported as a range until they are classified with `--triage`. See `docs/BENCHMARKS.md`.
+
+### Fixed
+- The web UI now honours `ONIOPS_DB_PATH`, so it reads and writes the same ledger
+  as the CLI instead of always using `<checkout>/data/oniops.sqlite`.
+- Browser discovery redacts bare `jwt`/`bearer`/`credential` query values (not
+  only `*token*`-style keys) and pins the start host to its scope-validated IP at
+  launch, closing the DNS re-resolution window between the scope check and
+  navigation for that host.
+- The labeled-benchmark scorer only lets a VERIFIED finding satisfy a label; an
+  unverified match is no longer consumed, so it stays visible for triage and
+  false-positive accounting.
+- AWS region validation accepts GovCloud, China and ISO partition names
+  (`us-gov-east-1`, `cn-north-1`, `us-iso-east-1`), not only commercial regions.
+
+### Changed
+- **Easier, safer install and deploy.** The Docker image now ships `playbooks/`
+  and `curl`; the worker image ships `katana` and a wordlist; the `.dockerignore`
+  no longer excludes files the controller image needs; Docker Compose requires a
+  login (the unauthenticated-network opt-in is a commented, clearly labelled
+  block). The systemd unit runs as a dedicated non-root user from `/opt/oniops`, and
+  the README and `docs/INSTALL.md` document that path. The Proxmox LXC script
+  points at the real repository. `known_hosts` defaults to the writable `./data`
+  directory so trust-on-first-use host keys persist.
+- CLI hardening: `oniops assess` rejects an unknown `--profile` instead of silently
+  starting the autonomous LLM loop; `assess`, `diff`, `backup`, `restore`, `doctor`
+  and others print a clean error and a nonzero exit instead of a traceback;
+  `oniops doctor --check-runner` fails when the runner is unreachable; `oniops serve` is
+  listed in `--help`. The README gains a Quick start, a naming-and-layout note and
+  a configuration/environment table.
 
 ## [0.4.7-beta] — 2026-11-12
 

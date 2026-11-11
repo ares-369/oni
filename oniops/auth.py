@@ -197,7 +197,14 @@ def init_auth(app, cfg) -> None:
             if not cfg.auth.proxy_trusted_ips:
                 return Response("Forbidden: auth.mode=proxy requires auth.proxy_trusted_ips "
                                 "(the reverse proxy's IP). Refusing to trust the identity header.", 403)
-            if request.remote_addr not in cfg.auth.proxy_trusted_ips:
+            # Check the REAL TCP peer, not request.remote_addr: ProxyFix rewrites
+            # REMOTE_ADDR from the X-Forwarded-For header, which a direct client
+            # can forge. ProxyFix preserves the true socket peer under
+            # environ["werkzeug.proxy_fix.orig"]["REMOTE_ADDR"]; if ProxyFix did
+            # not run, REMOTE_ADDR is still the real peer.
+            _orig = request.environ.get("werkzeug.proxy_fix.orig") or {}
+            real_peer = _orig.get("REMOTE_ADDR") or request.environ.get("REMOTE_ADDR")
+            if real_peer not in cfg.auth.proxy_trusted_ips:
                 return Response("Forbidden: request did not arrive via a trusted proxy.", 403)
             user = request.headers.get(cfg.auth.proxy_header, "")
             if user and _user_allowed(cfg, user):

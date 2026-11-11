@@ -163,7 +163,9 @@ def audit_aws_account(account_id: str, *, profile: str = "default", region: str 
         raise ValueError("Expected AWS account ID must contain exactly 12 digits.")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", profile):
         raise ValueError("AWS profile name contains unsupported characters.")
-    if not re.fullmatch(r"[a-z]{2}(?:-gov)?-[a-z]+-\d", region):
+    # Accept all AWS partitions: commercial (us-east-1), GovCloud (us-gov-east-1),
+    # China (cn-north-1), and ISO (us-iso-east-1, us-isob-east-1).
+    if not re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-\d+", region):
         raise ValueError("AWS region name is invalid.")
     if password_baseline not in {"aws_cis", "nist_800_63b4"}:
         raise ValueError("password_baseline must be 'aws_cis' or 'nist_800_63b4'.")

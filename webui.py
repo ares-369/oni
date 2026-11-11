@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import tempfile
@@ -78,9 +79,12 @@ log = logging.getLogger("oniops.webui")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [OniOps] %(message)s")
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
+# Respect ONIOPS_DB_PATH so the web UI and the CLI read/write the same ledger
+# (the CLI's _default_db_path honours the same variable).
+_ENV_DB = os.getenv("ONIOPS_DB_PATH")
+DB_PATH = Path(_ENV_DB).expanduser() if _ENV_DB else BASE_DIR / "data" / "oniops.sqlite"
+DATA_DIR = DB_PATH.parent
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DATA_DIR / "oniops.sqlite"
 ACTIVITY_LOG = DATA_DIR / "activity.jsonl"
 
 # Runtime override for the reporter model (set via /api/model). Falls back to
@@ -1425,4 +1429,9 @@ def api_chat():
 
 
 if __name__ == "__main__":
-    app.run(host=cfg.bind_host, port=cfg.bind_port, debug=False)
+    # Never start the Flask dev server directly: it would skip the
+    # startup security check and run an unhardened server. Route through
+    # oniops.server.main(), which enforces the check and uses Waitress.
+    from oniops.server import main as _server_main
+
+    _server_main()

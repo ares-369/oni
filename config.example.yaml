@@ -79,6 +79,22 @@ kali:
 #     ssh_key: "./secrets/parrot_id_rsa"
 
 # ---------------------------------------------------------------------
+#  Optional: per-role TARGET login recipes (primary / low_priv / peer), so ONIOPS
+#  can log in to the target and refresh short-lived tokens mid-scan instead of
+#  using one fixed header. Credentials are referenced ONLY as ${ENV_VAR} and
+#  resolved at login time; they never reach findings, logs or reports.
+#  Full json_login / form_login examples (VAmPI, Juice Shop, DVWA) are in
+#  docs/TARGET_AUTH.md. Leave this out for the classic static-header behaviour.
+# ---------------------------------------------------------------------
+# target_auth:
+#   low_priv:
+#     type: json_login
+#     login_url: "http://TARGET:5000/users/v1/login"
+#     json_body: { username: "${ONIOPS_TARGET_LOW_USER}", password: "${ONIOPS_TARGET_LOW_PASS}" }
+#     token_path: "auth_token"
+#     header_template: "Authorization: Bearer {token}"
+
+# ---------------------------------------------------------------------
 #  Authentication for the OniOps web UI. OFF by default. STRONGLY recommended
 #  whenever the UI is reachable beyond localhost — it can drive the attack
 #  host. For production, running OniOps behind a TLS reverse proxy (nginx /

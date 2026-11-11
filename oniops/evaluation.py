@@ -47,11 +47,16 @@ def _score_findings(findings: list[dict]) -> dict:
     assigned_findings: set[int] = set()
     for case_id, fragment in POSITIVE_CASES.items():
         candidates = [i for i, value in enumerate(searchable) if fragment in value]
-        candidates.sort(key=lambda i: str(findings[i].get("status") or "").upper() != "VERIFIED")
-        chosen = next((i for i in candidates if i not in assigned_findings), None)
+        # Only a VERIFIED finding can satisfy (and thus be consumed by) a label.
+        # An unverified match must NOT be assigned here: assigning it would both
+        # score a miss and remove it from the pool, hiding it from the
+        # false-positive accounting it belongs in.
+        verified_candidates = [i for i in candidates
+                               if str(findings[i].get("status") or "").upper() == "VERIFIED"]
+        chosen = next((i for i in verified_candidates if i not in assigned_findings), None)
         if chosen is not None:
             assigned_findings.add(chosen)
-        verified = chosen is not None and str(findings[chosen].get("status") or "").upper() == "VERIFIED"
+        verified = chosen is not None
         positive_results.append({
             "case_id": case_id,
             "expected": "finding",

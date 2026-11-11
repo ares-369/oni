@@ -66,6 +66,15 @@ still edit `config.yaml` (scope and attack host), see
   bodies or field values. It flags observed sensitive GET forms and cleartext credential forms,
   blocks mutating requests, and sends explicit auth headers only to the starting origin. Install with
   `pip install 'oniops[browser]'` and `playwright install chromium`.
+- **Authenticated target sessions with refresh** — beyond a fixed auth header, OniOps can log in to a
+  target per role (`primary` / `low_priv` / `peer`) via a `target_auth` config block: `json_login`
+  (POST credentials, read a token from a JSON path, format a header — covers token APIs such as VAmPI
+  and Juice Shop) or `form_login` (GET a CSRF token, POST form credentials, capture the session cookie
+  — covers form logins such as DVWA). When a token expires mid-scan the role's session is re-minted
+  once and the request retried, so short-lived JWTs (for example VAmPI's ~60s tokens) no longer
+  collapse the access-control differential into anonymous requests. Credentials live only in config or
+  the environment (`${ENV_VAR}`) and never reach findings, logs or reports. See
+  [docs/TARGET_AUTH.md](docs/TARGET_AUTH.md).
 - **41 Kali Arsenal Tools + 12 Bounded ReAct Agent Tools** — manages and executes a
   full catalog of **41 offensive tools** across YAML Playbooks, scan profiles, and the
   Arsenal UI, while restricting the autonomous LLM ReAct loop to a curated subset of

@@ -14,7 +14,8 @@ from urllib.parse import parse_qsl, urldefrag, urlencode, urljoin, urlsplit, url
 from .greybox import sanitize_auth_header
 from .scope import Scope, ScopeViolation
 
-_SECRET_QUERY_KEY = re.compile(r"token|secret|password|passwd|auth|session|cookie|api.?key|code", re.I)
+_SECRET_QUERY_KEY = re.compile(
+    r"token|secret|password|passwd|auth|session|cookie|api.?key|code|jwt|bearer|credential", re.I)
 
 
 def _safe_url(url: str) -> str:
@@ -93,7 +94,13 @@ def crawl_web_app(start_url: str, scope: Scope, *, max_pages: int = 50,
     start = urlsplit(start_url)
     if start.scheme.lower() not in {"http", "https"} or not start.hostname or start.username or start.password:
         raise ValueError("Start URL must be an HTTP(S) URL without embedded credentials.")
-    scope.resolve(start.hostname)
+    # Resolve the start host once and pin Chromium's resolver to that in-scope
+    # address, so the browser cannot re-resolve the name to an out-of-scope IP
+    # between this check and navigation (DNS-rebinding / TOCTOU). Other in-scope
+    # hosts reached during the crawl are still re-checked in check_url; a name
+    # that rebinds mid-crawl to a fresh out-of-scope IP is the residual limit.
+    _resolved_start = scope.resolve(start.hostname)
+    _pinned_ip = getattr(_resolved_start, "ip", "")
     auth = sanitize_auth_header(auth_header) if auth_header else ""
     state_path = Path(storage_state).expanduser() if storage_state else None
     if state_path and not state_path.is_file():
@@ -124,8 +131,13 @@ def crawl_web_app(start_url: str, scope: Scope, *, max_pages: int = 50,
             return False, str(exc)
         return True, ""
 
+    launch_args = []
+    if _pinned_ip:
+        # Pin only the start host; EXCLUDE nothing else so other hosts still
+        # resolve normally and pass through check_url.
+        launch_args.append(f"--host-resolver-rules=MAP {start.hostname} {_pinned_ip}")
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        browser = playwright.chromium.launch(headless=True, args=launch_args)
         context = browser.new_context(
             service_workers="block", accept_downloads=False,
             storage_state=str(state_path) if state_path else None,
