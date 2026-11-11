@@ -1,11 +1,12 @@
 # Disposable, non-root scanner worker image for `kali.execution_mode: docker`.
+# dirb provides /usr/share/wordlists/dirb/common.txt (ffuf) and katana is used by web_app_pt.
 # Add only the scanner packages your enabled playbooks require.
 FROM kalilinux/kali-rolling
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       ca-certificates curl ffuf iptables nikto nmap nuclei python3 python3-yaml \
+       ca-certificates curl dirb ffuf iptables katana nikto nmap nuclei python3 python3-yaml \
        util-linux whatweb \
     && rm -rf /var/lib/apt/lists/*
 

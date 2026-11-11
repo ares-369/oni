@@ -2,23 +2,26 @@
 # =====================================================================
 #  OniOps — Proxmox LXC installer
 #  Run on a Proxmox VE host. Creates a Debian 12 LXC and installs OniOps
-#  as a systemd service. Edit the variables below first.
+#  into /opt/oniops as a systemd service (not started until you edit config.yaml).
+#  The Debian template must already be downloaded (pveam update; pveam download
+#  local <template>); override TEMPLATE/STORAGE/BRIDGE/CTID/CT_HOSTNAME as needed.
 # =====================================================================
 set -euo pipefail
 
 CTID="${CTID:-950}"
-HOSTNAME="${HOSTNAME:-oniops}"
+# Not called HOSTNAME: bash sets that to the Proxmox host's own name.
+CT_HOSTNAME="${CT_HOSTNAME:-oniops}"
 DISK_GB="${DISK_GB:-8}"
 RAM_MB="${RAM_MB:-1536}"
 CORES="${CORES:-2}"
 BRIDGE="${BRIDGE:-vmbr0}"
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE="${TEMPLATE:-local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst}"
-ONIOPS_REPO="${ONIOPS_REPO:-https://github.com/oniops/oniops.git}"
+ONIOPS_REPO="${ONIOPS_REPO:-https://github.com/ares-369/oniops.git}"
 
-echo "[OniOps] creating LXC ${CTID} (${HOSTNAME})..."
+echo "[OniOps] creating LXC ${CTID} (${CT_HOSTNAME})..."
 pct create "$CTID" "$TEMPLATE" \
-  --hostname "$HOSTNAME" \
+  --hostname "$CT_HOSTNAME" \
   --cores "$CORES" --memory "$RAM_MB" \
   --rootfs "${STORAGE}:${DISK_GB}" \
   --net0 "name=eth0,bridge=${BRIDGE},ip=dhcp" \
@@ -36,11 +39,9 @@ pct exec "$CTID" -- bash -lc '
   apt-get install -y -qq python3 python3-venv python3-pip git
   git clone '"$ONIOPS_REPO"' /opt/oniops || (cd /opt/oniops && git pull)
   cd /opt/oniops
-  python3 -m venv venv
-  ./venv/bin/pip install -q -r requirements.txt
-  [ -f config.yaml ] || cp config.example.yaml config.yaml
-  [ -f .env ] || cp .env.example .env
-  mkdir -p secrets data
+  bash scripts/install.sh
+  id oniops >/dev/null 2>&1 || useradd --system --home-dir /opt/oniops --shell /usr/sbin/nologin oniops
+  chown -R oniops:oniops /opt/oniops
   cp deploy/systemd/oniops.service /etc/systemd/system/oniops.service
   systemctl daemon-reload
   systemctl enable oniops

@@ -51,7 +51,7 @@ kali:
   ssh_key: "./secrets/kali_id_rsa"   # keep OUT of git (secrets/ is ignored)
   connect_timeout: 6
   verify_host_key: "tofu"    # tofu (trust-on-first-use) | strict | insecure
-  known_hosts: "./secrets/known_hosts"
+  known_hosts: "./data/known_hosts"   # host keys are saved here (data/ is writable, also under Docker)
   # Optional: launch each scanner command in a disposable, resource-limited
   # Docker container on the attack host. Build/provide an image containing the
   # tools used by your selected playbooks. The default SSH mode remains above.
