@@ -24,7 +24,7 @@ behaviour may still change between releases.
   capabilities before scanner execution, and reject built-in Docker network modes. They require a
   user-defined bridge so DNS stays on Docker's embedded resolver; IPv4-only kernels are handled
   explicitly while IPv6 scopes fail closed if IPv6 is unavailable. The bootstrap receives only the
-  temporary network and UID/GID capabilities it needs before dropping them all.
+  temporary network, UID/GID, and capability-management permissions needed before dropping them all.
 - CI builds the worker image, exercises the firewall against allowed and denied container targets,
   and runs Nmap/Nuclei as a non-root user with a read-only filesystem; `.dockerignore` prevents
   unrelated workspace files from entering its build context.
