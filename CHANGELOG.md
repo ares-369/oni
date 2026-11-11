@@ -7,6 +7,61 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.5-beta] — 2026-11-11
+
+### Security
+- **Forgeable signatures removed.** Earlier releases fell back to a built-in
+  constant key (`oniops-default-manifest-key` / `oniops-webhook-key`) when no signing
+  key was set, so anyone with the source could forge an assessment manifest or
+  webhook signature. There is no fallback key any more. With no operator key
+  configured, a manifest still carries its SHA-256 integrity hash but is marked
+  `signed: false` with an `unsigned_reason`, and webhook alerts are sent with no
+  signature header rather than a worthless one. `verify_assessment_manifest`
+  now returns false for unsigned manifests, empty keys and the old constants;
+  `manifest_verification_status` reports the reason. The web UI also no longer
+  signs with Flask's per-process session key, which could never be verified
+  after a restart. Set `ONIOPS_SECRET_KEY` (or `auth.secret_key`) to sign; `oniops
+  doctor` now warns when no persistent key is set.
+- **Retest could report a still-exploitable finding as FIXED.** Access-control
+  findings (BOLA/BFLA and cross-user horizontal BOLA) are proven with a
+  low-privilege or peer identity, but the zero-token retest replayed the stored
+  request anonymously, got a 401, and wrongly concluded the issue was fixed. The
+  retest now replays as the identity that proved the finding, and reports FIXED
+  only on positive evidence that access is now denied (HTTP 403) or that the
+  proof signature is gone. A credential that is simply rejected (401) yields
+  UNCONFIRMED, never FIXED. Findings stored by 0.4.1–0.4.2 without their
+  credential are not replayed at all; they ask for a fresh assessment. Replayed
+  credentials are stored raw (a retest needs them) but masked in every display,
+  export and webhook payload. SQLi/XSS/LFI/SSRF/RCE/GraphQL retests now re-run
+  the proof check instead of trusting a clean exit code, and `cve`/`exploitdb`
+  retests report UNCONFIRMED rather than VERIFIED on any output.
+- **Scan rate limit is now enforced.** `scope.rate_limit_per_min` was shown in
+  the settings screen but never applied. It now paces every command or request
+  sent to a target, per target, at both the attack-host runner and the AI-probe
+  HTTP path. The limit bounds launched commands/requests, not packets: one
+  `nmap` or `nikto` run still sends many. On an HTTP 429 or 503 the AI-probe
+  path backs off using `Retry-After` (capped at 60 seconds) or jittered
+  exponential backoff, then records the probe as throttled — never as a pass —
+  and the attack-host path puts a throttling target on a short cool-down.
+
+### Added
+- **`oniops demo` — a zero-setup first run.** `oniops demo` needs no config, no attack
+  host, no SSH keys and no LLM. It starts a small, deliberately flawed practice
+  target bound to loopback inside the process, runs the real probes and
+  validators against it through a loopback-only local runner, and prints what it
+  found with proof snippets, the fix-first score and a zero-token retest, then
+  stops the target and deletes its temporary ledger. Everything is labelled
+  DEMO and nothing is written to a real ledger or recorded as terms acceptance.
+  Inspired by how projects like OWASP Juice Shop lower the barrier to a first
+  run.
+- **GraphQL introspection check in Web App PT.** The existing GraphQL
+  introspection probe is now part of a `web_app_pt` assessment, and its finding
+  can be retested.
+
+### Fixed
+- The AI security posture score no longer counts errored or throttled probes as
+  passes; a run with no real answers is rated Inconclusive instead of Strong.
+
 ### Changed
 - **Project renamed to OniOps.** The product and its documentation, web UI,
   generated reports and CLI help now use the name *OniOps*. The Python package,
