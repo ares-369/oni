@@ -1,4 +1,4 @@
-"""Declarative YAML attack playbooks for ONIOPS.
+"""Declarative YAML attack playbooks for OniOps.
 
 Operators can drop `.yaml` playbooks into the `playbooks/` directory to add
 custom assessment tracks without editing Python code. Every command is built

@@ -1,4 +1,4 @@
-# ONIOPS — Offensive Neural Intelligence
+# OniOps — Offensive Neural Intelligence
 
 [![CI](https://github.com/ares-369/oniops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oniops/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -7,22 +7,22 @@
 
 **An open-source, provider-agnostic, autonomous red-team framework.**
 
-ONIOPS drives a Kali (or any tooled Linux) toolchain over SSH, reasons with the
+OniOps drives a Kali (or any tooled Linux) toolchain over SSH, reasons with the
 LLM(s) of your choice — local or cloud — and runs scope-locked offensive
 assessments against systems you are authorized to test. It pairs classic
 pentest/WAPT tooling with an autonomous AI operator, an attack-surface graph,
 and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
-> **Authorized use only.** ONIOPS performs active, intrusive security testing. Run
+> **Authorized use only.** OniOps performs active, intrusive security testing. Run
 > it only against systems you own or have **explicit written permission** to
 > test. Unauthorized use is illegal in most jurisdictions.
 >
-> ONIOPS is provided as-is, for learning and authorized testing. You are
+> OniOps is provided as-is, for learning and authorized testing. You are
 > responsible for how you use it — the author is not responsible for misuse,
 > for harm to any person or organization, or for modified versions made by
 > others. Please read the [Responsible Use and Disclaimer](DISCLAIMER.md).
 
-![ONIOPS Command Center](docs/screenshots/oniops_dashboard.png)
+![OniOps Command Center](docs/screenshots/oniops_dashboard.png)
 
 | Attack-Surface Graph & Analytics | Proof-First Findings & Zero-Token Retest |
 | --- | --- |
@@ -90,7 +90,7 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 ```mermaid
 flowchart LR
-    Op["Operator Browser / CLI\n(Web UI / OIDC SSO / CI Gate)"] -->|"HTTPS / CLI"| Ctrl["ONIOPS Controller\n(Flask + Waitress + CLI)"]
+    Op["Operator Browser / CLI\n(Web UI / OIDC SSO / CI Gate)"] -->|"HTTPS / CLI"| Ctrl["OniOps Controller\n(Flask + Waitress + CLI)"]
     Ctrl -->|"Rules of Engagement\n(CIDR + DNS + Cmd Guard)"| Scope["Scope & Safety Engine\n(oniops/scope.py)"]
     Scope -->|"SSH / Paramiko\n(argv-only)"| Kali["Attack Host(s)\n(Kali / 41 Tools)"]
     Kali -->|"nmap / nuclei / ffuf\nsearchsploit / httpx"| Target["Authorized Targets\n(In-Scope CIDRs)"]
@@ -101,12 +101,12 @@ flowchart LR
 
 ### How it works
 
-ONIOPS has two parts you provide:
+OniOps has two parts you provide:
 
-1. An **attack host** — a Kali or tooled Linux box that ONIOPS reaches over SSH
-   (it runs the actual tools there). It can even be `localhost` if ONIOPS runs on
+1. An **attack host** — a Kali or tooled Linux box that OniOps reaches over SSH
+   (it runs the actual tools there). It can even be `localhost` if OniOps runs on
    the Kali box itself.
-2. The **ONIOPS controller** — this app, which you install wherever is convenient
+2. The **OniOps controller** — this app, which you install wherever is convenient
    on your network.
 
 Optionally, an **LLM** (local Ollama needs no key; cloud providers need an API
@@ -154,7 +154,7 @@ docker compose up -d
 
 To reach it from other machines, change the port mapping in `docker-compose.yml`,
 remove the `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK` line there, and enable a login
-(`auth.mode`) in `config.yaml`. ONIOPS refuses to start exposed without a login.
+(`auth.mode`) in `config.yaml`. OniOps refuses to start exposed without a login.
 
 If your attack host / LLM are on the same LAN as the Docker host, uncomment
 `network_mode: host` in `docker-compose.yml`.
@@ -164,7 +164,7 @@ If your attack host / LLM are on the same LAN as the Docker host, uncomment
 On a Proxmox VE host:
 
 ```bash
-# Creates an unprivileged Debian container and installs ONIOPS as a service
+# Creates an unprivileged Debian container and installs OniOps as a service
 CTID=950 bash deploy/proxmox-lxc.sh
 
 # Then, inside the container:
@@ -173,9 +173,9 @@ pct exec 950 -- systemctl start oniops
 # UI on the container's IP, port 8501 - set bind_host: "0.0.0.0" and a login first
 ```
 
-By default ONIOPS listens on `127.0.0.1` only. To open it from other machines, set
+By default OniOps listens on `127.0.0.1` only. To open it from other machines, set
 `oniops.bind_host: "0.0.0.0"` **and** a login (`auth.mode`: basic, local, oidc or
-proxy) in `config.yaml`. ONIOPS refuses to start on a network address without a login,
+proxy) in `config.yaml`. OniOps refuses to start on a network address without a login,
 and refuses proxy mode without `auth.proxy_trusted_ips`.
 
 ### Option C — Windows (native, no WSL)
@@ -201,9 +201,9 @@ sudo systemctl enable --now oniops
 # UI on http://127.0.0.1:8501 (see below to open it to your network)
 ```
 
-By default ONIOPS listens on `127.0.0.1` only. To open it from other machines, set
+By default OniOps listens on `127.0.0.1` only. To open it from other machines, set
 `oniops.bind_host: "0.0.0.0"` **and** a login (`auth.mode`: basic, local, oidc or
-proxy) in `config.yaml`. ONIOPS refuses to start on a network address without a login,
+proxy) in `config.yaml`. OniOps refuses to start on a network address without a login,
 and refuses proxy mode without `auth.proxy_trusted_ips`.
 
 More targets (pipx, WSL2, Raspberry Pi, cloud VM, Kubernetes, Unraid,
@@ -218,7 +218,7 @@ Everything environment-specific lives in `config.yaml` (layout) and `.env`
 
 ```yaml
 scope:
-  allowed_cidrs: ["192.168.1.0/24"]   # ONIOPS refuses anything outside this
+  allowed_cidrs: ["192.168.1.0/24"]   # OniOps refuses anything outside this
 kali:
   host: "192.168.1.50"                 # your attack host
   user: "root"
@@ -237,7 +237,7 @@ See [`config.example.yaml`](config.example.yaml) for the full annotated file.
 
 ## Authentication & SSO
 
-ONIOPS ships with **no login by default** (`auth.mode: none`). Because the UI can
+OniOps ships with **no login by default** (`auth.mode: none`). Because the UI can
 drive the attack host, turn on auth whenever it is reachable beyond localhost:
 
 - `basic` — HTTP Basic (single operator)
@@ -246,16 +246,16 @@ drive the attack host, turn on auth whenever it is reachable beyond localhost:
   Azure AD, Okta…); `pip install 'oniops[oidc]'`
 - `proxy` — trust a reverse-proxy forward-auth header
 
-For production, front ONIOPS with a **TLS-terminating reverse proxy** (nginx/Caddy/
+For production, front OniOps with a **TLS-terminating reverse proxy** (nginx/Caddy/
 Traefik/NPM). See the Authentication section of `config.example.yaml`.
 
 ---
 
-## Using ONIOPS
+## Using OniOps
 
 - **Recon Workbench** — run an assessment (fast recon, deep service, web-TLS,
   **WAPT**, or the autonomous PTT) against an in-scope IP/domain.
-- **AI Agent** — give an objective; ONIOPS plans and runs scoped tools to a report.
+- **AI Agent** — give an objective; OniOps plans and runs scoped tools to a report.
 - **Target Matrix / Attack Graph** — discover hosts (explicit, guarded) and see
   the surface; click a host to assess it.
 - **Tooling Arsenal** — see/install tools on the attack host.
@@ -266,7 +266,7 @@ Traefik/NPM). See the Authentication section of `config.example.yaml`.
 
 ## CLI & CI/CD Security Gate
 
-ONIOPS can be driven headlessly from a terminal, cron job, or CI/CD pipeline:
+OniOps can be driven headlessly from a terminal, cron job, or CI/CD pipeline:
 
 ```bash
 # Self-diagnostics (config, scope, SQLite integrity, playbooks, attack runner)
@@ -291,26 +291,26 @@ python -m oniops restore ./backups/oniops-snapshot.sqlite
 
 ---
 
-## Where ONIOPS Fits
+## Where OniOps Fits
 
-There are excellent tools in this space, and ONIOPS borrows ideas from many of
+There are excellent tools in this space, and OniOps borrows ideas from many of
 them. It is not trying to replace any of them — it aims to be a small,
 self-hostable option that combines classic pentest tooling with an AI operator
 and LLM red-teaming in one place.
 
-| If you want… | Also look at | What ONIOPS tries to add |
+| If you want… | Also look at | What OniOps tries to add |
 | --- | --- | --- |
 | A mature autonomous pentest agent | [PentAGI](https://github.com/vxcontrol/pentagi), [Strix](https://github.com/usestrix/strix) | A lightweight single-process deploy (Python + SQLite + SSH to your own Kali box) |
 | Dedicated LLM vulnerability scanning | [garak](https://github.com/NVIDIA/garak), [promptfoo](https://github.com/promptfoo/promptfoo), [PyRIT](https://github.com/Azure/PyRIT) | LLM probes side by side with network/web testing, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI RMF |
 | Enterprise autonomous pentesting | Commercial platforms such as NodeZero or XBOW | A free, open-source, homelab-to-small-team option you fully control |
 
-ONIOPS is **beta** software. Many features are unit-tested but have had limited
+OniOps is **beta** software. Many features are unit-tested but have had limited
 real-world testing — please treat findings as leads to verify, and
 [open an issue](https://github.com/ares-369/oniops/issues) when something is wrong.
 
 ## Acknowledgements
 
-ONIOPS stands on the shoulders of the open-source security community. It
+OniOps stands on the shoulders of the open-source security community. It
 orchestrates tools such as [Nmap](https://nmap.org),
 [Nuclei](https://github.com/projectdiscovery/nuclei),
 [httpx](https://github.com/projectdiscovery/httpx),
@@ -324,8 +324,8 @@ DeepTeam. Thank you to everyone who builds and maintains them.
 
 ## Security
 
-ONIOPS tries to follow the same security guidance it tests for — see
-[`SECURITY.md`](SECURITY.md). If you find a vulnerability in ONIOPS itself,
+OniOps tries to follow the same security guidance it tests for — see
+[`SECURITY.md`](SECURITY.md). If you find a vulnerability in OniOps itself,
 please report it privately.
 
 ## Contributing
@@ -336,7 +336,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) to get started, and
 
 ## Disclaimer
 
-ONIOPS is a tool for learning and for testing systems you are authorized to test.
+OniOps is a tool for learning and for testing systems you are authorized to test.
 It is provided "as is", without warranty. You are solely responsible for your
 use of it; the author accepts no liability for misuse, for any damage or harm
 caused to people, companies, or systems, or for modified versions, forks, or

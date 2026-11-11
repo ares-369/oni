@@ -1,11 +1,11 @@
-"""Validator self-test for ONIOPS.
+"""Validator self-test for OniOps.
 
-Runs ONIOPS's own finding validator, BOLA/BOPLA analyzer, white-box scanner,
+Runs OniOps's own finding validator, BOLA/BOPLA analyzer, white-box scanner,
 prompt-injection filter and priority ranking against a small set of built-in
 example inputs, and checks they behave as designed: confirming inputs that
 contain a real proof, and rejecting common false-positive shapes.
 
-What this is NOT: a measure of how many real vulnerabilities ONIOPS finds on real
+What this is NOT: a measure of how many real vulnerabilities OniOps finds on real
 targets. The examples are written for these validators, so a full pass only
 shows the logic works as intended. Detection accuracy has to be measured
 against real vulnerable applications (e.g. OWASP Juice Shop, DVWA, VAmPI).
@@ -25,7 +25,7 @@ from .greybox import (
 )
 
 SELFTEST_NOTE = (
-    "This self-test checks ONIOPS's own validators against built-in example inputs. "
+    "This self-test checks OniOps's own validators against built-in example inputs. "
     "It is not a measure of detection accuracy on real targets."
 )
 
@@ -228,7 +228,7 @@ def run_selftest() -> dict:
         by_kind[k] = {"label": label, "passed": sum(c["passed"] for c in ks), "total": len(ks)}
     passed = sum(1 for c in cases if c["passed"])
     return {
-        "name": "ONIOPS validator self-test",
+        "name": "OniOps validator self-test",
         "total_cases": len(cases),
         "passed": passed,
         "failed": len(cases) - passed,

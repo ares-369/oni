@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ONIOPS // Offensive Neural Intelligence</title>
+  <title>OniOps // Offensive Neural Intelligence</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='lokiGrad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23ef4444'/%3E%3Cstop offset='100%25' stop-color='%23dc2626'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpolygon points='32,3 57,15 52,45 32,61 12,45 7,15' fill='%230d1117' stroke='url(%23lokiGrad)' stroke-width='2.5'/%3E%3Cpath d='M18 40 C13 26 16 12 25 6 C21 16 21 25 27 32 L32 37 L37 32 C43 25 43 16 39 6 C48 12 51 26 46 40 L39 36 L32 54 L25 36 Z' fill='url(%23lokiGrad)'/%3E%3Cpolygon points='23,31 29,34 25,36' fill='%23ffffff'/%3E%3Cpolygon points='41,31 35,34 39,36' fill='%23ffffff'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/static/mdi/css/materialdesignicons.min.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -935,12 +935,12 @@
     <div class="terms-card">
       <div class="terms-title" id="termsTitle"><i class="mdi mdi-shield-alert-outline"></i> Authorized use only</div>
       <p class="terms-lead" id="termsLead">
-        ONIOPS performs active, intrusive security testing. Before you start, please confirm how you will use it.
+        OniOps performs active, intrusive security testing. Before you start, please confirm how you will use it.
       </p>
       <ul class="terms-list" id="termsList"></ul>
       <label class="terms-check" for="termsConfirm">
         <input type="checkbox" id="termsConfirm" onchange="document.getElementById('termsAcceptBtn').disabled = !this.checked" />
-        <span>I will only use ONIOPS on systems I own or have explicit written permission to test, and I accept the
+        <span>I will only use OniOps on systems I own or have explicit written permission to test, and I accept the
           <a id="termsLink" href="https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">responsible-use terms and disclaimer</a>.</span>
       </label>
       <div class="terms-actions">
@@ -977,7 +977,7 @@
           <i class="mdi mdi-menu"></i>
         </button>
         <div class="brand">
-          <div class="brand-logo" title="ONIOPS — Offensive Neural Intelligence">
+          <div class="brand-logo" title="OniOps — Offensive Neural Intelligence">
             <svg width="22" height="22" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <linearGradient id="lokiHeaderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -993,7 +993,7 @@
           </div>
           <div>
             <div class="brand-title">
-              ONIOPS
+              OniOps
               <span class="team-badge"><i class="mdi mdi-radar"></i> OFFENSIVE NEURAL INTELLIGENCE</span>
             </div>
             <div class="brand-sub">Autonomous Red Team // Provider-Agnostic AI</div>
@@ -1111,7 +1111,7 @@
         <!-- First-run setup checklist (hidden once everything is done or dismissed) -->
         <div class="panel setup-card" id="setupChecklist" hidden>
           <div class="panel-header">
-            <div class="panel-title"><i class="mdi mdi-rocket-launch-outline"></i> Get ONIOPS ready</div>
+            <div class="panel-title"><i class="mdi mdi-rocket-launch-outline"></i> Get OniOps ready</div>
             <div style="display:flex; gap:10px; align-items:center;">
               <span class="mono" id="setupProgressText" style="font-size:12px; color:var(--text-muted);"></span>
               <button class="btn btn-sm" type="button" onclick="hideChecklist()" aria-label="Hide setup checklist">Hide</button>
@@ -1302,7 +1302,7 @@
 
           <div class="panel">
             <div class="panel-header">
-              <div class="panel-title"><i class="mdi mdi-robot-outline"></i> ONIOPS Red-Team Executive Report</div>
+              <div class="panel-title"><i class="mdi mdi-robot-outline"></i> OniOps Red-Team Executive Report</div>
               <span class="badge badge-red">MITRE ATT&amp;CK + REMEDIATION</span>
             </div>
             <div class="panel-body">
@@ -1525,7 +1525,7 @@
                 <button class="btn btn-sm" onclick="loadAssessmentDiff()" title="Compare posture drift against previous assessment of this target"><i class="mdi mdi-compare-horizontal"></i> Drift Diff</button>
                 <button class="btn btn-sm" onclick="downloadText('oniops-assessment.md', window._lastScanMd || '')"><i class="mdi mdi-download"></i> .md</button>
                 <button class="btn btn-sm" onclick="downloadText('oniops-assessment.json', window._lastScanJson || '')"><i class="mdi mdi-download"></i> .json</button>
-                <button class="btn btn-sm" onclick="downloadPdf('oniops-assessment.pdf', 'ONIOPS Assessment Report', window._lastScanMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button>
+                <button class="btn btn-sm" onclick="downloadPdf('oniops-assessment.pdf', 'OniOps Assessment Report', window._lastScanMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button>
               </div>
             </div>
             <div class="panel-body">
@@ -1555,7 +1555,7 @@
                   <th>Target</th>
                   <th>Finding</th>
                   <th>Severity</th>
-                  <th title="How sure ONIOPS is that the finding is real: Certain = verified with proof, Firm = strong signal, Tentative = lead to verify manually">Confidence</th>
+                  <th title="How sure OniOps is that the finding is real: Certain = verified with proof, Firm = strong signal, Tentative = lead to verify manually">Confidence</th>
                   <th>Status</th>
                   <th>Evidence / Deterministic Replay</th>
                   <th>Zero-Token Retest</th>
@@ -1637,7 +1637,7 @@
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div><div style="display:flex; gap:8px;"><button class="btn btn-sm" onclick="downloadText('oniops-aisec-grc.md', window._lastAisecMd || '')"><i class="mdi mdi-download"></i> .md</button><button class="btn btn-sm" onclick="downloadPdf('oniops-aisec-grc.pdf', 'ONIOPS AI / LLM Red Team & GRC Report', window._lastAisecMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button></div></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-file-document-outline"></i> GRC Report</div><div style="display:flex; gap:8px;"><button class="btn btn-sm" onclick="downloadText('oniops-aisec-grc.md', window._lastAisecMd || '')"><i class="mdi mdi-download"></i> .md</button><button class="btn btn-sm" onclick="downloadPdf('oniops-aisec-grc.pdf', 'OniOps AI / LLM Red Team & GRC Report', window._lastAisecMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button></div></div>
           <div class="panel-body"><div id="aisecReport" style="color:var(--text-muted);">&mdash;</div></div>
         </div>
       </section>
@@ -1647,7 +1647,7 @@
         <div class="page-header">
           <div>
             <div class="page-title"><i class="mdi mdi-robot-excited-outline" style="color: var(--primary);"></i> Autonomous AI Agent</div>
-            <div class="page-subtitle">Give an objective; ONIOPS plans and runs scoped recon tools step by step, then reports. Non-destructive, scope-locked.</div>
+            <div class="page-subtitle">Give an objective; OniOps plans and runs scoped recon tools step by step, then reports. Non-destructive, scope-locked.</div>
           </div>
         </div>
         <div class="panel">
@@ -1677,7 +1677,7 @@
           <div class="panel-body"><div id="agentLog" class="terminal-box" style="min-height:120px; max-height:360px; overflow:auto;">No run yet. Enter an objective and Run Agent.</div></div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div><div style="display:flex; gap:8px;"><button class="btn btn-sm" onclick="downloadText('oniops-agent-report.md', window._lastAgentMd || '')"><i class="mdi mdi-download"></i> .md</button><button class="btn btn-sm" onclick="downloadPdf('oniops-agent-report.pdf', 'ONIOPS Autonomous Agent Report', window._lastAgentMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button></div></div>
+          <div class="panel-header"><div class="panel-title"><i class="mdi mdi-robot-outline"></i> Agent Report</div><div style="display:flex; gap:8px;"><button class="btn btn-sm" onclick="downloadText('oniops-agent-report.md', window._lastAgentMd || '')"><i class="mdi mdi-download"></i> .md</button><button class="btn btn-sm" onclick="downloadPdf('oniops-agent-report.pdf', 'OniOps Autonomous Agent Report', window._lastAgentMd || '')"><i class="mdi mdi-file-pdf-box"></i> .pdf</button></div></div>
           <div class="panel-body"><div id="agentFinal" style="color:var(--text-muted);">&mdash;</div></div>
         </div>
       </section>
@@ -1687,7 +1687,7 @@
         <div class="page-header">
           <div>
             <div class="page-title"><i class="mdi mdi-cog-outline" style="color: var(--primary);"></i> Settings</div>
-            <div class="page-subtitle">Connections, AI providers, scope, and security for this ONIOPS instance.</div>
+            <div class="page-subtitle">Connections, AI providers, scope, and security for this OniOps instance.</div>
           </div>
           <button class="btn" onclick="loadSettings()"><i class="mdi mdi-refresh"></i> Refresh</button>
         </div>
@@ -1725,7 +1725,7 @@
       <div class="drawer-header">
         <div class="drawer-title">
           <i class="mdi mdi-robot-outline"></i>
-          ONIOPS // RED-TEAM OPERATOR
+          OniOps // RED-TEAM OPERATOR
         </div>
         <button class="icon-btn" onclick="toggleDrawer()" style="width:28px; height:28px;" aria-label="Close the AI operator" title="Close">
           <i class="mdi mdi-close"></i>
@@ -1733,7 +1733,7 @@
       </div>
       <div class="drawer-messages" id="chatMessages">
         <div class="chat-bubble assistant">
-          <strong>ONIOPS Red-Team Operator</strong><br/>
+          <strong>OniOps Red-Team Operator</strong><br/>
           <span id="chatHostStatus" style="color:var(--text-muted);">Checking your attack host…</span><br/>
           You can ask me to:<br/>
           • <code>install whatweb</code> or <code>install sslscan</code> on the attack host<br/>
@@ -1742,7 +1742,7 @@
         </div>
       </div>
       <div class="drawer-input-bar">
-        <input type="text" id="chatInput" class="input" placeholder="Ask ONIOPS or run a tool..." aria-label="Message the AI operator" style="flex:1;" onkeydown="if(event.key==='Enter') sendChatMessage()" />
+        <input type="text" id="chatInput" class="input" placeholder="Ask OniOps or run a tool..." aria-label="Message the AI operator" style="flex:1;" onkeydown="if(event.key==='Enter') sendChatMessage()" />
         <button class="btn btn-primary" onclick="sendChatMessage()" aria-label="Send message" title="Send">
           <i class="mdi mdi-send"></i>
         </button>
@@ -2200,7 +2200,7 @@
           `<div class="set-row"><span>Instance name</span><input class="input" id="instName" aria-label="Instance name" value="${esc(cfg.instance_name)}" style="width:150px; font-size:12px;"/></div>` +
           `<div class="set-row"><span>External URL</span><input class="input" id="instUrl" aria-label="External URL" value="${esc(cfg.external_url || '')}" placeholder="https://oniops.example.com" style="width:55%; font-size:12px;"/></div>` +
           `<div style="margin:9px 0;"><button class="btn btn-sm btn-primary" onclick="saveInstance()">Save</button></div>` +
-          `<div class="set-row"><span>Version</span><span class="mono">ONIOPS ${s.version}</span></div>` +
+          `<div class="set-row"><span>Version</span><span class="mono">OniOps ${s.version}</span></div>` +
           `<div class="set-row"><span>License</span><span class="mono">Apache-2.0</span></div>` +
           `<div class="set-row"><span>Responsible-use terms</span><span style="font-size:12px; text-align:right;">` +
             (TERMS && TERMS.accepted_at
@@ -2211,7 +2211,7 @@
              <div style="font-size:11.5px; font-weight:600; color:var(--text-muted); margin-bottom:8px;">DIAGNOSTICS, SELF-TEST &amp; BACKUP</div>
              <div style="display:flex; gap:6px; flex-wrap:wrap;">
                <button class="btn btn-sm" type="button" onclick="runDoctorUi()"><i class="mdi mdi-stethoscope"></i> Run Doctor</button>
-               <button class="btn btn-sm" type="button" onclick="runBenchmarkUi()" title="Checks ONIOPS's own validators on built-in examples. Not a measure of detection accuracy on real targets."><i class="mdi mdi-check-decagram-outline"></i> Run self-test</button>
+               <button class="btn btn-sm" type="button" onclick="runBenchmarkUi()" title="Checks OniOps's own validators on built-in examples. Not a measure of detection accuracy on real targets."><i class="mdi mdi-check-decagram-outline"></i> Run self-test</button>
                <a class="btn btn-sm" href="/api/backup/download" download><i class="mdi mdi-database-export-outline"></i> Backup SQLite</a>
              </div>
              <div id="setDiagBox" class="mono" style="margin-top:8px; font-size:11px; color:var(--text-muted); white-space:pre-wrap;"></div>
@@ -2313,7 +2313,7 @@
       const btn = document.getElementById('agentRunBtn');
       btn.disabled = true; btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('agentStatus').textContent = 'starting';
-      document.getElementById('agentLog').textContent = '[ONIOPS] launching autonomous agent...';
+      document.getElementById('agentLog').textContent = '[OniOps] launching autonomous agent...';
       document.getElementById('agentFinal').innerHTML = '<span style="color:var(--text-muted);">Agent is working...</span>';
       try {
         const r = await (await fetch('/api/agent/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({objective, target, max_steps, auth_header})})).json();
@@ -2331,7 +2331,7 @@
           if (j.status === 'error') { document.getElementById('agentLog').textContent = 'ERROR: ' + (j.error || 'failed'); return; }
         }
         if (!data) { document.getElementById('agentLog').textContent += '\n[timed out waiting for agent]'; return; }
-        window._lastAgentMd = `# ONIOPS Agent Report\n\n**Objective:** ${data.objective || ''}\n**Target:** ${data.target || '-'}\n\n## Summary\n${data.final || ''}\n\n## Steps\n` +
+        window._lastAgentMd = `# OniOps Agent Report\n\n**Objective:** ${data.objective || ''}\n**Target:** ${data.target || '-'}\n\n## Summary\n${data.final || ''}\n\n## Steps\n` +
           (data.steps || []).map(s => `### Step ${s.step}: ${s.tool}\n- args: ${JSON.stringify(s.args)}\n- thought: ${s.thought || ''}\n\n\`\`\`\n${s.observation || ''}\n\`\`\``).join('\n\n');
         const t = (data.steps || []).map(s => `#${s.step}  ${s.tool}  ${JSON.stringify(s.args)}\n  thought: ${s.thought || ''}\n  ${String(s.observation || '').slice(0, 400).replace(/\n/g, '\n  ')}`).join('\n\n');
         document.getElementById('agentLog').textContent = t || '(no steps taken)';
@@ -2711,7 +2711,7 @@
       btn.innerHTML = '<i class="mdi mdi-loading mdi-spin"></i> Running...';
       document.getElementById('wbScanMeta').textContent = `Dispatching ${profile} on ${target}...`;
       window._wbEvents = []; document.getElementById('wbTimeline').innerHTML = '';
-      document.getElementById('wbRawOutput').textContent = `[ONIOPS] Starting ${profile} against ${target} from the attack host...\n`;
+      document.getElementById('wbRawOutput').textContent = `[OniOps] Starting ${profile} against ${target} from the attack host...\n`;
       document.getElementById('wbAiReport').innerHTML = `<div style="color:var(--text-muted);">Running recon and synthesizing the AI red-team report...</div>`;
 
       try {
@@ -2734,7 +2734,7 @@
           document.getElementById('wbScanMeta').textContent = `Job ${jobId} // ${j.status}${elapsed ? ' // ' + elapsed : ''}`;
           renderTimeline('wbTimeline', window._wbEvents, j.status === 'done' ? 'done' : 'running');
           document.getElementById('wbRawOutput').textContent =
-            `[ONIOPS] ${profile} on ${target} — ${j.status}. Raw tool output appears here when the run finishes.`;
+            `[OniOps] ${profile} on ${target} — ${j.status}. Raw tool output appears here when the run finishes.`;
           if (j.status === 'done') { data = j.result; break; }
           if (j.status === 'cancelled') { wbFinish('stopped', document.getElementById('wbRawOutput').textContent + '\n\n[stopped by operator]'); return; }
           if (j.status === 'error' || j.status === 'interrupted') { wbFinish('error', `ERROR: ${j.error || 'job failed'}`); return; }
@@ -2803,7 +2803,7 @@
         document.getElementById(pendingId).innerHTML = renderMarkdown(data.reply || data.error || 'No response.');
         if (data.tool_executed) loadKaliTools();
       } catch (e) {
-        document.getElementById(pendingId).textContent = 'Error contacting ONIOPS operator.';
+        document.getElementById(pendingId).textContent = 'Error contacting OniOps operator.';
       }
       box.scrollTop = box.scrollHeight;
     }
@@ -2824,7 +2824,7 @@
           return;
         }
         const esc = s => String(s || '').replace(/[<&>]/g, c => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
-        // Confidence: how sure ONIOPS is the finding is real (calibrated server-side
+        // Confidence: how sure OniOps is the finding is real (calibrated server-side
         // from verification status + evidence). Shown Burp-style.
         const CONF = {HIGH: ['Certain', 3, 'Verified with proof captured from the target'],
                       MEDIUM: ['Firm', 2, 'Strong signal, but not fully proven'],
@@ -3091,7 +3091,7 @@
     }
     function declineTerms() {
       document.getElementById('termsNote').textContent =
-        'ONIOPS can only be used after accepting these terms. You can close this tab, or accept to continue.';
+        'OniOps can only be used after accepting these terms. You can close this tab, or accept to continue.';
     }
     // Keep keyboard focus inside the dialog while it is open.
     document.addEventListener('keydown', e => {

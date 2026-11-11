@@ -1,7 +1,7 @@
-# Installing ONIOPS
+# Installing OniOps
 
-ONIOPS has two parts you provide: an **attack host** (a Kali or tooled Linux box it
-reaches over SSH) and the **ONIOPS controller** (this app). The controller is
+OniOps has two parts you provide: an **attack host** (a Kali or tooled Linux box it
+reaches over SSH) and the **OniOps controller** (this app). The controller is
 cross-platform; install it wherever is convenient on your network.
 
 ## Supported install targets
@@ -26,7 +26,7 @@ On the Proxmox host:
 ```bash
 CTID=950 bash deploy/proxmox-lxc.sh
 ```
-Creates an unprivileged Debian 12 container, installs ONIOPS, enables the service.
+Creates an unprivileged Debian 12 container, installs OniOps, enables the service.
 Then edit `/opt/oniops/config.yaml` and start it.
 
 ### Windows
@@ -45,9 +45,9 @@ sudo cp deploy/systemd/oniops.service /etc/systemd/system/
 sudo systemctl enable --now oniops
 ```
 
-## Where else ONIOPS can run
+## Where else OniOps can run
 
-ONIOPS is a lightweight Flask/waitress controller, so it fits almost anywhere that
+OniOps is a lightweight Flask/waitress controller, so it fits almost anywhere that
 runs Python 3.10+ and can reach your Kali host and model endpoint:
 
 - **On the Kali box itself** — controller + tools co-located, no SSH hop. The
@@ -68,5 +68,5 @@ runs Python 3.10+ and can reach your Kali host and model endpoint:
 3. Add cloud API keys to `.env` only for providers you use (Ollama needs none).
 4. Open the UI on port `8501`. It listens on `127.0.0.1` by default; to reach it
    from other machines set `oniops.bind_host: "0.0.0.0"` and enable a login
-   (`auth.mode`). ONIOPS refuses to start on a network address without a login,
+   (`auth.mode`). OniOps refuses to start on a network address without a login,
    and refuses `auth.mode: proxy` without `auth.proxy_trusted_ips`.

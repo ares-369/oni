@@ -1,21 +1,28 @@
 # Changelog
 
-All notable changes to ONIOPS are listed here. The format follows
+All notable changes to OniOps are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/). ONIOPS is pre-1.0 beta software, so
+[Semantic Versioning](https://semver.org/). OniOps is pre-1.0 beta software, so
 behaviour may still change between releases.
 
 ## [Unreleased]
+
+### Changed
+- **Project renamed to OniOps.** The product and its documentation, web UI,
+  generated reports and CLI help now use the name *OniOps*. The Python package,
+  the `oniops` command, install paths and the systemd unit are unchanged, so
+  existing deployments keep working. The repository moved to
+  `github.com/ares-369/oniops` (the old URL redirects).
 
 ## [0.4.4-beta] — 2026-11-10
 
 ### Security
 - **Reverse-proxy login could be forged.** With `auth.mode: proxy` and an empty
   `proxy_trusted_ips` (the example config's default), any client could send the
-  identity header and log in as any user. Proxy mode now fails closed: ONIOPS
+  identity header and log in as any user. Proxy mode now fails closed: OniOps
   refuses to start without a trusted-proxy list, and the request handler also
   rejects the header when no list is set.
-- **Secure defaults.** The web UI now listens on `127.0.0.1` by default, and ONIOPS
+- **Secure defaults.** The web UI now listens on `127.0.0.1` by default, and OniOps
   **refuses to start** when exposed on a network address without a login,
   unless you explicitly set `oniops.allow_unauthenticated_network: true` (or
   `ONIOPS_ALLOW_UNAUTHENTICATED_NETWORK=1`). Docker Compose now publishes the port
@@ -28,8 +35,8 @@ behaviour may still change between releases.
   scope or run arbitrary or destructive commands.
 
 ### Upgrade notes
-- If you reach ONIOPS from other machines, make sure `oniops.bind_host` is set
-  (e.g. `"0.0.0.0"`) **and** a login is enabled (`auth.mode`), or ONIOPS will not
+- If you reach OniOps from other machines, make sure `oniops.bind_host` is set
+  (e.g. `"0.0.0.0"`) **and** a login is enabled (`auth.mode`), or OniOps will not
   start. If you use `auth.mode: proxy`, set `auth.proxy_trusted_ips` to your
   reverse proxy's IP.
 
@@ -55,7 +62,7 @@ behaviour may still change between releases.
 ### Changed
 - The "benchmark" from 0.4.1-beta is renamed to **validator self-test**
   (`oniops selftest`, `GET /api/selftest`; the old names still work). It checks
-  ONIOPS's own validators against built-in example inputs and reports pass/fail
+  OniOps's own validators against built-in example inputs and reports pass/fail
   per check. It no longer reports precision / recall / F1, because those
   numbers described the examples, not detection accuracy on real targets.
 
@@ -80,7 +87,7 @@ behaviour may still change between releases.
   (`oniops/benchmark.py`, `python -m oniops benchmark`, `GET /api/benchmark`) for the
   Web/API proof validators, BOLA/BOPLA analyzers, SAST sink detection, and
   prompt-injection quarantine. *(Correction: this was originally described as
-  measuring recall, false-positive rate, precision and F1. It only checks ONIOPS's
+  measuring recall, false-positive rate, precision and F1. It only checks OniOps's
   validators against built-in examples and does not measure detection accuracy
   on real targets. Renamed to `oniops selftest` in 0.4.3-beta.)*
 - **Authenticated Assessment Enhancements**: `whatweb` and PoC service
@@ -104,7 +111,7 @@ behaviour may still change between releases.
 - **Step-by-step job timeline** in the Workbench (inspired by GitHub Actions):
   one row per stage with live status, duration and an expandable log.
   Progress events are now tagged with the job that produced them.
-- **"Get ONIOPS ready" setup checklist** on the dashboard for new installs
+- **"Get OniOps ready" setup checklist** on the dashboard for new installs
   (inspired by Grafana and Tailscale onboarding): terms, attack host, AI model,
   scope, discovery, first assessment. Hides itself when complete.
 - **Helpful empty states** (inspired by Stripe and Notion) for assessments,
@@ -118,7 +125,7 @@ behaviour may still change between releases.
 
 ### Added
 - `DISCLAIMER.md` responsible-use statement, also summarised in `NOTICE` and the
-  README: ONIOPS is for authorized testing, is provided as-is, and the author is
+  README: OniOps is for authorized testing, is provided as-is, and the author is
   not responsible for misuse or for modified versions made by others.
 - First-run "Authorized use only" dialog in the web UI. Each user must confirm
   authorized use and accept the terms before any scan, agent, AI test or
@@ -127,7 +134,7 @@ behaviour may still change between releases.
 
 ### Changed
 - CONTRIBUTING and README rewritten to be friendlier for new contributors; the
-  README now credits the tools and projects ONIOPS builds on.
+  README now credits the tools and projects OniOps builds on.
 
 ### Fixed
 - Page load no longer waits ~6s on SSH when the attack host is down: host and

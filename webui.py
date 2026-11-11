@@ -1,5 +1,5 @@
 """
-ONIOPS WebUI — Offensive Neural Intelligence.
+OniOps WebUI — Offensive Neural Intelligence.
 
 Scope-locked offensive assessment platform. Drives a Kali toolchain over SSH,
 reasons with any configured LLM provider, and generates AI red-team reports.
@@ -53,7 +53,7 @@ cfg = get_config()
 scope = Scope(cfg)
 llm = get_llm()
 
-# Attack hosts: ONIOPS can drive any SSH-reachable tooled Linux, not just Kali.
+# Attack hosts: OniOps can drive any SSH-reachable tooled Linux, not just Kali.
 HOST_RUNNERS = {h.name: KaliRunner(h, scope, cfg) for h in cfg.hosts}
 ACTIVE_HOST = cfg.kali.name
 
@@ -62,13 +62,13 @@ def active_runner() -> KaliRunner:
     return HOST_RUNNERS.get(ACTIVE_HOST) or next(iter(HOST_RUNNERS.values()))
 
 app = Flask(__name__)
-# ONIOPS typically runs behind a TLS-terminating reverse proxy; honor its
+# OniOps typically runs behind a TLS-terminating reverse proxy; honor its
 # X-Forwarded-* headers so generated URLs (e.g. the OIDC redirect_uri) use https.
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 log = logging.getLogger("oniops.webui")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [ONIOPS] %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [OniOps] %(message)s")
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -188,7 +188,7 @@ terms_store = TermsStore(DB_PATH)
 
 
 def _current_user() -> str:
-    """Who is making this request, in whatever auth mode ONIOPS runs."""
+    """Who is making this request, in whatever auth mode OniOps runs."""
     mode = cfg.auth.mode
     if mode == "proxy":
         return request.headers.get(cfg.auth.proxy_header, "") or "anonymous"
@@ -314,7 +314,7 @@ def api_status():
         scanned = conn.execute("SELECT count(*) FROM host_surface").fetchone()[0]
         scope_hosts = conn.execute("SELECT count(*) FROM targets").fetchone()[0]
 
-    latest = {"title": f"ONIOPS Red Team Engine · Ready · scope {', '.join(scope.cidrs)}",
+    latest = {"title": f"OniOps Red Team Engine · Ready · scope {', '.join(scope.cidrs)}",
               "status": "idle"}
     if ACTIVITY_LOG.exists():
         lines = [l for l in ACTIVITY_LOG.read_text().splitlines() if l.strip()]
@@ -439,7 +439,7 @@ def api_report_pdf():
     md = (data.get("markdown") or "").strip()
     if not md:
         return jsonify({"error": "Nothing to export."}), 400
-    title = (data.get("title") or "ONIOPS Security Assessment Report").strip()[:120]
+    title = (data.get("title") or "OniOps Security Assessment Report").strip()[:120]
     filename = re.sub(r"[^a-zA-Z0-9._-]", "-", (data.get("filename") or "oniops-report.pdf"))
     if not filename.endswith(".pdf"):
         filename += ".pdf"
@@ -527,8 +527,8 @@ def api_targets():
         surface = {r["target_ip"]: dict(r)
                    for r in conn.execute("SELECT * FROM host_surface").fetchall()}
 
-    # NOTE: ONIOPS never auto-scans. Discovery is explicit (POST /api/discover),
-    # so pointing ONIOPS at a large network can't trigger a surprise sweep.
+    # NOTE: OniOps never auto-scans. Discovery is explicit (POST /api/discover),
+    # so pointing OniOps at a large network can't trigger a surprise sweep.
     enriched = []
     for t in tgt_rows:
         ip = t["target_ip"]
@@ -854,7 +854,7 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
 
     emit_event("AI_REPORT", "busy", f"Writing red-team report via {active_model_name()}")
     sys_prompt = (
-        "You are ONIOPS, an Offensive Neural Intelligence red-team operator. Analyze the Kali "
+        "You are OniOps, an Offensive Neural Intelligence red-team operator. Analyze the Kali "
         "reconnaissance and produce a concise markdown report with:\n"
         "1. **Executive Exposure Summary** (attack surface & risk rating)\n"
         "2. **Enumerated Services & Attack Vectors** (ports, versions, weaknesses, MITRE ATT&CK IDs)\n"
@@ -1352,7 +1352,7 @@ def api_chat():
         ).fetchall()]
 
     sys_prompt = (
-        "You are ONIOPS, an Offensive Neural Intelligence red-team operator with SSH access to a Kali "
+        "You are OniOps, an Offensive Neural Intelligence red-team operator with SSH access to a Kali "
         f"host, scope-locked to {', '.join(scope.cidrs)}. Provide concise, tactical red-team analysis, "
         "CVE prioritization, MITRE ATT&CK mapping, and exploitation guidance (non-destructive).\n"
         f"Recent assessments: {json.dumps(recent)}"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  ONIOPS — Proxmox LXC installer
-#  Run on a Proxmox VE host. Creates a Debian 12 LXC and installs ONIOPS
+#  OniOps — Proxmox LXC installer
+#  Run on a Proxmox VE host. Creates a Debian 12 LXC and installs OniOps
 #  as a systemd service. Edit the variables below first.
 # =====================================================================
 set -euo pipefail
@@ -16,7 +16,7 @@ STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE="${TEMPLATE:-local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst}"
 ONIOPS_REPO="${ONIOPS_REPO:-https://github.com/oniops/oniops.git}"
 
-echo "[ONIOPS] creating LXC ${CTID} (${HOSTNAME})..."
+echo "[OniOps] creating LXC ${CTID} (${HOSTNAME})..."
 pct create "$CTID" "$TEMPLATE" \
   --hostname "$HOSTNAME" \
   --cores "$CORES" --memory "$RAM_MB" \
@@ -28,7 +28,7 @@ pct create "$CTID" "$TEMPLATE" \
 pct start "$CTID"
 sleep 5
 
-echo "[ONIOPS] installing dependencies inside the container..."
+echo "[OniOps] installing dependencies inside the container..."
 pct exec "$CTID" -- bash -lc '
   set -e
   export DEBIAN_FRONTEND=noninteractive
@@ -47,9 +47,9 @@ pct exec "$CTID" -- bash -lc '
 '
 
 echo
-echo "[ONIOPS] LXC ${CTID} ready."
+echo "[OniOps] LXC ${CTID} ready."
 echo "  Next: edit /opt/oniops/config.yaml (scope + Kali host), drop your SSH key"
 echo "  in /opt/oniops/secrets/, then:  pct exec ${CTID} -- systemctl start oniops"
 echo "  To open the UI from your network: set oniops.bind_host: \"0.0.0.0\" AND a login"
-echo "  (auth.mode) in config.yaml - ONIOPS refuses to start exposed without one."
+echo "  (auth.mode) in config.yaml - OniOps refuses to start exposed without one."
 echo "  Then browse to the container IP, port 8501."

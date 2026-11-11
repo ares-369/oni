@@ -1,6 +1,6 @@
 """Tests for the Rules-of-Engagement safety boundary.
 
-scope.py decides what ONIOPS is allowed to touch and which commands are refused.
+scope.py decides what OniOps is allowed to touch and which commands are refused.
 It is the single most safety-critical module, so it gets the most coverage.
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Target discovery.
 
 Replaces the old hardcoded per-lab host list. Hosts are discovered live by
-sweeping the configured scope CIDRs from the Kali host (nmap -sn), so ONIOPS
+sweeping the configured scope CIDRs from the Kali host (nmap -sn), so OniOps
 populates itself in any environment.
 """
 

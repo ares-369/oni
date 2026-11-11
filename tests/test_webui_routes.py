@@ -128,7 +128,7 @@ def test_webui_endpoints_end_to_end(cfg_path, tmp_path, monkeypatch):
     # 6. PDF Export endpoint
     r_pdf = client.post(
         "/api/report/pdf",
-        data=json.dumps({"filename": "test.pdf", "title": "ONIOPS Live Test", "markdown": "# Finding 1\n- Verified"}),
+        data=json.dumps({"filename": "test.pdf", "title": "OniOps Live Test", "markdown": "# Finding 1\n- Verified"}),
         content_type="application/json",
     )
     assert r_pdf.status_code == 200

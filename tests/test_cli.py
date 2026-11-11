@@ -1,4 +1,4 @@
-"""Tests for ONIOPS CLI and CI/CD security gate mode (`oniops/cli.py`)."""
+"""Tests for OniOps CLI and CI/CD security gate mode (`oniops/cli.py`)."""
 from __future__ import annotations
 
 import json
@@ -13,7 +13,7 @@ def test_cli_version_and_playbooks(capsys):
     out = capsys.readouterr().out
     # Track the package version instead of a hardcoded string so a release
     # bump never breaks this test.
-    assert f"ONIOPS {__version__}" in out
+    assert f"OniOps {__version__}" in out
 
     assert cli_main(["playbooks"]) == 0
     pb_out = json.loads(capsys.readouterr().out)
@@ -87,8 +87,8 @@ def test_cli_validator_selftest(capsys):
 
     assert cli_main(["selftest"]) == 0
     text_out = capsys.readouterr().out
-    assert "[ONIOPS validator self-test]" in text_out and "Recall" not in text_out
+    assert "[OniOps validator self-test]" in text_out and "Recall" not in text_out
 
     # Old command name still works for existing scripts.
     assert cli_main(["benchmark", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["name"] == "ONIOPS validator self-test"
+    assert json.loads(capsys.readouterr().out)["name"] == "OniOps validator self-test"

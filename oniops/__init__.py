@@ -1,4 +1,4 @@
-"""ONIOPS — Offensive Neural Intelligence.
+"""OniOps — Offensive Neural Intelligence.
 
 A provider-agnostic, scope-locked autonomous red-team framework.
 """

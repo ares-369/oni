@@ -5,7 +5,7 @@ Two layers are tested:
      planted in banners, HTML, API specs and error pages, including Unicode and
      encoding tricks.
   2. Defence in depth: even when an injection fully succeeds and the model obeys
-     it, ONIOPS still refuses to act outside the authorized scope or run
+     it, OniOps still refuses to act outside the authorized scope or run
      destructive commands. A regex filter can never catch every paraphrase, so
      this second layer is the one that actually matters.
 """

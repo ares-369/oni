@@ -1,4 +1,4 @@
-"""Authentication for ONIOPS.
+"""Authentication for OniOps.
 
 Modes (config.auth.mode):
   none   - no login (default; dev / behind a trusted network)
@@ -7,7 +7,7 @@ Modes (config.auth.mode):
   oidc   - SSO via any OpenID Connect provider (Authentik, Keycloak, Google,
            Azure AD, Okta, Auth0, ...). Requires the optional `authlib` extra.
   proxy  - trust a reverse-proxy forward-auth header (e.g. X-Forwarded-User,
-           X-Authentik-Username). ONIOPS must be reachable ONLY via that proxy.
+           X-Authentik-Username). OniOps must be reachable ONLY via that proxy.
 
 Passwords: store a pbkdf2 hash (auth.password_hash) in preference to a plaintext
 ONIOPS_AUTH_PASSWORD. Sessions are signed with ONIOPS_SECRET_KEY.
@@ -187,8 +187,8 @@ def init_auth(app, cfg) -> None:
                 if not allowed:
                     return Response(reason, 403)
                 return None
-            return Response("ONIOPS authentication required", 401,
-                            {"WWW-Authenticate": 'Basic realm="ONIOPS"'})
+            return Response("OniOps authentication required", 401,
+                            {"WWW-Authenticate": 'Basic realm="OniOps"'})
 
         if mode == "proxy":
             # Anti-forgery: only a trusted proxy IP may assert the identity header.
@@ -251,7 +251,7 @@ def init_auth(app, cfg) -> None:
         def _fail(msg: str):
             safe_msg = html.escape(str(msg or ""))
             return Response(
-                f"<!doctype html><meta charset=utf-8><title>ONIOPS sign-in</title>"
+                f"<!doctype html><meta charset=utf-8><title>OniOps sign-in</title>"
                 f"<body style='background:#090b10;color:#f1f5f9;font-family:Inter,sans-serif;"
                 f"display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center'>"
                 f"<div><h2 style='color:#ef4444'>Sign-in failed</h2><p style='color:#94a3b8'>{safe_msg}</p>"

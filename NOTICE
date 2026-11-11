@@ -1,4 +1,4 @@
-ONIOPS — Offensive Neural Intelligence
+OniOps — Offensive Neural Intelligence
 Copyright 2026 ares-369
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -9,7 +9,7 @@ You may obtain a copy of the License at
 
 AUTHORIZED USE ONLY
 -------------------
-ONIOPS is a security testing tool made for learning, research, and testing
+OniOps is a security testing tool made for learning, research, and testing
 systems you own or have explicit written permission to test. It performs
 active reconnaissance, service enumeration, and vulnerability validation that
 can be intrusive. Using it against systems without permission is illegal in
@@ -17,27 +17,27 @@ most countries.
 
 DISCLAIMER OF RESPONSIBILITY
 ----------------------------
-ONIOPS is provided "AS IS", without warranty of any kind, as stated in sections
-7 and 8 of the License. By using, copying, modifying, or distributing ONIOPS,
+OniOps is provided "AS IS", without warranty of any kind, as stated in sections
+7 and 8 of the License. By using, copying, modifying, or distributing OniOps,
 you accept that:
 
   * You alone are responsible for how you use it, and for getting proper
     authorization and complying with all applicable laws before you do.
 
   * The author does not condone, and is not responsible or liable for, any
-    misuse of ONIOPS — including unauthorized access, attacks on any person,
+    misuse of OniOps — including unauthorized access, attacks on any person,
     company, or organization, disruption of services, loss or damage of data,
     or any other harm or legal consequence arising from its use.
 
   * The author is not responsible for modified versions, forks, or
-    redistributions of ONIOPS made by anyone else, including versions that
+    redistributions of OniOps made by anyone else, including versions that
     remove, weaken, or bypass its safety controls (the scope allow-list, the
     non-destructive guard, or authentication). Whoever makes such changes is
     responsible for them and for how they are used.
 
-ONIOPS's scope allow-list and non-destructive defaults are safety aids, not a
+OniOps's scope allow-list and non-destructive defaults are safety aids, not a
 guarantee and not a substitute for authorization.
 
-This NOTICE must be kept with all copies and redistributions of ONIOPS,
+This NOTICE must be kept with all copies and redistributions of OniOps,
 including modified versions, as required by section 4(d) of the License.
 See DISCLAIMER.md for the full responsible-use statement.

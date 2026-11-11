@@ -1,4 +1,4 @@
-"""Configuration loader for ONIOPS.
+"""Configuration loader for OniOps.
 
 Loads ``config.yaml`` (environment layout, scope, providers) and ``.env``
 (secrets). Nothing about the user's environment is hardcoded — everything a
@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # UI saves an update, so the UI never displays a different mode than the one
 # actually in effect.
 _SCOPE_MODES = {"active", "passive", "stealth"}
-_log = logging.getLogger("ONIOPS")
+_log = logging.getLogger("OniOps")
 
 
 def _load_env() -> None:
@@ -63,7 +63,7 @@ class ScopeConfig:
 
 @dataclass
 class HostConfig:
-    """An attack host ONIOPS drives over SSH. Kali is one option; any tooled Linux
+    """An attack host OniOps drives over SSH. Kali is one option; any tooled Linux
     (Parrot, BlackArch, a custom box, or localhost) works."""
     host: str
     name: str = "kali"
@@ -117,7 +117,7 @@ class Config:
     path: Path
     # Explicit opt-in to serve the UI on a network address WITHOUT a login.
     # Only safe when something else restricts access (e.g. Docker publishing
-    # the port on 127.0.0.1 only). Default False: ONIOPS refuses to start.
+    # the port on 127.0.0.1 only). Default False: OniOps refuses to start.
     allow_unauthenticated_network: bool = False
 
     # -- secrets (from .env) --
@@ -148,7 +148,7 @@ def load_config() -> Config:
     if not scope_raw.get("allowed_cidrs"):
         raise ValueError(
             "config.yaml: scope.allowed_cidrs is required and must be non-empty. "
-            "ONIOPS will not run without an explicit Rules-of-Engagement scope."
+            "OniOps will not run without an explicit Rules-of-Engagement scope."
         )
 
     mode = str(scope_raw.get("mode", "active")).strip().lower()
@@ -220,7 +220,7 @@ def load_config() -> Config:
 
     return Config(
         raw=data,
-        instance_name=str(oniops.get("instance_name", "ONIOPS")),
+        instance_name=str(oniops.get("instance_name", "OniOps")),
         external_url=str(oniops.get("external_url", "")).rstrip("/"),
         # Secure default: listen on loopback only. ONIOPS_BIND_HOST overrides the
         # file (used by Docker to listen inside its container).
@@ -263,7 +263,7 @@ def _build_updated_config(updates: dict) -> tuple[Any, str, dict]:
         data.setdefault(sec, {})
 
     if "instance_name" in updates:
-        data["oniops"]["instance_name"] = str(updates["instance_name"])[:64] or "ONIOPS"
+        data["oniops"]["instance_name"] = str(updates["instance_name"])[:64] or "OniOps"
     if "external_url" in updates:
         data["oniops"]["external_url"] = str(updates["external_url"]).strip().rstrip("/")
 

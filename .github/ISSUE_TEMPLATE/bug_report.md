@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible bug in ONIOPS
+about: Report a reproducible bug in OniOps
 title: "[BUG] "
 labels: bug
 assignees: ""
@@ -15,7 +15,7 @@ A clear and concise description of what went wrong.
 3. Observe error...
 
 ## Expected behavior
-What you expected ONIOPS to do.
+What you expected OniOps to do.
 
 ## Environment
 - Deployment mode (Docker / Proxmox LXC / Bare Linux / Windows):

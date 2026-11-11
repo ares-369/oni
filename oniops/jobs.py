@@ -4,7 +4,7 @@ Long assessments (full PTT, WAPT) can run for minutes; running them inside the
 HTTP request ties up a worker and makes the UI spin. The JobManager runs them
 on a small thread pool and records status in SQLite, so the UI can enqueue a
 job and poll for progress. No external broker (Redis/Celery) required — keeps
-ONIOPS self-hostable with nothing extra to install.
+OniOps self-hostable with nothing extra to install.
 """
 
 from __future__ import annotations

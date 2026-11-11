@@ -14,10 +14,10 @@ def test_markdown_to_pdf_structure():
         "Server: nginx\n"
         "```\n"
     )
-    pdf = markdown_to_pdf(md, title="ONIOPS Test Report")
+    pdf = markdown_to_pdf(md, title="OniOps Test Report")
     assert pdf.startswith(b"%PDF-1.4")
     assert pdf.endswith(b"%%EOF\n")
-    assert b"ONIOPS Test Report" in pdf
+    assert b"OniOps Test Report" in pdf
     assert b"Executive Summary" in pdf
     assert b"/Count 1" in pdf
 

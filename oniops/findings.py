@@ -205,7 +205,7 @@ def get_remediation_guide(category: str, title: str = "") -> dict[str, object]:
             "steps": [
                 "Verify the installed package version on the host and upgrade to the patched release.",
                 "Disable unneeded modules, default management endpoints, and verbose version banners.",
-                "Re-run ONIOPS zero-token retest after patching to confirm the signature no longer reproduces.",
+                "Re-run OniOps zero-token retest after patching to confirm the signature no longer reproduces.",
             ],
             "references": ["OWASP A06:2021", "OWASP ASVS V14.2"],
         }
@@ -226,7 +226,7 @@ def get_remediation_guide(category: str, title: str = "") -> dict[str, object]:
         "steps": [
             "Bind internal administrative services to localhost, a management VLAN, or a VPN interface.",
             "Place exposed web services behind SSO / reverse-proxy authentication and rate limiting.",
-            "Review firewall rules and re-run ONIOPS zero-token retest to verify access controls.",
+            "Review firewall rules and re-run OniOps zero-token retest to verify access controls.",
         ],
         "references": ["OWASP A05:2021", "OWASP ASVS V14.1"],
     }

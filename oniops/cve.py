@@ -1,4 +1,4 @@
-"""Offline-first CVE / exploit intelligence for ONIOPS.
+"""Offline-first CVE / exploit intelligence for OniOps.
 
 Turns service banners discovered by ``nmap -sV`` (product + version) into
 known-vulnerability intel, with **no external platform required** — no MISP,

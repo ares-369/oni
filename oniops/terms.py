@@ -23,10 +23,10 @@ DISCLAIMER_URL = "https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md"
 SUMMARY = [
     "Only test systems you own, or have explicit written permission to test. "
     "Unauthorized testing is illegal in most countries.",
-    "ONIOPS is provided as-is, without warranty. You are solely responsible for how "
+    "OniOps is provided as-is, without warranty. You are solely responsible for how "
     "you use it and for following the laws that apply to you.",
     "The author is not responsible for misuse, for harm to any person, company or "
-    "organization, or for modified versions of ONIOPS made by others.",
+    "organization, or for modified versions of OniOps made by others.",
     "The scope allow-list and non-destructive guard are safety aids, not a "
     "guarantee and not a substitute for permission.",
 ]
@@ -53,7 +53,7 @@ def _now() -> str:
 
 
 class TermsStore:
-    """Append-only record of terms acceptances in the ONIOPS SQLite DB."""
+    """Append-only record of terms acceptances in the OniOps SQLite DB."""
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)

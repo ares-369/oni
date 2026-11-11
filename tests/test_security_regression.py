@@ -1,6 +1,6 @@
-"""Adversarial security regression test suite for ONIOPS.
+"""Adversarial security regression test suite for OniOps.
 
-Attempts to bypass ONIOPS's safety boundaries:
+Attempts to bypass OniOps's safety boundaries:
   1. Multi-record DNS rebinding (one in-scope IP + one out-of-scope IP)
   2. Out-of-scope IPv4 smuggled inside a network command string
   3. Login brute-force attack (>10 attempts/60s throttled with HTTP 429)

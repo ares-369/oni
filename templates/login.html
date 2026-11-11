@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ONIOPS // Sign in</title>
+  <title>OniOps // Sign in</title>
   <link rel="stylesheet" href="/static/mdi/css/materialdesignicons.min.css" />
   <style>
     :root {
@@ -32,7 +32,7 @@
 </head>
 <body>
   <form class="card" method="POST" action="/login">
-    <div class="brand"><i class="mdi mdi-shield-half-full"></i><h1>{{ instance or 'ONIOPS' }}</h1></div>
+    <div class="brand"><i class="mdi mdi-shield-half-full"></i><h1>{{ instance or 'OniOps' }}</h1></div>
     <p class="sub">Offensive Neural Intelligence</p>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
     <label for="username">Username</label>

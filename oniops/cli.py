@@ -1,4 +1,4 @@
-"""ONIOPS command-line interface & CI/CD security gate runner.
+"""OniOps command-line interface & CI/CD security gate runner.
 
 Usage examples:
   python -m oniops                                  # start Waitress WebUI server (default)
@@ -66,7 +66,7 @@ def build_whitebox_sarif(scan_res: dict) -> dict:
         "runs": [{
             "tool": {
                 "driver": {
-                    "name": "ONIOPS White-Box & CI Security Gate",
+                    "name": "OniOps White-Box & CI Security Gate",
                     "version": __version__,
                 }
             },
@@ -76,7 +76,7 @@ def build_whitebox_sarif(scan_res: dict) -> dict:
 
 
 def run_doctor(db_override: str = "", check_runner: bool = False) -> dict:
-    """Run deterministic self-diagnostics on ONIOPS config, SQLite DB, playbooks, and runner."""
+    """Run deterministic self-diagnostics on OniOps config, SQLite DB, playbooks, and runner."""
     cfg = get_config()
     scope = Scope(cfg)
     db_path = Path(db_override) if db_override else _default_db_path()
@@ -112,10 +112,10 @@ def cli_main(argv: list[str] | None = None) -> int:
         serve_main()
         return 0
 
-    parser = argparse.ArgumentParser(prog="oniops", description="ONIOPS — Offensive Neural Intelligence CLI & CI Gate")
+    parser = argparse.ArgumentParser(prog="oniops", description="OniOps — Offensive Neural Intelligence CLI & CI Gate")
     sub = parser.add_subparsers(dest="cmd")
 
-    sub.add_parser("version", help="Print ONIOPS version")
+    sub.add_parser("version", help="Print OniOps version")
     sub.add_parser("playbooks", help="List loaded YAML playbooks and AI safety probe packs")
 
     doc = sub.add_parser("doctor", help="Run self-diagnostics on config, scope, SQLite DB, and playbooks")
@@ -162,13 +162,13 @@ def cli_main(argv: list[str] | None = None) -> int:
     df.add_argument("--db", default="", help="Path to oniops.sqlite")
 
     for name in ("selftest", "benchmark"):   # "benchmark" kept as an alias for old scripts
-        st = sub.add_parser(name, help="Check ONIOPS's own validators on built-in examples (not a detection-accuracy benchmark)")
+        st = sub.add_parser(name, help="Check OniOps's own validators on built-in examples (not a detection-accuracy benchmark)")
         st.add_argument("--json", action="store_true", help="Print raw JSON results")
 
     ns = parser.parse_args(args_list)
 
     if ns.cmd == "version":
-        print(f"ONIOPS {__version__}")
+        print(f"OniOps {__version__}")
         return 0
 
     if ns.cmd == "doctor":
@@ -196,7 +196,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         if ns.json:
             print(json.dumps(res, indent=2))
         else:
-            print(f"[ONIOPS White-Box] Scanned {res['files_scanned']} file(s): "
+            print(f"[OniOps White-Box] Scanned {res['files_scanned']} file(s): "
                   f"{len(res['routes'])} route(s), {len(res['sinks'])} sink(s).")
             for s in res["sinks"]:
                 print(f"  - [{s['severity']}] {s['type']} ({s['file']}:{s['line']}): {s['snippet']}")
@@ -263,7 +263,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         if ns.json:
             print(json.dumps(res, indent=2))
         else:
-            print(f"[ONIOPS validator self-test] {res['passed']}/{res['total_cases']} checks passed")
+            print(f"[OniOps validator self-test] {res['passed']}/{res['total_cases']} checks passed")
             for k in res["by_kind"].values():
                 print(f"  {k['label']}: {k['passed']}/{k['total']}")
             print(f"  Note: {res['note']}")

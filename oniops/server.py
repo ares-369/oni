@@ -1,4 +1,4 @@
-"""ONIOPS entrypoint — serves the Flask app with waitress (cross-platform).
+"""OniOps entrypoint — serves the Flask app with waitress (cross-platform).
 
     oniops            # console script (see pyproject [project.scripts])
     python -m oniops  # module form
@@ -21,7 +21,7 @@ def _load_app():
         from webui import app  # type: ignore
         return app
     except ModuleNotFoundError as exc:  # pragma: no cover
-        print(f"[ONIOPS] could not import the web app: {exc}", file=sys.stderr)
+        print(f"[OniOps] could not import the web app: {exc}", file=sys.stderr)
         raise
 
 
@@ -31,7 +31,7 @@ _LOOPBACK = ("127.0.0.1", "localhost", "::1")
 def startup_security_check(cfg) -> tuple[list[str], list[str]]:
     """Return (fatal errors, warnings) for the deployment's security posture.
 
-    ONIOPS drives an attack host, so a UI anyone on the network can reach without
+    OniOps drives an attack host, so a UI anyone on the network can reach without
     logging in is not allowed by default, and proxy mode must name the proxy
     that is allowed to assert user identities (otherwise anyone could).
     """
@@ -69,20 +69,20 @@ def main() -> None:
     # Check the security posture BEFORE loading the app or opening the port.
     errors, warnings = startup_security_check(cfg)
     for w in warnings:
-        print(f"[ONIOPS][WARNING] {w}", flush=True)
+        print(f"[OniOps][WARNING] {w}", flush=True)
     if errors:
         for e in errors:
-            print(f"[ONIOPS][ERROR] {e}", file=sys.stderr, flush=True)
-        print("[ONIOPS] Refusing to start with an unsafe configuration. See config.example.yaml.",
+            print(f"[OniOps][ERROR] {e}", file=sys.stderr, flush=True)
+        print("[OniOps] Refusing to start with an unsafe configuration. See config.example.yaml.",
               file=sys.stderr, flush=True)
         sys.exit(2)
 
     app = _load_app()
     from waitress import serve
 
-    print(f"[ONIOPS] {cfg.instance_name} serving on http://{cfg.bind_host}:{cfg.bind_port}", flush=True)
-    print(f"[ONIOPS] scope: {', '.join(cfg.scope.allowed_cidrs)}  mode={cfg.scope.mode}", flush=True)
-    print(f"[ONIOPS] auth mode: {cfg.auth.mode}", flush=True)
+    print(f"[OniOps] {cfg.instance_name} serving on http://{cfg.bind_host}:{cfg.bind_port}", flush=True)
+    print(f"[OniOps] scope: {', '.join(cfg.scope.allowed_cidrs)}  mode={cfg.scope.mode}", flush=True)
+    print(f"[OniOps] auth mode: {cfg.auth.mode}", flush=True)
 
     serve(app, host=cfg.bind_host, port=cfg.bind_port, threads=8)
 

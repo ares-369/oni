@@ -1,11 +1,11 @@
-# ONIOPS Security & Threat Model (`v0.3.1-beta`)
+# OniOps Security & Threat Model (`v0.3.1-beta`)
 
-ONIOPS is an offensive security platform **and** an LLM-driven application that executes commands on an attack host. It is built to the same security standards it tests against. This document defines ONIOPS's **Threat Model**, **Deterministic Trust Boundaries**, **Cryptographic Evidence Provenance**, and **Framework Alignment**.
+OniOps is an offensive security platform **and** an LLM-driven application that executes commands on an attack host. It is built to the same security standards it tests against. This document defines OniOps's **Threat Model**, **Deterministic Trust Boundaries**, **Cryptographic Evidence Provenance**, and **Framework Alignment**.
 
 ## Reporting a Vulnerability
-Thank you for helping keep ONIOPS and its users safe. Please open a private security advisory at `https://github.com/ares-369/oniops/security/advisories/new` (or contact `@ares-369` via GitHub) rather than a public issue for exploitable bugs.
+Thank you for helping keep OniOps and its users safe. Please open a private security advisory at `https://github.com/ares-369/oniops/security/advisories/new` (or contact `@ares-369` via GitHub) rather than a public issue for exploitable bugs.
 
-ONIOPS is maintained by one person in spare time, so responses are best-effort — I will aim to acknowledge a report within a week and keep you updated on a fix. Reporters are credited in the changelog unless they prefer otherwise.
+OniOps is maintained by one person in spare time, so responses are best-effort — I will aim to acknowledge a report within a week and keep you updated on a fix. Reporters are credited in the changelog unless they prefer otherwise.
 
 ---
 
@@ -25,7 +25,7 @@ The LLM is **never** the authority that decides whether a target is in scope, wh
 
 ### Trust Boundaries & Defenses
 1. **Strict Scope Allow-List (`oniops/scope.py`):**
-   - ONIOPS refuses any target outside `scope.allowed_cidrs` and `scope.allowed_hosts`. Excluded hosts/CIDRs (`scope.exclude`) always take precedence.
+   - OniOps refuses any target outside `scope.allowed_cidrs` and `scope.allowed_hosts`. Excluded hosts/CIDRs (`scope.exclude`) always take precedence.
    - `Scope.guard_command()` inspects every raw command string for IPv4 literals and blocks execution if any IP falls outside the authorized scope.
 2. **Non-Destructive Command Guard (`oniops/scope.py`):**
    - Blocks destructive shell patterns, fork bombs, filesystem wipes (`rm -rf`, `mkfs`, `dd`), and unapproved exploitation flags before they reach the SSH channel.
@@ -59,10 +59,10 @@ The LLM is **never** the authority that decides whether a target is in scope, wh
 - **LLM10 Unbounded Consumption** — per-command timeouts, 12-step agent budget cap, and cooperative job `pause`/`resume`/`cancel` controls (`oniops/jobs.py`).
 
 ### MITRE ATLAS & NIST AI RMF
-- ONIOPS's AI red-team module (`oniops/aisec.py`) maps 14 built-in single-turn probes, 6 prompt converters, 3-turn Crescendo escalation, and declarative YAML probe packs (`playbooks/ai_probes/*.yaml`) to **OWASP LLM Top 10**, **MITRE ATLAS**, **NIST AI RMF**, and **Google SAIF / ISO 42001**.
+- OniOps's AI red-team module (`oniops/aisec.py`) maps 14 built-in single-turn probes, 6 prompt converters, 3-turn Crescendo escalation, and declarative YAML probe packs (`playbooks/ai_probes/*.yaml`) to **OWASP LLM Top 10**, **MITRE ATLAS**, **NIST AI RMF**, and **Google SAIF / ISO 42001**.
 
 ---
 
 ## 3. Remaining Operational Considerations
-- **Transport Encryption:** ONIOPS serves HTTP via Waitress; always place it behind a TLS-terminating reverse proxy (Nginx, Caddy, Traefik, or Nginx Proxy Manager) when exposed beyond `127.0.0.1`.
+- **Transport Encryption:** OniOps serves HTTP via Waitress; always place it behind a TLS-terminating reverse proxy (Nginx, Caddy, Traefik, or Nginx Proxy Manager) when exposed beyond `127.0.0.1`.
 - **Attack Host Isolation:** Use a dedicated, least-privilege Kali VM or container for the SSH runner (`kali.host`) with key-based authentication and `known_hosts` verification (`tofu` or `strict`).

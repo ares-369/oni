@@ -1,15 +1,15 @@
-# ONIOPS gitleaks configuration.
+# OniOps gitleaks configuration.
 #
 # Inherits ALL default gitleaks rules (real secrets are still caught), and adds
 # a narrow allowlist for the fake, non-functional credential strings that exist
-# ONLY as test fixtures. ONIOPS's test suite deliberately feeds secret-SHAPED
+# ONLY as test fixtures. OniOps's test suite deliberately feeds secret-SHAPED
 # strings into redact_secrets() and the SAST/secret detector to prove they get
 # masked/flagged — they are not real credentials and must not fail CI.
 #
 # Real secrets never enter the repo: config.yaml, .env and secrets/ are
 # gitignored. This allowlist does not relax that.
 
-title = "ONIOPS gitleaks config"
+title = "OniOps gitleaks config"
 
 [extend]
 useDefault = true

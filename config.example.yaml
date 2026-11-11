@@ -1,14 +1,14 @@
 # =====================================================================
-#  ONIOPS — Offensive Neural Intelligence
+#  OniOps — Offensive Neural Intelligence
 #  Copy this file to  config.yaml  and edit for YOUR environment.
 #  Secrets (API keys) go in  .env , never here.
 # =====================================================================
 
 oniops:
-  instance_name: "ONIOPS"
+  instance_name: "OniOps"
   # Listen address for the web UI. 127.0.0.1 = this machine only (safe default).
-  # To reach ONIOPS from other machines, set 0.0.0.0 AND enable a login below
-  # (auth.mode) - ONIOPS refuses to start on a network address with no login.
+  # To reach OniOps from other machines, set 0.0.0.0 AND enable a login below
+  # (auth.mode) - OniOps refuses to start on a network address with no login.
   bind_host: "127.0.0.1"
   bind_port: 8501
   # Only set this if access is already restricted another way (e.g. Docker
@@ -19,7 +19,7 @@ oniops:
 
 # ---------------------------------------------------------------------
 #  Rules of Engagement (scope). REQUIRED.
-#  ONIOPS refuses to touch anything outside allowed_cidrs. There is NO
+#  OniOps refuses to touch anything outside allowed_cidrs. There is NO
 #  implicit internet default — you must list what you are allowed to test.
 # ---------------------------------------------------------------------
 scope:
@@ -34,12 +34,12 @@ scope:
   # active_window: "22:00-06:00"   # optional: only scan in this local window
 
 # ---------------------------------------------------------------------
-#  Attack host — the Kali (or any tooled Linux) box ONIOPS drives over SSH.
-#  ONIOPS connects with paramiko, so no local ssh client is needed (works on
+#  Attack host — the Kali (or any tooled Linux) box OniOps drives over SSH.
+#  OniOps connects with paramiko, so no local ssh client is needed (works on
 #  Windows too). Point ssh_key at a PRIVATE key the Kali host trusts.
 # ---------------------------------------------------------------------
-# Single attack host (simplest). ONIOPS can drive any SSH-reachable tooled Linux —
-# Kali, Parrot, BlackArch, or your own box (even localhost if ONIOPS runs on it).
+# Single attack host (simplest). OniOps can drive any SSH-reachable tooled Linux —
+# Kali, Parrot, BlackArch, or your own box (even localhost if OniOps runs on it).
 kali:
   host: "192.168.1.50"       # <-- your attack host
   user: "root"
@@ -64,11 +64,11 @@ kali:
 #     ssh_key: "./secrets/parrot_id_rsa"
 
 # ---------------------------------------------------------------------
-#  Authentication for the ONIOPS web UI. OFF by default. STRONGLY recommended
+#  Authentication for the OniOps web UI. OFF by default. STRONGLY recommended
 #  whenever the UI is reachable beyond localhost — it can drive the attack
-#  host. For production, running ONIOPS behind a TLS reverse proxy (nginx /
+#  host. For production, running OniOps behind a TLS reverse proxy (nginx /
 #  Caddy / Traefik / NPM) is recommended; use mode "proxy" with forward-auth
-#  (e.g. Authentik), or "oidc" to let ONIOPS do SSO itself.
+#  (e.g. Authentik), or "oidc" to let OniOps do SSO itself.
 #
 #  mode: none | basic | local | oidc | proxy
 #    none   - no login (default; only allowed while bind_host is 127.0.0.1)
@@ -78,7 +78,7 @@ kali:
 #    oidc   - SSO via ANY OpenID Connect provider (Authentik, Keycloak,
 #             Google, Azure AD, Okta...). Needs: pip install 'oniops[oidc]'
 #    proxy  - trust a reverse-proxy forward-auth header
-#             (REQUIRES proxy_trusted_ips, or ONIOPS refuses to start)
+#             (REQUIRES proxy_trusted_ips, or OniOps refuses to start)
 # ---------------------------------------------------------------------
 auth:
   mode: "none"
@@ -87,7 +87,7 @@ auth:
   proxy_header: "X-Forwarded-User"        # for mode: proxy (e.g. X-authentik-username)
   proxy_trusted_ips: []                    # REQUIRED for mode: proxy — only these source IPs may assert the
                                            # header (your reverse proxy's IP, e.g. ["10.0.0.151"]). Empty =
-                                           # ONIOPS refuses to start, because anyone could forge the header.
+                                           # OniOps refuses to start, because anyone could forge the header.
   allowed_users: []                        # optional allowlist (oidc/proxy); empty = any authenticated
   oidc:                                    # for mode: oidc
     issuer: ""                             # e.g. https://auth.example.com/application/o/oniops/

@@ -1,7 +1,7 @@
 """SSH execution against the attack host (Kali).
 
 Uses paramiko (pure-Python) rather than shelling out to an ``ssh`` binary, so
-ONIOPS runs unchanged on Linux, Windows and inside containers. Every command is
+OniOps runs unchanged on Linux, Windows and inside containers. Every command is
 scope-guarded before it leaves the controller.
 """
 

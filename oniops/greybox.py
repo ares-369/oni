@@ -445,7 +445,7 @@ _DANGEROUS_SINKS: list[tuple[str, str, re.Pattern[str]]] = [
 
 def parse_external_sast_json(semgrep_json: str = "", gitleaks_json: str = "") -> list[dict]:
     """Normalize JSON output from Semgrep (`--json`) or Gitleaks (`--report-format json`)
-    into ONIOPS white-box sink records with automatic secret redaction."""
+    into OniOps white-box sink records with automatic secret redaction."""
     findings: list[dict] = []
     if semgrep_json and semgrep_json.strip().startswith("{"):
         try:

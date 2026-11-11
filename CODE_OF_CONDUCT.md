@@ -1,6 +1,6 @@
 # Code of Conduct
 
-ONIOPS is a small project that I maintain on my own, and I want it to be a welcoming place for
+OniOps is a small project that I maintain on my own, and I want it to be a welcoming place for
 everyone — whether you are new to security or have been doing it for years.
 
 ## My pledge
@@ -15,8 +15,8 @@ religion, or sexual identity and orientation.
 
 - Be kind, patient and respectful, especially with newcomers.
 - Assume good intent, and give constructive feedback.
-- Focus on what is best for the people using and building ONIOPS.
-- Use ONIOPS and discuss offensive techniques only in the context of authorized
+- Focus on what is best for the people using and building OniOps.
+- Use OniOps and discuss offensive techniques only in the context of authorized
   testing and learning.
 
 Harassment, personal attacks, discriminatory language, and sharing other

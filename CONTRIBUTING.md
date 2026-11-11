@@ -1,6 +1,6 @@
-# Contributing to ONIOPS
+# Contributing to OniOps
 
-Thank you for taking the time to look at ONIOPS. It is a small project that I maintain
+Thank you for taking the time to look at OniOps. It is a small project that I maintain
 on my own in my spare time, and every bug report, idea, doc fix or pull request genuinely
 helps.
 
@@ -19,7 +19,7 @@ helps.
 
 1. Fork the repo and create a branch for your change.
 2. Copy `config.example.yaml` to `config.yaml` and `.env.example` to `.env`.
-3. Run ONIOPS locally with `python -m oniops` (see [`docs/INSTALL.md`](docs/INSTALL.md)).
+3. Run OniOps locally with `python -m oniops` (see [`docs/INSTALL.md`](docs/INSTALL.md)).
 4. Run the checks before opening a PR:
 
    ```bash
@@ -33,7 +33,7 @@ helps.
 
 ## A few things I ask
 
-ONIOPS is an offensive security tool, so a few guardrails matter more than usual:
+OniOps is an offensive security tool, so a few guardrails matter more than usual:
 
 - **Authorized testing only.** Please only contribute capabilities meant for
   testing systems you own or are permitted to test.
@@ -47,7 +47,7 @@ ONIOPS is an offensive security tool, so a few guardrails matter more than usual
 
 ## About the name
 
-"ONIOPS" is simply the name this project goes by. You are free to fork and build
+"OniOps" is simply the name this project goes by. You are free to fork and build
 on the code under the Apache-2.0 license. If you publish a fork that changes
 things significantly, giving it its own name helps avoid confusing users about
 which project is which — that is all I ask. (The license itself does not grant
@@ -60,5 +60,5 @@ Please be kind and patient with each other. See
 
 ## Security issues
 
-Please do not open a public issue for a vulnerability in ONIOPS itself — see
+Please do not open a public issue for a vulnerability in OniOps itself — see
 [`SECURITY.md`](SECURITY.md) for how to report it privately.
