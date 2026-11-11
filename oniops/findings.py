@@ -467,8 +467,12 @@ def _judge_retest(f: dict, cat: str, title: str, out: str, *, authed: bool,
                 if ok:
                     return "VERIFIED", ""
                 return "UNCONFIRMED", f"HTTP {code} to the low-privilege/peer identity but {reason}. "
-            if code == 403:
-                return "FIXED", "the low-privilege/peer identity is now denied (403). "
+            # A horizontal cross-user finding bakes the peer-owned object id into
+            # the replay URL, so a 404 now is the object being hidden from the
+            # low-priv identity (access denied), i.e. FIXED, not an ambiguous miss.
+            horizontal = title.startswith("Cross-user horizontal BOLA")
+            if code == 403 or (horizontal and code == 404):
+                return "FIXED", f"the low-privilege/peer identity is now denied ({code}). "
             if code == 401:
                 return "UNCONFIRMED", _CRED_401_NOTE
             return "UNCONFIRMED", (f"HTTP {code} to the low-privilege/peer identity; cannot tell whether "

@@ -23,11 +23,16 @@ Planted weaknesses (vulnerable mode):
   W6  POST /graphql                 schema introspection enabled
   W7  GET  /api/v1/search?q=        verbose SQL error disclosed to the client
   W8  GET  /api/v1/echo?msg=        input reflected into HTML unescaped
+  W9  GET  /api/v1/orders/{ref}     horizontal BOLA on a STRING-keyed object:
+                                    user A can read user B's order by its real
+                                    reference (mined from /api/v1/orders)
 
 Secure twins (must NOT be reported):
   S1  GET  /api/v1/secrets/{id}     401 anonymous, 403 to normal users, 200 admin
   S2  GET  /api/v1/tokens/status    200 with an empty body, no API content-type
   S3  GET  /api/v1/internal/metrics 403 to everyone, always
+  S4  GET  /api/v1/wallets/{id}     owner-only object: A reads only A's wallet,
+                                    B's wallet is denied to A (no cross-user read)
 
 `set_fixed(True)` switches the target to a remediated state (W2-W8 closed;
 W1 stays live, now with security headers) so a zero-token retest can be shown
@@ -58,6 +63,20 @@ _USERS = {
     2: {"id": 2, "username": "bob", "email": "bob@demo.invalid", "role": "user", "plan": "free"},
 }
 _OWNER = {"user_a": 1, "user_b": 2}
+
+# String-keyed object resources (path param is NOT the literal '1'), each with a
+# sibling collection so ONIOPS can mine a real id. Orders are the BOLA (W9); wallets
+# are the correctly-owned twin (S4).
+_ORDERS = {
+    "ord-a1": {"order_ref": "ord-a1", "item": "blue-widget", "owner": "alice", "total": 42},
+    "ord-b1": {"order_ref": "ord-b1", "item": "red-gadget", "owner": "bob", "total": 17},
+}
+_WALLETS = {
+    "wal-a1": {"wallet_id": "wal-a1", "owner": "alice", "balance": 120},
+    "wal-b1": {"wallet_id": "wal-b1", "owner": "bob", "balance": 340},
+}
+_ORDER_OWNER = {"ord-a1": "user_a", "ord-b1": "user_b"}
+_WALLET_OWNER = {"wal-a1": "user_a", "wal-b1": "user_b"}
 
 _LOOPBACK_NAMES = ("localhost",)
 
@@ -108,6 +127,8 @@ def openapi_spec(fixed: bool = False) -> dict:
                 },
             },
             "/api/v1/admin/config": {"get": {"summary": "Admin configuration", "responses": ok}},
+            "/api/v1/orders/{order_ref}": {"get": {"summary": "Read an order by reference", "responses": ok}},
+            "/api/v1/wallets/{wallet_id}": {"get": {"summary": "Read a wallet (owner only)", "responses": ok}},
             "/api/v1/secrets/{id}": {"get": {"summary": "Read a secret (admin only)", "responses": ok}},
             "/api/v1/tokens/status": {"get": {"summary": "Token service heartbeat", "responses": ok}},
             "/api/v1/internal/metrics": {"get": {"summary": "Internal metrics", "responses": ok}},
@@ -212,6 +233,45 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._deny(role)
             return self._json(200, {"maintenance_mode": False, "signup_open": True,
                                     "smtp_relay": "mail.demo.invalid", "max_upload_mb": 50})
+
+        if path == "/api/v1/orders":
+            # W9 collection: owner-scoped list (admin sees all). Lets ONIOPS mine a
+            # real, per-identity order reference. Requires a valid token.
+            if role in ("anonymous", "invalid"):
+                return self._deny(role)
+            refs = list(_ORDERS) if role == "admin" else [k for k, r in _ORDER_OWNER.items() if r == role]
+            return self._json(200, [_ORDERS[k] for k in refs])
+
+        if path.startswith("/api/v1/orders/"):
+            # W9: horizontal BOLA. Vulnerable: any valid token reads any order.
+            ref = path.rsplit("/", 1)[1]
+            if role in ("anonymous", "invalid"):
+                return self._deny(role)
+            if ref not in _ORDERS:
+                return self._json(404, {"error": "not found"})
+            if fixed and role != "admin" and _ORDER_OWNER.get(ref) != role:
+                # Remediated: hide another user's order (404, not 403).
+                return self._json(404, {"error": "not found"})
+            return self._json(200, _ORDERS[ref])
+
+        if path == "/api/v1/wallets":
+            # S4 collection: owner-scoped list (admin sees all).
+            if role in ("anonymous", "invalid"):
+                return self._deny(role)
+            ids = list(_WALLETS) if role == "admin" else [k for k, r in _WALLET_OWNER.items() if r == role]
+            return self._json(200, [_WALLETS[k] for k in ids])
+
+        if path.startswith("/api/v1/wallets/"):
+            # S4: correctly-owned object. Only the owner (or admin) may read it,
+            # so user A requesting user B's wallet is denied in BOTH modes.
+            wid = path.rsplit("/", 1)[1]
+            if role in ("anonymous", "invalid"):
+                return self._deny(role)
+            if wid not in _WALLETS:
+                return self._json(404, {"error": "not found"})
+            if role != "admin" and _WALLET_OWNER.get(wid) != role:
+                return self._deny(role)
+            return self._json(200, _WALLETS[wid])
 
         if path.startswith("/api/v1/secrets/"):
             # S1: correctly secured object endpoint.
