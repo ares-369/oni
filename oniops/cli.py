@@ -13,6 +13,7 @@ Usage examples:
   python -m oniops findings --target 10.0.0.150
   python -m oniops diff 2
   python -m oniops playbooks
+  python -m oniops demo                             # one-minute practice run, no config needed
 """
 from __future__ import annotations
 
@@ -165,7 +166,26 @@ def cli_main(argv: list[str] | None = None) -> int:
         st = sub.add_parser(name, help="Check OniOps's own validators on built-in examples (not a detection-accuracy benchmark)")
         st.add_argument("--json", action="store_true", help="Print raw JSON results")
 
+    dm = sub.add_parser("demo", help="Practice run against a bundled loopback target (no config, attack host or LLM needed)")
+    dm.add_argument("--db", default="",
+                    help="Keep the DEMO ledger at this path (default: a temp file, deleted afterwards). "
+                         "Must not be the real ledger.")
+    dm.add_argument("--no-fixed", action="store_true", help="Skip the 'target fixed -> retest' step")
+
     ns = parser.parse_args(args_list)
+
+    if ns.cmd == "demo":
+        from .demo import run_demo
+        demo_db = None
+        if ns.db:
+            demo_db = Path(ns.db).expanduser().resolve()
+            real_db = _default_db_path().expanduser().resolve()
+            if demo_db == real_db or demo_db.name == "oniops.sqlite":
+                print("[DEMO] Refusing to write demo findings into the real ledger "
+                      f"({demo_db}). Pick a separate file, e.g. --db /tmp/oniops-demo.sqlite.",
+                      file=sys.stderr)
+                return 2
+        return run_demo(db_path=demo_db, show_fixed=not ns.no_fixed)
 
     if ns.cmd == "version":
         print(f"OniOps {__version__}")

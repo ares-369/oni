@@ -115,6 +115,37 @@ key) powers the AI reports and the autonomous agent.
 
 ---
 
+## Try it in one minute
+
+You can see what OniOps does before setting up an attack host, SSH keys, an LLM
+or a scope. With Python 3.10+ and `curl` installed:
+
+```bash
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
+pip install -r requirements.txt
+python -m oniops demo
+```
+
+`oniops demo` starts a small, deliberately flawed practice app inside the same
+process, bound to `127.0.0.1` on a random port, with fake data only. It then
+probes that app with OniOps's real grey-box API checks and validators (scope
+locked to `127.0.0.1/32`, every request is a local `curl`), prints what it found
+with a proof snippet and fix-first score, replays one finding with the
+zero-token retest, switches the app to a "fixed" state and retests it again.
+Everything it prints is labelled `[DEMO]`. Findings go into a temporary ledger
+that is deleted afterwards (`--db PATH` keeps it); your real `oniops.sqlite` is
+never opened. No LLM is called in demo mode.
+
+Honest caveats: the practice app was written by the author to exercise these
+checks, so the demo shows how the pipeline works, not how well OniOps finds
+issues on real systems. It covers the deterministic parts only (service check,
+OpenAPI BOLA/BFLA/BOPLA, GraphQL introspection, SQL-error and reflected-XSS
+proofs); nmap, nuclei, ffuf and the other attack-host tools, CVE intel and the
+AI agent are not part of it. The demo does not record terms acceptance; for any
+real target you still accept the responsible-use terms in the web UI.
+
+---
+
 ## Step-by-step installation
 
 ### Prerequisites
@@ -288,6 +319,9 @@ Traefik/NPM). See the Authentication section of `config.example.yaml`.
 OniOps can be driven headlessly from a terminal, cron job, or CI/CD pipeline:
 
 ```bash
+# Practice run against the bundled loopback target (no config needed)
+python -m oniops demo
+
 # Self-diagnostics (config, scope, SQLite integrity, playbooks, attack runner)
 python -m oniops doctor --check-runner
 
