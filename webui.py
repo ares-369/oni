@@ -52,6 +52,7 @@ from oniops.pdf import markdown_to_pdf
 from oniops.playbooks import load_playbooks, render_step_cmd
 from oniops.providers import get_llm
 from oniops.scope import Scope, ScopeViolation
+from oniops.target_auth import TargetAuthError, build_sessions
 from oniops.targets import discover as discover_hosts
 from oniops.terms import TermsStore
 
@@ -581,6 +582,33 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
     clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
     clean_peer = sanitize_auth_header(peer_auth_header) if peer_auth_header else ""
 
+    # Per-role target login recipes (optional). When configured, mint a fresh
+    # header for each role once up front, and hand the sessions to the OpenAPI
+    # probe so a short-lived token that expires mid-scan is re-minted on 401/403.
+    # Credentials live only in config/env and never reach a finding, log or report.
+    sessions = {}
+    try:
+        sessions = build_sessions(
+            cfg.target_auth, scope=scope,
+            static_headers={"primary": clean_auth, "low_priv": clean_low, "peer": clean_peer},
+        )
+    except TargetAuthError as exc:
+        emit_event("TARGET_AUTH", "warn", f"Ignoring an invalid target login recipe: {exc}")
+        sessions = {}
+    for _role, _sess in sessions.items():
+        if _sess.can_refresh:
+            if _sess.refresh(_run):
+                emit_event("TARGET_AUTH", "ok", f"Minted a fresh {_role} session header via login recipe")
+            else:
+                emit_event("TARGET_AUTH", "warn",
+                           f"Login recipe for {_role} did not yield a header ({_sess.last_error or 'see recipe'})")
+    if "primary" in sessions:
+        clean_auth = sessions["primary"].header()
+    if "low_priv" in sessions:
+        clean_low = sessions["low_priv"].header()
+    if "peer" in sessions:
+        clean_peer = sessions["peer"].header()
+
     commands_run, raw_sections, discovered_ports = [], [], []
     nuclei_lines: list[str] = []
     openapi_findings: list[dict] = []
@@ -671,7 +699,7 @@ def _run_assessment(target_ip: str, hostname: str, profile: str, ctl=None,
             emit_event("WAPT_API", "busy", f"[WAPT] OpenAPI & Access-Control probe {url}")
             oa = probe_openapi(target_ip, pn, scheme, _run,
                                auth_header=clean_auth, low_priv_header=clean_low,
-                               peer_auth_header=clean_peer, ctl=ctl)
+                               peer_auth_header=clean_peer, ctl=ctl, sessions=sessions)
             if oa["found"]:
                 raw_sections.append(oa["raw_section"])
                 finding_count += len(oa["findings"])

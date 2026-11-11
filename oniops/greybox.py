@@ -529,14 +529,27 @@ def probe_openapi(
     low_priv_header: str = "",
     peer_auth_header: str = "",
     ctl=None,
+    sessions: dict | None = None,
 ) -> dict:
     """Discover OpenAPI/Swagger specs on a target web service and run an
     unauthenticated vs. low-privilege (User A) vs. peer user (User B) vs. admin
-    access-control differential check."""
+    access-control differential check.
+
+    ``sessions`` is an optional ``{role: TargetSession}`` map (roles
+    ``primary``/``low_priv``/``peer``). When supplied, each role's CURRENT header
+    comes from its session, and any authenticated request that comes back 401/403
+    triggers a one-shot re-login + retry for that role (so a short-lived token
+    that expired mid-scan no longer collapses the differential). Omitting it keeps
+    the exact previous behaviour for existing callers and tests.
+    """
     base = f"{scheme}://{ip}:{port}"
-    clean_hdr = sanitize_auth_header(auth_header) if auth_header else ""
-    clean_low = sanitize_auth_header(low_priv_header) if low_priv_header else ""
-    clean_peer = sanitize_auth_header(peer_auth_header) if peer_auth_header else ""
+    sessions = sessions or {}
+    primary_sess = sessions.get("primary")
+    low_sess = sessions.get("low_priv")
+    peer_sess = sessions.get("peer")
+    clean_hdr = primary_sess.header() if primary_sess else (sanitize_auth_header(auth_header) if auth_header else "")
+    clean_low = low_sess.header() if low_sess else (sanitize_auth_header(low_priv_header) if low_priv_header else "")
+    clean_peer = peer_sess.header() if peer_sess else (sanitize_auth_header(peer_auth_header) if peer_auth_header else "")
     spec_data = None
     spec_url = ""
     spec_cmd: list[str] = []
@@ -570,11 +583,37 @@ def probe_openapi(
     # resolution does not re-issue identical requests.
     _fetch_cache: dict[tuple[str, str], str] = {}
 
-    def fetch(header: str, url: str) -> str:
+    def _raw_fetch(header: str, url: str) -> str:
         key = (header, url)
         if key not in _fetch_cache:
             _fetch_cache[key] = run_fn(_curl_get(header, url), 6) or ""
         return _fetch_cache[key]
+
+    # Map every header a refreshable role has ever held -> its session, so a
+    # single choke point (fetch) can re-mint a role's token on 401/403 and retry.
+    # Entries are never removed, so a stale header still finds its session and is
+    # transparently replaced by the session's current one (no repeated logins).
+    _sessions_by_header: dict[str, object] = {}
+    for _s in (primary_sess, low_sess, peer_sess):
+        if _s is not None and getattr(_s, "can_refresh", False) and _s.header():
+            _sessions_by_header[_s.header()] = _s
+
+    def fetch(header: str, url: str) -> str:
+        sess = _sessions_by_header.get(header)
+        # If this role already refreshed to a newer header, use it transparently.
+        if sess is not None and sess.header() and sess.header() != header:
+            header = sess.header()
+        out = _raw_fetch(header, url)
+        if sess is not None and _status_code(out) in (401, 403):
+            new_header = sess.refresh(run_fn)
+            if new_header and new_header != header:
+                _sessions_by_header[new_header] = sess
+                out = _raw_fetch(new_header, url)
+        return out
+
+    def _cur(role_sess, fallback: str) -> str:
+        """Current header for a role (fresh after any refresh), for repro argv."""
+        return role_sess.header() if role_sess is not None else fallback
 
     # Probe up to 12 GET endpoints unauthenticated, low-privilege, and admin-authenticated.
     get_eps = [e for e in endpoints if "GET" in e["methods"]][:12]
@@ -605,7 +644,8 @@ def probe_openapi(
         cross_user = None
         if clean_low and clean_peer and "{" in ep["path"] and low_code == 200:
             cross_user = _cross_user_bola_finding(
-                base, ep, u, low_out, port, fetch, clean_low=clean_low, clean_peer=clean_peer,
+                base, ep, u, low_out, port, fetch,
+                clean_low=_cur(low_sess, clean_low), clean_peer=_cur(peer_sess, clean_peer),
             )
 
         sensitive_route = bool(re.search(r"admin|user|config|secret|token|internal|debug|export|key|role|tenant|billing", ep["path"], re.I))
@@ -651,8 +691,9 @@ def probe_openapi(
                 "status": status,
                 "evidence": ev,
                 # Replay AS the low-privilege identity; an anonymous replay would
-                # get 401 and look fixed. Masked whenever it is displayed.
-                "repro_cmd": ["curl", "-kisS", "--max-time", "5", "-H", clean_low, u],
+                # get 401 and look fixed. Masked whenever it is displayed. Uses the
+                # role's CURRENT (possibly just-refreshed) header, not a dead token.
+                "repro_cmd": ["curl", "-kisS", "--max-time", "5", "-H", _cur(low_sess, clean_low), u],
             })
             tag = "VULNERABLE/HIGH" if valid_body else "PROBABLE/MEDIUM"
             lines.append(f"- [{tag} BOLA/BFLA] {ep['path']}: unauth={un_code}, low_priv={low_code}, admin={auth_code or 200} ({confidence})")

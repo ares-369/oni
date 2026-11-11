@@ -79,8 +79,17 @@ def _safe_form_details(page_url: str, forms: list[dict]) -> list[dict]:
 
 def crawl_web_app(start_url: str, scope: Scope, *, max_pages: int = 50,
                   max_seconds: int = 90, auth_header: str = "",
-                  storage_state: str = "") -> dict:
-    """Render and discover pages in scope without submitting forms or mutating requests."""
+                  storage_state: str = "", session=None) -> dict:
+    """Render and discover pages in scope without submitting forms or mutating requests.
+
+    ``session`` is an optional ``target_auth.TargetSession``: when given and no
+    explicit ``auth_header`` is passed, the crawler forwards that session's
+    CURRENT header to the start origin. The crawler itself does not log in or
+    refresh; call ``session.refresh(run_fn)`` beforehand to mint a token. Only
+    the resulting header is used, never any credential.
+    """
+    if session is not None and not auth_header:
+        auth_header = session.header()
     start = urlsplit(start_url)
     if start.scheme.lower() not in {"http", "https"} or not start.hostname or start.username or start.password:
         raise ValueError("Start URL must be an HTTP(S) URL without embedded credentials.")
