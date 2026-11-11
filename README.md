@@ -231,6 +231,15 @@ llm:
     ollama: { base_url: "http://localhost:11434" }
 ```
 
+`scope.rate_limit_per_min` (default 120) paces each target separately: it
+caps how many commands or HTTP requests OniOps launches toward any one target
+per minute (one nmap run, curl call or AI probe request counts as one). It is
+not a packet limit, since a single nmap or nikto run still sends many packets.
+Commands that touch no target, such as `searchsploit`, are not counted. If a
+target answers HTTP 429 or 503, OniOps slows down for that target, honors
+`Retry-After` on direct HTTP probes (capped at 60 s), and after three retries
+records the probe as throttled rather than passed.
+
 See [`config.example.yaml`](config.example.yaml) for the full annotated file.
 
 ---

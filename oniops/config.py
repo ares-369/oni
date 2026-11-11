@@ -55,6 +55,8 @@ class ScopeConfig:
     allowed_cidrs: list[str]
     exclude: list[str] = field(default_factory=list)
     auto_detect_subnet: bool = True
+    # Max commands/HTTP requests launched toward EACH target per minute (one
+    # nmap/curl/probe = one unit; not a packet limit). See oniops/ratelimit.py.
     rate_limit_per_min: int = 120
     mode: str = "active"            # active | passive | stealth
     non_destructive: bool = True
