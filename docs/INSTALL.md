@@ -41,7 +41,7 @@ For a background service, wrap `python -m oniops` with NSSM.
 
 ### Bare Linux
 ```bash
-git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
 bash scripts/install.sh        # venv, deps, config.yaml, .env, ONIOPS_SECRET_KEY; safe to re-run
 venv/bin/python -m oniops
 ```

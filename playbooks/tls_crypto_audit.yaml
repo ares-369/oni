@@ -3,7 +3,7 @@ version: 1.0.0
 pack:
   id: oniops_core_network
   author: OniOps
-  homepage: https://github.com/ares-369/oni-ops
+  homepage: https://github.com/ares-369/oniops
 required_tools: [nmap]
 safety: passive
 tags: [tls, network, cryptography]

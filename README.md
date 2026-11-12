@@ -1,17 +1,23 @@
-# OniOps — Offensive Neural Intelligence
+# OniOps
 
-[![CI](https://github.com/ares-369/oni-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oni-ops/actions/workflows/ci.yml)
+[![CI](https://github.com/ares-369/oniops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oniops/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.10–3.12](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![Release](https://img.shields.io/github/v/release/ares-369/oni-ops?include_prereleases&sort=semver)](https://github.com/ares-369/oni-ops/releases)
+[![Release](https://img.shields.io/github/v/release/ares-369/oniops?include_prereleases&sort=semver)](https://github.com/ares-369/oniops/releases)
 
-**An open-source, provider-agnostic, autonomous red-team framework.**
+**An open-source red-team framework that runs your existing security tools against a fixed scope, checks each finding against evidence, and lets you retest it later without an LLM.**
 
-OniOps drives a Kali (or any tooled Linux) toolchain over SSH, reasons with the
-LLM(s) of your choice — local or cloud — and runs scope-locked offensive
-assessments against systems you are authorized to test. It pairs classic
-pentest/WAPT tooling with an autonomous AI operator, an attack-surface graph,
-and an AI/LLM red-team + GRC module, behind pluggable authentication.
+OniOps runs tools such as nmap, nuclei and ffuf on a Kali (or any tooled Linux) host over SSH,
+only against the hosts and ranges you allow. It keeps findings in one ledger, marks a finding
+verified only when a proof rule matches the target's real response, and can replay that proof later
+to check whether a fix worked. It also includes API access-control checks (BOLA/BFLA), probes for
+LLM endpoints, and an optional AI assistant (local Ollama or a cloud model) that picks from a small,
+fixed set of tools.
+
+> **Beta, solo-maintained.** Most features are unit-tested but have had limited real-world
+> testing. Treat findings as leads to verify, expect rough edges, and please
+> [open an issue](https://github.com/ares-369/oniops/issues) when something is wrong. See
+> [Known limitations](#known-limitations).
 
 > **Authorized use only.** OniOps performs active, intrusive security testing. Run
 > it only against systems you own or have **explicit written permission** to
@@ -24,7 +30,7 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 
 ![OniOps Command Center](docs/screenshots/oniops_dashboard.png)
 
-| Attack-Surface Graph & Analytics | Proof-First Findings & Zero-Token Retest |
+| Attack-Surface Graph & Analytics | Findings Ledger & Retest |
 | --- | --- |
 | ![Attack Graph](docs/screenshots/oniops_graph.png) | ![Findings Ledger & Reports](docs/screenshots/oniops_reports.png) |
 
@@ -35,7 +41,7 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 Needs Python 3.10+ and a network connection to a package index (PyPI) for the install.
 
 ```bash
-git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
 bash scripts/install.sh            # venv + dependencies + config.yaml + .env (safe to re-run)
 venv/bin/python -m oniops demo        # one-minute practice run, no config needed
 venv/bin/python -m oniops             # web UI on http://127.0.0.1:8501
@@ -77,11 +83,11 @@ still edit `config.yaml` (scope and attack host), see
   [docs/TARGET_AUTH.md](docs/TARGET_AUTH.md).
 - **41 Kali Arsenal Tools + 12 Bounded ReAct Agent Tools** — manages and executes a
   full catalog of **41 offensive tools** across YAML Playbooks, scan profiles, and the
-  Arsenal UI, while restricting the autonomous LLM ReAct loop to a curated subset of
+  Arsenal UI, while restricting the optional AI agent loop to a curated subset of
   **12 deterministic tools** (`nmap`, `whatweb`, `httpx`, `nuclei`,
   `ffuf`, `nikto`, `wafw00f`, `sslscan`, `openapi_probe`, `report_finding`,
-  `enum4linux`, `searchsploit`) so local 7B models never hallucinate flags. Independently
-  verifies agent-submitted findings against live HTTP indicators before persisting to
+  `enum4linux`, `searchsploit`) so smaller local models have fewer ways to go wrong. Independently
+  checks agent-submitted findings against live HTTP indicators before persisting to
   the ledger, condenses noisy tool output, wraps target responses in
   `<untrusted_tool_output>` delimiters, and syncs discovered ports with the
   Attack-Surface Graph.
@@ -120,9 +126,9 @@ still edit `config.yaml` (scope and attack host), see
   `rot13`, `unicode_homoglyph`, `markdown_wrap`, `json_smuggle`), and a **3-turn
   Crescendo escalation loop**, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI
   RMF, and Google SAIF / ISO 42001.
-- **Safe & reproducible by design** — explicit CIDR/host scope allow-list with
+- **Safety and audit controls** — explicit CIDR/host scope allow-list with
   multi-record DNS rebinding and embedded command IP verification,
-  non-destructive command guard, SHA-256 cryptographic evidence provenance,
+  non-destructive command guard, SHA-256 hashes of stored evidence,
   execution manifests with a SHA-256 hash (HMAC-SHA256 signed when
   `ONIOPS_SECRET_KEY` is set), SQLite WAL concurrent persistence,
   OWASP-compliant 600,000-iteration PBKDF2 password hashing, 3-tier RBAC
@@ -152,7 +158,7 @@ flowchart LR
 
 The framework is **OniOps**. The PyPI/distribution name in `pyproject.toml` is `oniops`, the
 command and the Python package are `oniops` (`oniops demo`, `python -m oniops`, `import oniops`), and the
-repository is `ares-369/oni-ops`. They all refer to the same project. The web app (`webui.py`,
+repository is `ares-369/oniops`. They all refer to the same project. The web app (`webui.py`,
 `templates/`, `static/`) and `playbooks/` sit at the top of the checkout next to the `oniops/`
 package, which is why OniOps is run from a checkout.
 
@@ -167,7 +173,7 @@ OniOps has two parts you provide:
    on your network.
 
 Optionally, an **LLM** (local Ollama needs no key; cloud providers need an API
-key) powers the AI reports and the autonomous agent.
+key) powers the AI reports and the optional AI agent.
 
 ---
 
@@ -178,7 +184,7 @@ or a scope. With Python 3.10+ and `curl` installed. If you already ran the Quick
 run the last command. Otherwise:
 
 ```bash
-git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/python -m oniops demo
 ```
@@ -219,7 +225,7 @@ real target you still accept the responsible-use terms in the web UI.
 
 ```bash
 # 1. Get the code
-git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
+git clone https://github.com/ares-369/oniops.git oniops && cd oniops
 
 # 2. Create your config and secrets files from the examples
 cp config.example.yaml config.yaml
@@ -302,7 +308,7 @@ keys there. Data (the SQLite ledger and activity log) lives in `/opt/oniops/data
 
 ```bash
 sudo useradd --system --home-dir /opt/oniops --shell /usr/sbin/nologin oniops
-sudo git clone https://github.com/ares-369/oni-ops.git /opt/oniops
+sudo git clone https://github.com/ares-369/oniops.git /opt/oniops
 cd /opt/oniops
 sudo bash scripts/install.sh              # venv, dependencies, config.yaml, .env, secret key
 sudo nano config.yaml                      # set scope + attack host + LLM
@@ -490,43 +496,40 @@ so the worker's DNS exception points only at Docker's embedded resolver.
 
 ---
 
-## Where OniOps Fits
+## Where OniOps fits
 
-There are excellent tools in this space, and OniOps borrows ideas from many of
-them. It is not trying to replace any of them — it aims to be a small,
-self-hostable option that combines classic pentest tooling with an AI operator
-and LLM red-teaming in one place.
+There are many good, more mature tools in this space, and OniOps borrows ideas from a lot of them.
+It is a small, self-hosted project by one person, not a replacement for any of them. If one of the
+tools below already does what you need, it is probably the better choice today.
 
-| If you want… | Also look at | What OniOps tries to add |
+| If you mainly need… | Well-established options | Where OniOps is different |
 | --- | --- | --- |
-| A mature autonomous pentest agent | [PentAGI](https://github.com/vxcontrol/pentagi), [Strix](https://github.com/usestrix/strix) | A lightweight single-process deploy (Python + SQLite + SSH to your own Kali box) |
-| Dedicated LLM vulnerability scanning | [garak](https://github.com/NVIDIA/garak), [promptfoo](https://github.com/promptfoo/promptfoo), [PyRIT](https://github.com/Azure/PyRIT) | LLM probes side by side with network/web testing, mapped to OWASP LLM Top 10, MITRE ATLAS, NIST AI RMF |
-| Enterprise autonomous pentesting | Commercial platforms such as NodeZero or XBOW | A free, open-source, homelab-to-small-team option you fully control |
-| Deterministic web/network scanning | [Nuclei](https://github.com/projectdiscovery/nuclei), [OWASP ZAP](https://www.zaproxy.org) | Runs those tools as part of a scoped assessment, then checks each finding with a proof rule and replays it with zero LLM tokens |
-| Cloud security posture | [Prowler](https://github.com/prowler-cloud/prowler), [ScoutSuite](https://github.com/nccgroup/ScoutSuite) | A small set of read-only AWS identity and exposure checks next to network findings (not a replacement for a full CSPM) |
+| An AI-driven pentest agent | [PentAGI](https://github.com/vxcontrol/pentagi), [Strix](https://github.com/usestrix/strix) | Its agent is deliberately limited to 12 tools; most work runs as fixed playbooks |
+| LLM red-teaming | [garak](https://github.com/NVIDIA/garak), [promptfoo](https://github.com/promptfoo/promptfoo), [PyRIT](https://github.com/Azure/PyRIT) | Far fewer probes; they sit in the same ledger as network/web findings |
+| Web/network scanning | [Nuclei](https://github.com/projectdiscovery/nuclei), [OWASP ZAP](https://www.zaproxy.org) | OniOps runs tools like Nuclei; it does not replace them |
+| Cloud posture | [Prowler](https://github.com/prowler-cloud/prowler), [ScoutSuite](https://github.com/nccgroup/ScoutSuite) | Only a handful of read-only AWS checks |
+| Commercial autonomous pentesting | NodeZero, XBOW | Free and self-hosted, with far less coverage and no support |
 
-### At a glance
+### Known limitations
 
-How each tool is focused, by our reading of its public docs. All of these
-projects move fast, so please check their docs and
-[open an issue](https://github.com/ares-369/oni-ops/issues) if this is out of date.
-
-| | OniOps | PentAGI / Strix | garak / PyRIT / promptfoo | Nuclei / ZAP |
-| --- | --- | --- | --- | --- |
-| Main focus | Network + web + LLM testing in one ledger | Autonomous AI pentesting | LLM red-teaming | Deterministic scanning |
-| Deploy footprint | One Python process + SQLite, SSH to your own Kali host | Docker-based stacks | Python/Node library or CLI | Single binary / app |
-| Scanner isolation | Optional disposable non-root Docker worker with an egress firewall locked to scope | Sandboxed containers | n/a | Runs on the host |
-| How findings are confirmed | Per-category proof rule; LLM claims alone are never marked verified | Agent-driven validation/PoCs | Detectors / graders | Template matchers |
-| Retest | Deterministic replay as the proving identity, zero LLM tokens | Re-run the agent | Re-run the suite | Re-run the scan |
-| Maturity | Beta, solo-maintained | Larger communities | Mature | Very mature |
-
-OniOps is **beta** software. Many features are unit-tested but have had limited
-real-world testing — please treat findings as leads to verify, and
-[open an issue](https://github.com/ares-369/oni-ops/issues) when something is wrong.
-The demo benchmark measures only its bundled, labeled loopback fixture; it is useful for regression
-tracking and does not estimate production detection accuracy or compare OniOps with other scanners.
-A [public-app benchmark harness](docs/BENCHMARKS.md) scores runs against labeled bugs in crAPI,
-OWASP Juice Shop and VAmPI. No public results are published yet.
+- **No published detection results yet.** A [benchmark harness](docs/BENCHMARKS.md) for crAPI,
+  OWASP Juice Shop and VAmPI exists, but no scored results are published. One small early lab run
+  on VAmPI found its real unauthenticated API exposures without false positives, but **missed**
+  authenticated horizontal BOLA on parameterised routes (for example `/users/v1/{username}`).
+  Later versions try real peer-owned object IDs for this case; that has not been re-measured yet.
+- **`oniops demo` is a practice run** against a small bundled target with planted bugs. It shows how
+  the workflow looks; it says nothing about how well OniOps finds bugs in real applications. The
+  demo self-test measures only that fixture.
+- **It is not an exploitation framework.** Built-in checks confirm issues with non-destructive
+  requests. Playbooks that run intrusive tools (sqlmap, hydra) are refused unless you set
+  `scope.allow_intrusive_playbooks: true`. The Arsenal page can install tools such as Metasploit on
+  your attack host, but OniOps does not drive them or chain exploits for you.
+- **The AI agent is optional and narrow.** Most value comes from the deterministic playbooks; the
+  agent can still pick poor next steps, especially with small local models.
+- **Install from a checkout.** `pip install oniops` does not yet ship a working web UI; use
+  `scripts/install.sh` or Docker.
+- **Breadth over depth.** Many features (cloud checks, browser crawl, container scan) are new and
+  field-untested.
 
 ## Acknowledgements
 

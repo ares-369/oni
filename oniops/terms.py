@@ -18,7 +18,7 @@ from pathlib import Path
 # Bump when DISCLAIMER.md / NOTICE change materially -> users re-accept.
 TERMS_VERSION = "2026-11-09"
 
-DISCLAIMER_URL = "https://github.com/ares-369/oni-ops/blob/main/DISCLAIMER.md"
+DISCLAIMER_URL = "https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md"
 
 SUMMARY = [
     "Only test systems you own, or have explicit written permission to test. "

@@ -5,17 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "oniops"
 version = "0.4.8b0"
-description = "OniOps — Offensive Neural Intelligence: a provider-agnostic autonomous red-team framework"
+description = "Open-source red-team framework: scope-locked tool runs, evidence-checked findings and token-free retest (beta)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "ares-369" }]
-keywords = ["security", "red-team", "pentest", "offensive-security", "ai-agent", "llm"]
+keywords = ["security", "red-team", "pentest", "penetration-testing", "offensive-security", "api-security", "bola", "llm-security", "prompt-injection", "kali"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Topic :: Security",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Information Technology",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -41,9 +47,10 @@ cloud = ["boto3>=1.35"]
 oniops = "oniops.cli:cli_main"
 
 [project.urls]
-Homepage = "https://github.com/ares-369/oni-ops"
-Repository = "https://github.com/ares-369/oni-ops"
-Issues = "https://github.com/ares-369/oni-ops/issues"
+Homepage = "https://github.com/ares-369/oniops"
+Repository = "https://github.com/ares-369/oniops"
+Issues = "https://github.com/ares-369/oniops/issues"
+Changelog = "https://github.com/ares-369/oniops/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["oniops*"]
