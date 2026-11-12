@@ -1,9 +1,9 @@
 # OniOps
 
-[![CI](https://github.com/ares-369/oniops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oniops/actions/workflows/ci.yml)
+[![CI](https://github.com/ares-369/oni-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oni-ops/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.10–3.12](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![Release](https://img.shields.io/github/v/release/ares-369/oniops?include_prereleases&sort=semver)](https://github.com/ares-369/oniops/releases)
+[![Release](https://img.shields.io/github/v/release/ares-369/oni-ops?include_prereleases&sort=semver)](https://github.com/ares-369/oni-ops/releases)
 
 **An open-source red-team framework that runs your existing security tools against a fixed scope, checks each finding against evidence, and lets you retest it later without an LLM.**
 
