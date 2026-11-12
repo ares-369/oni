@@ -41,9 +41,9 @@ cloud = ["boto3>=1.35"]
 oniops = "oniops.cli:cli_main"
 
 [project.urls]
-Homepage = "https://github.com/ares-369/oniops"
-Repository = "https://github.com/ares-369/oniops"
-Issues = "https://github.com/ares-369/oniops/issues"
+Homepage = "https://github.com/ares-369/oni-ops"
+Repository = "https://github.com/ares-369/oni-ops"
+Issues = "https://github.com/ares-369/oni-ops/issues"
 
 [tool.setuptools.packages.find]
 include = ["oniops*"]

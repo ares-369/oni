@@ -3,7 +3,7 @@
 OniOps is an offensive security platform **and** an LLM-driven application that executes commands on an attack host. It is built to the same security standards it tests against. This document defines OniOps's **Threat Model**, **Deterministic Trust Boundaries**, **Cryptographic Evidence Provenance**, and **Framework Alignment**.
 
 ## Reporting a Vulnerability
-Thank you for helping keep OniOps and its users safe. Please open a private security advisory at `https://github.com/ares-369/oniops/security/advisories/new` (or contact `@ares-369` via GitHub) rather than a public issue for exploitable bugs.
+Thank you for helping keep OniOps and its users safe. Please open a private security advisory at `https://github.com/ares-369/oni-ops/security/advisories/new` (or contact `@ares-369` via GitHub) rather than a public issue for exploitable bugs.
 
 OniOps is maintained by one person in spare time, so responses are best-effort — I will aim to acknowledge a report within a week and keep you updated on a fix. Reporters are credited in the changelog unless they prefer otherwise.
 

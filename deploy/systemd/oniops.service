@@ -7,7 +7,7 @@
 # differently. Data (SQLite ledger, activity log) is written to /opt/oniops/data.
 [Unit]
 Description=OniOps - Offensive Neural Intelligence
-Documentation=https://github.com/ares-369/oniops
+Documentation=https://github.com/ares-369/oni-ops
 After=network-online.target
 Wants=network-online.target
 

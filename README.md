@@ -1,9 +1,9 @@
 # OniOps — Offensive Neural Intelligence
 
-[![CI](https://github.com/ares-369/oniops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oniops/actions/workflows/ci.yml)
+[![CI](https://github.com/ares-369/oni-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/ares-369/oni-ops/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.10–3.12](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![Release](https://img.shields.io/github/v/release/ares-369/oniops?include_prereleases&sort=semver)](https://github.com/ares-369/oniops/releases)
+[![Release](https://img.shields.io/github/v/release/ares-369/oni-ops?include_prereleases&sort=semver)](https://github.com/ares-369/oni-ops/releases)
 
 **An open-source, provider-agnostic, autonomous red-team framework.**
 
@@ -35,7 +35,7 @@ and an AI/LLM red-team + GRC module, behind pluggable authentication.
 Needs Python 3.10+ and a network connection to a package index (PyPI) for the install.
 
 ```bash
-git clone https://github.com/ares-369/oniops.git oniops && cd oniops
+git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
 bash scripts/install.sh            # venv + dependencies + config.yaml + .env (safe to re-run)
 venv/bin/python -m oniops demo        # one-minute practice run, no config needed
 venv/bin/python -m oniops             # web UI on http://127.0.0.1:8501
@@ -152,7 +152,7 @@ flowchart LR
 
 The framework is **OniOps**. The PyPI/distribution name in `pyproject.toml` is `oniops`, the
 command and the Python package are `oniops` (`oniops demo`, `python -m oniops`, `import oniops`), and the
-repository is `ares-369/oniops`. They all refer to the same project. The web app (`webui.py`,
+repository is `ares-369/oni-ops`. They all refer to the same project. The web app (`webui.py`,
 `templates/`, `static/`) and `playbooks/` sit at the top of the checkout next to the `oniops/`
 package, which is why OniOps is run from a checkout.
 
@@ -178,7 +178,7 @@ or a scope. With Python 3.10+ and `curl` installed. If you already ran the Quick
 run the last command. Otherwise:
 
 ```bash
-git clone https://github.com/ares-369/oniops.git oniops && cd oniops
+git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/python -m oniops demo
 ```
@@ -219,7 +219,7 @@ real target you still accept the responsible-use terms in the web UI.
 
 ```bash
 # 1. Get the code
-git clone https://github.com/ares-369/oniops.git oniops && cd oniops
+git clone https://github.com/ares-369/oni-ops.git oniops && cd oniops
 
 # 2. Create your config and secrets files from the examples
 cp config.example.yaml config.yaml
@@ -302,7 +302,7 @@ keys there. Data (the SQLite ledger and activity log) lives in `/opt/oniops/data
 
 ```bash
 sudo useradd --system --home-dir /opt/oniops --shell /usr/sbin/nologin oniops
-sudo git clone https://github.com/ares-369/oniops.git /opt/oniops
+sudo git clone https://github.com/ares-369/oni-ops.git /opt/oniops
 cd /opt/oniops
 sudo bash scripts/install.sh              # venv, dependencies, config.yaml, .env, secret key
 sudo nano config.yaml                      # set scope + attack host + LLM
@@ -509,7 +509,7 @@ and LLM red-teaming in one place.
 
 How each tool is focused, by our reading of its public docs. All of these
 projects move fast, so please check their docs and
-[open an issue](https://github.com/ares-369/oniops/issues) if this is out of date.
+[open an issue](https://github.com/ares-369/oni-ops/issues) if this is out of date.
 
 | | OniOps | PentAGI / Strix | garak / PyRIT / promptfoo | Nuclei / ZAP |
 | --- | --- | --- | --- | --- |
@@ -522,7 +522,7 @@ projects move fast, so please check their docs and
 
 OniOps is **beta** software. Many features are unit-tested but have had limited
 real-world testing — please treat findings as leads to verify, and
-[open an issue](https://github.com/ares-369/oniops/issues) when something is wrong.
+[open an issue](https://github.com/ares-369/oni-ops/issues) when something is wrong.
 The demo benchmark measures only its bundled, labeled loopback fixture; it is useful for regression
 tracking and does not estimate production detection accuracy or compare OniOps with other scanners.
 A [public-app benchmark harness](docs/BENCHMARKS.md) scores runs against labeled bugs in crAPI,

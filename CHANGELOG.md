@@ -197,7 +197,7 @@ behaviour may still change between releases.
   generated reports and CLI help now use the name *OniOps*. The Python package,
   the `oniops` command, install paths and the systemd unit are unchanged, so
   existing deployments keep working. The repository moved to
-  `github.com/ares-369/oniops` (the old URL redirects).
+  `github.com/ares-369/oni-ops` (the old URL redirects).
 
 ## [0.4.4-beta] — 2026-11-10
 
@@ -396,13 +396,13 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.7-beta...HEAD
-[0.4.7-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.7-beta
-[0.4.6-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.6-beta
-[0.4.4-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.4-beta
-[0.4.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.3-beta
-[0.4.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.2-beta
-[0.4.1-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.1-beta
-[0.4.0-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.0-beta
-[0.3.3-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.3-beta
-[0.3.2-beta]: https://github.com/ares-369/oniops/releases/tag/v0.3.2-beta
+[Unreleased]: https://github.com/ares-369/oni-ops/compare/v0.4.7-beta...HEAD
+[0.4.7-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.7-beta
+[0.4.6-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.6-beta
+[0.4.4-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.4-beta
+[0.4.3-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.3-beta
+[0.4.2-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.2-beta
+[0.4.1-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.1-beta
+[0.4.0-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.4.0-beta
+[0.3.3-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.3.3-beta
+[0.3.2-beta]: https://github.com/ares-369/oni-ops/releases/tag/v0.3.2-beta

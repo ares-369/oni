@@ -17,7 +17,7 @@ CORES="${CORES:-2}"
 BRIDGE="${BRIDGE:-vmbr0}"
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE="${TEMPLATE:-local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst}"
-ONIOPS_REPO="${ONIOPS_REPO:-https://github.com/ares-369/oniops.git}"
+ONIOPS_REPO="${ONIOPS_REPO:-https://github.com/ares-369/oni-ops.git}"
 
 echo "[OniOps] creating LXC ${CTID} (${CT_HOSTNAME})..."
 pct create "$CTID" "$TEMPLATE" \

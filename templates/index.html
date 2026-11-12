@@ -941,7 +941,7 @@
       <label class="terms-check" for="termsConfirm">
         <input type="checkbox" id="termsConfirm" onchange="document.getElementById('termsAcceptBtn').disabled = !this.checked" />
         <span>I will only use OniOps on systems I own or have explicit written permission to test, and I accept the
-          <a id="termsLink" href="https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">responsible-use terms and disclaimer</a>.</span>
+          <a id="termsLink" href="https://github.com/ares-369/oni-ops/blob/main/DISCLAIMER.md" target="_blank" rel="noopener noreferrer">responsible-use terms and disclaimer</a>.</span>
       </label>
       <div class="terms-actions">
         <button class="btn" type="button" onclick="declineTerms()">Decline</button>
@@ -2206,7 +2206,7 @@
             (TERMS && TERMS.accepted_at
               ? `Accepted by <span class="mono">${esc(TERMS.user)}</span> · ${esc(String(TERMS.accepted_at).slice(0, 16).replace('T', ' '))} UTC · v${esc(TERMS.version)}`
               : 'Not yet accepted') +
-            ` · <a href="${esc((TERMS && TERMS.disclaimer_url) || 'https://github.com/ares-369/oniops/blob/main/DISCLAIMER.md')}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">read</a></span></div>` +
+            ` · <a href="${esc((TERMS && TERMS.disclaimer_url) || 'https://github.com/ares-369/oni-ops/blob/main/DISCLAIMER.md')}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">read</a></span></div>` +
           `<div style="border-top:1px solid var(--border-subtle); margin-top:10px; padding-top:10px;">
              <div style="font-size:11.5px; font-weight:600; color:var(--text-muted); margin-bottom:8px;">DIAGNOSTICS, SELF-TEST &amp; BACKUP</div>
              <div style="display:flex; gap:6px; flex-wrap:wrap;">
