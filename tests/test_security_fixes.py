@@ -5,6 +5,8 @@ labeled-benchmark scorer only consuming VERIFIED findings, browser URL
 redaction of bare token query keys, and AWS region validation across
 partitions.
 """
+import os
+
 import pytest
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -20,7 +22,7 @@ def _proxy_app(cfg):
     cfg.auth.mode = "proxy"
     cfg.auth.proxy_header = "X-Forwarded-User"
     cfg.auth.proxy_trusted_ips = ["10.0.0.5"]
-    app = Flask("test_oniops_proxy", template_folder="/root/oniops/templates")
+    app = Flask("test_oniops_proxy", template_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates"))
     init_auth(app, cfg)
 
     @app.route("/api/sensitive")
@@ -60,7 +62,7 @@ def test_proxy_auth_still_fails_closed_without_trusted_ips(cfg_path):
     cfg.auth.mode = "proxy"
     cfg.auth.proxy_header = "X-Forwarded-User"
     cfg.auth.proxy_trusted_ips = []
-    app = Flask("test_oniops_proxy2", template_folder="/root/oniops/templates")
+    app = Flask("test_oniops_proxy2", template_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates"))
     init_auth(app, cfg)
 
     @app.route("/api/sensitive")

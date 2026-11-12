@@ -11,6 +11,8 @@ Attempts to bypass OniOps's safety boundaries:
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 from flask import Flask
 
@@ -64,7 +66,7 @@ def test_login_rate_limiting_and_csrf_origin_guard(cfg_path):
     cfg.auth.password_hash = hash_password("correct-horse-battery-staple", iters=1000)
     cfg.auth.secret_key = "test-secret-key-for-regression"
 
-    app = Flask("test_oniops_auth", template_folder="/root/oniops/templates")
+    app = Flask("test_oniops_auth", template_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates"))
     init_auth(app, cfg)
 
     @app.route("/api/sensitive", methods=["POST"])
