@@ -20,6 +20,12 @@ fixed set of tools.
 > [open an issue](https://github.com/ares-369/oniops/issues) when something is wrong. See
 > [Known limitations](#known-limitations).
 
+![oniops demo: 9 findings with proof, secure twins not reported, then a token-free retest](docs/demo.gif)
+
+*A real `oniops demo` run against its bundled practice target (playback slowed; the run takes about
+two seconds). It shows the workflow, not real-world detection. Rebuild it with
+`scripts/make_demo_gif.py`.*
+
 > **Authorized use only.** OniOps performs active, intrusive security testing. Run
 > it only against systems you own or have **explicit written permission** to
 > test. Unauthorized use is illegal in most jurisdictions.
