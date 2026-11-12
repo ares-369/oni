@@ -175,6 +175,7 @@ flowchart LR
         WB["White-box source scan<br/>CI gate (--fail-on)"]
     end
 
+    Agent -->|"tool calls"| Guard
     Guard -->|"SSH, argv only"| Host["Attack host(s)<br/>Kali or tooled Linux<br/>optional disposable Docker worker"]
     Host -->|"nmap, nuclei, ffuf, curl<br/>OpenAPI BOLA/BFLA probes"| Target["In-scope targets"]
     Ctrl -->|"optional Playwright crawl<br/>(scope-checked)"| Target
