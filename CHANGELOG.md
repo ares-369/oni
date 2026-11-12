@@ -137,6 +137,8 @@ behaviour may still change between releases.
   retest treats such a finding as FIXED only when the peer-owned object is now
   denied (HTTP 403 or 404).
 
+## [0.4.5-beta] — 2026-11-11
+
 ### Security
 - **Forgeable signatures removed.** Earlier releases fell back to a built-in
   constant key (`oniops-default-manifest-key` / `oniops-webhook-key`) when no signing
