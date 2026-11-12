@@ -164,14 +164,31 @@ still edit `config.yaml` (scope and attack host), see
 
 ```mermaid
 flowchart LR
-    Op["Operator Browser / CLI\n(Web UI / OIDC SSO / CI Gate)"] -->|"HTTPS / CLI"| Ctrl["OniOps Controller\n(Flask + Waitress + CLI)"]
-    Ctrl -->|"Rules of Engagement\n(CIDR + DNS + Cmd Guard)"| Scope["Scope & Safety Engine\n(oniops/scope.py)"]
-    Scope -->|"SSH / Paramiko\n(argv-only)"| Kali["Attack Host(s)\n(Kali / 41 Tools)"]
-    Kali -->|"nmap / nuclei / ffuf\nsearchsploit / httpx"| Target["Authorized Targets\n(In-Scope CIDRs)"]
-    Ctrl -->|"ReAct Agent & Reporting\n(7B Sliding-Window + Quarantine)"| LLM["Pluggable LLM Layer\n(Ollama / Claude / Gemini / OpenAI)"]
-    Ctrl -->|"14 Probes + YAML Packs\n+ 3-Turn Crescendo"| AITarget["Target AI / LLM Endpoint"]
-    AITarget -->|"OWASP / ATLAS / NIST / SAIF"| GRC["Executive & GRC Reports\n(.md / .html / .pdf / .sarif)"]
+    Op["Operator<br/>browser or CLI"] --> Ctrl
+
+    subgraph Ctrl["OniOps controller (one Python process)"]
+        Auth["Login + roles<br/>none / basic / local / OIDC / proxy"]
+        Guard["Scope guard + rate limit<br/>allowed CIDRs, DNS check,<br/>destructive-command block"]
+        Agent["Optional AI agent<br/>12 tools, tool output quarantined"]
+        Ledger[("SQLite ledger<br/>findings, proof, SHA-256 hashes")]
+        Reports["Reports<br/>md / html / pdf / sarif / json"]
+        WB["White-box source scan<br/>CI gate (--fail-on)"]
+    end
+
+    Guard -->|"SSH, argv only"| Host["Attack host(s)<br/>Kali or tooled Linux<br/>optional disposable Docker worker"]
+    Host -->|"nmap, nuclei, ffuf, curl<br/>OpenAPI BOLA/BFLA probes"| Target["In-scope targets"]
+    Ctrl -->|"optional Playwright crawl<br/>(scope-checked)"| Target
+    Ctrl -->|"AI/LLM probes over HTTP<br/>(rate-limited, not CIDR-checked)"| AITarget["LLM endpoint<br/>under test"]
+    Ctrl -->|"reports, optional agent"| LLM["Your LLM<br/>Ollama / Claude / Gemini /<br/>OpenAI-compatible"]
+    Ctrl -.->|"optional, read-only"| Ext["AWS APIs (boto3)<br/>NVD + EPSS lookups"]
+    Ledger -->|"retest: replay stored command,<br/>no LLM"| Guard
 ```
+
+Everything that touches a target, including retests and the agent's tool calls, goes through the
+scope guard and runs on the attack host. The optional browser crawl runs on the controller and is
+scope-checked too. AI/LLM probes go straight from the controller to the endpoint you name; they are
+rate-limited but not checked against `scope.allowed_cidrs`, because LLM endpoints are often cloud
+URLs. Only point them at endpoints you are allowed to test.
 
 ### Naming and layout
 
