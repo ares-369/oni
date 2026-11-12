@@ -7,6 +7,8 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+## [0.4.9-beta] — 2026-11-12
+
 ### Added
 - **`pip install oniops` / `pipx install oniops` now gives a working install**, including the web UI.
   The wheel bundles `webui.py`, `templates/`, `static/`, `playbooks/` and `config.example.yaml`
@@ -17,6 +19,7 @@ behaviour may still change between releases.
   (default `~/.oniops`). In a source checkout nothing moves: they stay in the checkout root.
 - CI job that builds the wheel, installs it outside the checkout, and runs `init`, `demo` and the
   web UI.
+- Release workflow that publishes to PyPI with trusted publishing (no stored API token).
 
 ### Changed
 - README: plainer description, a "Where OniOps fits" section that points to more mature tools, and a
@@ -412,7 +415,8 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.8-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.9-beta...HEAD
+[0.4.9-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.9-beta
 [0.4.8-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.8-beta
 [0.4.7-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.7-beta
 [0.4.6-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.6-beta

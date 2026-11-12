@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oniops"
-version = "0.4.8b0"
+version = "0.4.9b0"
 description = "Open-source red-team framework: scope-locked tool runs, evidence-checked findings and token-free retest (beta)"
 readme = "README.md"
 requires-python = ">=3.10"
