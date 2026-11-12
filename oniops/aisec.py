@@ -254,7 +254,9 @@ PROBES = [
 
 FRAMEWORKS = ["OWASP LLM Top 10", "MITRE ATLAS", "NIST AI RMF", "Google SAIF / ISO 42001"]
 
-_DEFAULT_AI_PROBE_DIR = Path(__file__).resolve().parent.parent / "playbooks" / "ai_probes"
+from .paths import app_dir as _app_dir
+
+_DEFAULT_AI_PROBE_DIR = _app_dir() / "playbooks" / "ai_probes"
 
 
 def load_yaml_probes(probe_dir: str | Path | None = None) -> list[dict]:

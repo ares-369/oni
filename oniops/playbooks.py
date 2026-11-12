@@ -25,7 +25,8 @@ def playbooks_dir() -> Path:
     env = os.getenv("ONIOPS_PLAYBOOKS_DIR")
     if env:
         return Path(env)
-    return Path(__file__).resolve().parent.parent / "playbooks"
+    from .paths import app_dir
+    return app_dir() / "playbooks"
 
 
 def validate_playbook(data: dict) -> dict:

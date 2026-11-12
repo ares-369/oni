@@ -17,6 +17,12 @@ from .config import get_config
 def _load_app():
     # webui.py exposes `app` (Flask). Kept at repo root for now; Phase 2 moves
     # it under oniops/web/.
+    import sys
+
+    from .paths import app_dir
+    root = str(app_dir())
+    if root not in sys.path:
+        sys.path.insert(0, root)
     try:
         from webui import app  # type: ignore
         return app

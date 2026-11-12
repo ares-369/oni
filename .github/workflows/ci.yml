@@ -41,6 +41,37 @@ jobs:
       - name: Run unit tests
         run: pytest tests/ -v
 
+  package-install:
+    name: Wheel install smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build -o dist .
+          python -m twine check dist/*
+      - name: Install the wheel outside the checkout and run it
+        run: |
+          python -m venv /tmp/v
+          /tmp/v/bin/pip install dist/*.whl
+          cd /tmp
+          export HOME=/tmp/home
+          /tmp/v/bin/oniops version
+          /tmp/v/bin/oniops init
+          test -f /tmp/home/.oniops/config.yaml
+          /tmp/v/bin/oniops playbooks > /dev/null
+          /tmp/v/bin/oniops demo
+          sed -i 's/bind_port: 8501/bind_port: 8597/' /tmp/home/.oniops/config.yaml
+          /tmp/v/bin/oniops > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:8597/healthz && break; sleep 1; done
+          curl -fs -o /dev/null http://127.0.0.1:8597/
+          curl -fs -o /dev/null http://127.0.0.1:8597/static/mdi/LICENSE
+          test -f /tmp/home/.oniops/data/oniops.sqlite
+
   secret-scan:
     name: Secret Scan (Gitleaks)
     runs-on: ubuntu-latest

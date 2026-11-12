@@ -7,6 +7,22 @@ behaviour may still change between releases.
 
 ## [Unreleased]
 
+### Added
+- **`pip install oniops` / `pipx install oniops` now gives a working install**, including the web UI.
+  The wheel bundles `webui.py`, `templates/`, `static/`, `playbooks/` and `config.example.yaml`
+  under `oniops/_app/` (copied at build time by `setup.py`; the checkout layout is unchanged).
+- **`oniops init`** creates `config.yaml`, `.env` (with a random `ONIOPS_SECRET_KEY`, mode 600) and
+  `data/` in the OniOps home folder. It never overwrites existing files and never prints the key.
+- **`ONIOPS_HOME`** sets where an installed OniOps keeps `config.yaml`, `.env` and `data/`
+  (default `~/.oniops`). In a source checkout nothing moves: they stay in the checkout root.
+- CI job that builds the wheel, installs it outside the checkout, and runs `init`, `demo` and the
+  web UI.
+
+### Changed
+- README: plainer description, a "Where OniOps fits" section that points to more mature tools, and a
+  "Known limitations" section. All links now use `github.com/ares-369/oniops`.
+- Packaging metadata: SPDX license string, more keywords and classifiers, Changelog URL.
+
 ## [0.4.8-beta] — 2026-11-12
 
 ### Security
@@ -396,7 +412,8 @@ behaviour may still change between releases.
 - AI / LLM red-team and GRC module, PoC service validation, report export,
   offline CVE intelligence, PDF export, tests and CI.
 
-[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.7-beta...HEAD
+[Unreleased]: https://github.com/ares-369/oniops/compare/v0.4.8-beta...HEAD
+[0.4.8-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.8-beta
 [0.4.7-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.7-beta
 [0.4.6-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.6-beta
 [0.4.4-beta]: https://github.com/ares-369/oniops/releases/tag/v0.4.4-beta

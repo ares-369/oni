@@ -38,7 +38,19 @@ fixed set of tools.
 
 ## Quick start
 
-Needs Python 3.10+ and a network connection to a package index (PyPI) for the install.
+Needs Python 3.10+.
+
+**With pipx or pip** (config and data go to `~/.oniops`):
+
+```bash
+pipx install oniops                 # or: pip install oniops (inside a venv)
+oniops demo                         # one-minute practice run, no config needed
+oniops init                         # creates ~/.oniops/config.yaml and .env with a random secret key
+oniops                              # web UI on http://127.0.0.1:8501
+```
+
+**From a checkout** (config and data stay in the checkout; use this to edit playbooks or run the
+systemd/Docker setups below):
 
 ```bash
 git clone https://github.com/ares-369/oniops.git oniops && cd oniops
@@ -158,9 +170,10 @@ flowchart LR
 
 The framework is **OniOps**. The PyPI/distribution name in `pyproject.toml` is `oniops`, the
 command and the Python package are `oniops` (`oniops demo`, `python -m oniops`, `import oniops`), and the
-repository is `ares-369/oniops`. They all refer to the same project. The web app (`webui.py`,
-`templates/`, `static/`) and `playbooks/` sit at the top of the checkout next to the `oniops/`
-package, which is why OniOps is run from a checkout.
+repository is `ares-369/oniops`. They all refer to the same project. In a checkout, the web app
+(`webui.py`, `templates/`, `static/`) and `playbooks/` sit at the top next to the `oniops/` package;
+the pip package bundles copies of them, and keeps your `config.yaml`, `.env` and data in
+`~/.oniops` (or `$ONIOPS_HOME`).
 
 ### How it works
 
@@ -526,8 +539,8 @@ tools below already does what you need, it is probably the better choice today.
   your attack host, but OniOps does not drive them or chain exploits for you.
 - **The AI agent is optional and narrow.** Most value comes from the deterministic playbooks; the
   agent can still pick poor next steps, especially with small local models.
-- **Install from a checkout.** `pip install oniops` does not yet ship a working web UI; use
-  `scripts/install.sh` or Docker.
+- **New packaging.** The pip/pipx install is new in this release and so far tested on Linux only;
+  the checkout install (`scripts/install.sh`) and Docker are the longer-tested paths.
 - **Breadth over depth.** Many features (cloud checks, browser crawl, container scan) are new and
   field-untested.
 

@@ -39,6 +39,15 @@ powershell -ExecutionPolicy Bypass -File deploy\windows-install.ps1
 The Kali connection uses pure-Python SSH, so no OpenSSH client or WSL is needed.
 For a background service, wrap `python -m oniops` with NSSM.
 
+### pip / pipx (any OS with Python 3.10+)
+```bash
+pipx install oniops            # or: python -m venv v && v/bin/pip install oniops
+oniops init                    # ~/.oniops/config.yaml, .env (random ONIOPS_SECRET_KEY), data/
+oniops                         # web UI on http://127.0.0.1:8501
+```
+Set `ONIOPS_HOME` to keep config and data somewhere other than `~/.oniops`. Optional extras:
+`pip install 'oniops[all]'` (cloud LLM SDKs + OIDC), `[browser]`, `[cloud]`.
+
 ### Bare Linux
 ```bash
 git clone https://github.com/ares-369/oniops.git oniops && cd oniops

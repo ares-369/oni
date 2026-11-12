@@ -24,7 +24,7 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from .paths import REPO_ROOT, home_dir  # noqa: F401  (REPO_ROOT kept for callers)
 
 # Valid scope.mode values. Checked both when loading config.yaml and when the
 # UI saves an update, so the UI never displays a different mode than the one
@@ -35,7 +35,7 @@ _log = logging.getLogger("OniOps")
 
 def _load_env() -> None:
     # .env lives next to config.yaml / at the repo root; load if present.
-    for candidate in (Path.cwd() / ".env", REPO_ROOT / ".env"):
+    for candidate in (Path.cwd() / ".env", home_dir() / ".env"):
         if candidate.exists():
             load_dotenv(candidate)
             return
@@ -47,7 +47,7 @@ def _config_path() -> Path:
     cwd_cfg = Path.cwd() / "config.yaml"
     if cwd_cfg.exists():
         return cwd_cfg
-    return REPO_ROOT / "config.yaml"
+    return home_dir() / "config.yaml"
 
 
 @dataclass
@@ -151,8 +151,8 @@ def load_config() -> Config:
     path = _config_path()
     if not path.exists():
         raise FileNotFoundError(
-            f"No config.yaml found at {path}. Copy config.example.yaml to "
-            f"config.yaml and edit it for your environment."
+            f"No config.yaml found at {path}. Run `oniops init` to create one (or copy "
+            f"config.example.yaml to config.yaml), then edit it for your environment."
         )
     data = yaml.safe_load(path.read_text()) or {}
 

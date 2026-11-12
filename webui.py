@@ -82,7 +82,9 @@ BASE_DIR = Path(__file__).parent
 # Respect ONIOPS_DB_PATH so the web UI and the CLI read/write the same ledger
 # (the CLI's _default_db_path honours the same variable).
 _ENV_DB = os.getenv("ONIOPS_DB_PATH")
-DB_PATH = Path(_ENV_DB).expanduser() if _ENV_DB else BASE_DIR / "data" / "oniops.sqlite"
+from oniops.paths import home_dir as _home_dir
+
+DB_PATH = Path(_ENV_DB).expanduser() if _ENV_DB else _home_dir() / "data" / "oniops.sqlite"
 DATA_DIR = DB_PATH.parent
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 ACTIVITY_LOG = DATA_DIR / "activity.jsonl"

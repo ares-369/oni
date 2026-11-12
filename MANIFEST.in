@@ -1,0 +1,6 @@
+include webui.py config.example.yaml LICENSE NOTICE DISCLAIMER.md README.md CHANGELOG.md
+recursive-include templates *
+recursive-include static *
+recursive-include playbooks *.yaml
+recursive-include oniops/bench_suites *.yaml
+global-exclude __pycache__ *.pyc

@@ -43,10 +43,8 @@ SIGNING_KEY_WARNING = ("No persistent signing key (ONIOPS_SECRET_KEY / auth.secr
                        "manifests and webhook alerts will be unsigned.")
 
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_NEEDS_CHECKOUT = ("The web app (webui.py, templates/, static/) lives in the source checkout, not in the "
-                   "installed package. Run OniOps from a checkout of the repository: `pip install -e .` "
-                   "inside it, or `python -m oniops` from its top-level folder.")
+_NEEDS_CHECKOUT = ("The web app (webui.py, templates/, static/) was not found. Reinstall OniOps "
+                   "(`pip install --force-reinstall oniops`) or run it from a source checkout.")
 
 
 def _ensure_checkout_importable() -> None:
@@ -55,15 +53,18 @@ def _ensure_checkout_importable() -> None:
     ``python -m oniops`` puts the working directory on sys.path; the ``oniops`` entry
     point does not, so ``webui.py`` at the checkout root would not be found.
     """
-    if (_REPO_ROOT / "webui.py").exists() and str(_REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(_REPO_ROOT))
+    from .paths import app_dir
+    root = app_dir()
+    if (root / "webui.py").exists() and str(root) not in sys.path:
+        sys.path.insert(0, str(root))
 
 
 def _default_db_path() -> Path:
     env_db = os.getenv("ONIOPS_DB_PATH", "").strip()
     if env_db:
         return Path(env_db)
-    return Path(__file__).resolve().parent.parent / "data" / "oniops.sqlite"
+    from .paths import home_dir
+    return home_dir() / "data" / "oniops.sqlite"
 
 
 def build_whitebox_sarif(scan_res: dict) -> dict:
@@ -153,6 +154,7 @@ def cli_main(argv: list[str] | None = None) -> int:
                                  "address and port come from config.yaml (oniops.bind_host / oniops.bind_port)")
 
     sub.add_parser("version", help="Print OniOps version")
+    sub.add_parser("init", help="Create config.yaml and .env (with a random secret key) in the OniOps home folder")
     sub.add_parser("playbooks", help="List loaded YAML playbooks and AI safety probe packs")
 
     doc = sub.add_parser("doctor", help="Run self-diagnostics on config, scope, SQLite DB, and playbooks")
@@ -284,9 +286,42 @@ def _serve() -> int:
     return 0
 
 
+def _init() -> int:
+    """Create config.yaml and .env in the OniOps home folder. Never overwrites."""
+    import secrets
+
+    from .paths import app_dir, home_dir
+    home = home_dir()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "data").mkdir(exist_ok=True)
+    cfg, env = home / "config.yaml", home / ".env"
+    if cfg.exists():
+        print(f"[OniOps] {cfg} already exists, leaving it alone")
+    else:
+        example = app_dir() / "config.example.yaml"
+        if not example.is_file():
+            print(f"[OniOps] error: config.example.yaml not found in {app_dir()}", file=sys.stderr)
+            return 2
+        cfg.write_text(example.read_text())
+        print(f"[OniOps] created {cfg}")
+    if env.exists():
+        print(f"[OniOps] {env} already exists, leaving it alone")
+    else:
+        env.write_text(f"ONIOPS_SECRET_KEY={secrets.token_hex(32)}\n")
+        print(f"[OniOps] created {env} with a random ONIOPS_SECRET_KEY")
+    try:
+        env.chmod(0o600)
+    except OSError:
+        pass
+    print(f"[OniOps] next: edit {cfg} (scope and attack host), then run `oniops`")
+    return 0
+
+
 def _dispatch(ns, parser) -> int:
     if ns.cmd == "serve":
         return _serve()
+    if ns.cmd == "init":
+        return _init()
 
     if ns.cmd == "demo":
         from .demo import run_demo
